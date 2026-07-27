@@ -28,7 +28,7 @@ const branchSchema = z.object({
     .string()
     .min(2, 'Code is required (at least 2 characters)')
     .max(10)
-    .regex(/^[A-Z0-9]+$/, 'Use uppercase letters and numbers (e.g. MNL)'),
+    .regex(/^[A-Z0-9]+$/, 'Use uppercase letters and numbers (e.g. SUB)'),
   name: z.string().min(1, 'Name is required').max(120),
   address: z.string().max(300).optional(),
   timezone: z.string().max(60).optional(),

@@ -92,7 +92,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
       <div className="px-5 py-4 text-[11px] text-sidebar-foreground/70">
-        GEM Cor · Asia/Manila
+        GemCor · Asia/Manila
       </div>
     </div>
   );

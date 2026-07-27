@@ -1,6 +1,6 @@
 # GEM ERP
 
-Asset & Inventory Management system for **GEM Cor** — a single-company, multi-branch platform
+Asset & Inventory Management system for **GemCor** — a single-company, multi-branch platform
 covering serialized assets, consumable inventory, procurement, employee custodianship,
 maintenance, approvals, reporting, and immutable audit history.
 
@@ -99,14 +99,14 @@ All seed users share the password **`ChangeMe!123`**.
 | Email | Role | Branch access |
 | --- | --- | --- |
 | `superadmin@gemcor.dev` | Super Admin | All branches |
-| `branchadmin@gemcor.dev` | Branch Admin | MNL, CEB |
-| `warehouse@gemcor.dev` | Warehouse Custodian | MNL |
-| `assets@gemcor.dev` | Asset Custodian | MNL |
-| `maintenance@gemcor.dev` | Maintenance Personnel | MNL |
-| `auditor@gemcor.dev` | Auditor / Viewer | MNL |
-| `employee@gemcor.dev` | Employee / Requester | MNL |
+| `branchadmin@gemcor.dev` | Branch Admin | SUB, MKT |
+| `warehouse@gemcor.dev` | Warehouse Custodian | SUB |
+| `assets@gemcor.dev` | Asset Custodian | SUB |
+| `maintenance@gemcor.dev` | Maintenance Personnel | SUB |
+| `auditor@gemcor.dev` | Auditor / Viewer | SUB |
+| `employee@gemcor.dev` | Employee / Requester | SUB |
 
-Seed branches: **MNL** Manila HQ, **CEB** Cebu Branch, **DVO** Davao Branch.
+Seed branches: **SUB** GemCor - Subic, **MKT** GemCor - Makati.
 
 ## Troubleshooting
 

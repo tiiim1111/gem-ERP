@@ -1,7 +1,7 @@
 # GEM ERP — Status Transition Reference
 
 Canonical state machines for every stateful document and record in GEM ERP
-(Asset & Inventory Management for GEM Cor). This document is the contract that
+(Asset & Inventory Management for GemCor). This document is the contract that
 `apps/api` services, `packages/database` enums/check constraints, and
 `apps/web` UI action menus must implement. It is derived from the master spec
 (`asset-inventory-system-codex-master-prompt.md`), primarily sections 12

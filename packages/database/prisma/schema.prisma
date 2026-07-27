@@ -163,6 +163,14 @@ enum MaintenanceWorkOrderStatus {
   CANCELED
 }
 
+/// How an approval step resolves its approver (system invariant).
+enum ApprovalApproverType {
+  ROLE
+  POSITION
+  DEPT_HEAD
+  USER
+}
+
 enum ApprovalStatus {
   PENDING
   APPROVED
@@ -560,16 +568,19 @@ model StorageLocation {
 }
 
 model Department {
-  id         String    @id @default(uuid()) @db.Uuid
-  branchId   String?   @map("branch_id") @db.Uuid
-  code       String    @unique
-  name       String
-  isActive   Boolean   @default(true) @map("is_active")
-  archivedAt DateTime? @map("archived_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  id             String    @id @default(uuid()) @db.Uuid
+  branchId       String?   @map("branch_id") @db.Uuid
+  code           String    @unique
+  name           String
+  /// Department head — the approver for DEPT_HEAD approval steps.
+  headEmployeeId String?   @map("head_employee_id") @db.Uuid
+  isActive       Boolean   @default(true) @map("is_active")
+  archivedAt     DateTime? @map("archived_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  branch Branch? @relation("BranchDepartments", fields: [branchId], references: [id], onDelete: Restrict)
+  branch       Branch?   @relation("BranchDepartments", fields: [branchId], references: [id], onDelete: Restrict)
+  headEmployee Employee? @relation("DepartmentHead", fields: [headEmployeeId], references: [id], onDelete: SetNull)
 
   employees         Employee[]         @relation("DepartmentEmployees")
   stockTransactions StockTransaction[] @relation("StockTransactionDepartment")
@@ -589,7 +600,8 @@ model Position {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  employees Employee[] @relation("PositionEmployees")
+  employees     Employee[]     @relation("PositionEmployees")
+  approvalSteps ApprovalStep[] @relation("ApprovalStepApproverPosition")
 
   @@map("positions")
 }
@@ -623,6 +635,7 @@ model Employee {
   position   Position?   @relation("PositionEmployees", fields: [positionId], references: [id], onDelete: Restrict)
   supervisor Employee?   @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
   reports    Employee[]  @relation("EmployeeSupervisor")
+  headOf     Department[] @relation("DepartmentHead")
   user       User?       @relation("EmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
 
   stockTransactions    StockTransaction[]     @relation("StockTransactionEmployee")
@@ -2028,20 +2041,26 @@ model ApprovalWorkflow {
   @@map("approval_workflows")
 }
 
-/// One approval step: approver is a role or a named user.
+/// One approval step. Approver resolution is parameterized (per GemCor
+/// requirement, 2026-07-27): a role, a specific position, the requester's
+/// department head (resolved at request time via departments.head_employee_id),
+/// or a named user. Exactly the column matching approverType is set.
 model ApprovalStep {
-  id             String   @id @default(uuid()) @db.Uuid
-  workflowId     String   @map("workflow_id") @db.Uuid
-  sequence       Int
-  name           String?
-  approverRoleId String?  @map("approver_role_id") @db.Uuid
-  approverUserId String?  @map("approver_user_id") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id                 String               @id @default(uuid()) @db.Uuid
+  workflowId         String               @map("workflow_id") @db.Uuid
+  sequence           Int
+  name               String?
+  approverType       ApprovalApproverType @map("approver_type")
+  approverRoleId     String?              @map("approver_role_id") @db.Uuid
+  approverPositionId String?              @map("approver_position_id") @db.Uuid
+  approverUserId     String?              @map("approver_user_id") @db.Uuid
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
 
-  workflow     ApprovalWorkflow @relation("ApprovalWorkflowSteps", fields: [workflowId], references: [id], onDelete: Cascade)
-  approverRole Role?            @relation("ApprovalStepApproverRole", fields: [approverRoleId], references: [id], onDelete: Restrict)
-  approverUser User?            @relation("ApprovalStepApproverUser", fields: [approverUserId], references: [id], onDelete: Restrict)
+  workflow         ApprovalWorkflow @relation("ApprovalWorkflowSteps", fields: [workflowId], references: [id], onDelete: Cascade)
+  approverRole     Role?            @relation("ApprovalStepApproverRole", fields: [approverRoleId], references: [id], onDelete: Restrict)
+  approverPosition Position?        @relation("ApprovalStepApproverPosition", fields: [approverPositionId], references: [id], onDelete: Restrict)
+  approverUser     User?            @relation("ApprovalStepApproverUser", fields: [approverUserId], references: [id], onDelete: Restrict)
 
   currentForRequests ApprovalRequest[] @relation("ApprovalRequestCurrentStep")
   actions            ApprovalAction[]  @relation("ApprovalActionStep")

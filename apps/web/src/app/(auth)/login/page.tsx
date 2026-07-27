@@ -17,7 +17,7 @@ export default function LoginPage() {
         </div>
         <div>
           <h1 className="text-lg font-semibold">GEM ERP</h1>
-          <p className="text-sm text-muted-foreground">Asset &amp; Inventory Management · GEM Cor</p>
+          <p className="text-sm text-muted-foreground">Asset &amp; Inventory Management · GemCor</p>
         </div>
       </div>
       <Card>

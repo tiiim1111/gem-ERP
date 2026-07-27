@@ -42,14 +42,14 @@ AST-{BRANCH_CODE}-{CATEGORY_CODE}-{YEAR}-{SEQ}
 | Segment | Rule | Example |
 | --- | --- | --- |
 | `AST` | Fixed literal prefix | `AST` |
-| `BRANCH_CODE` | Branch short code (2–5 chars, uppercase) from `branches` | `MNL`, `CEB`, `DVO` |
+| `BRANCH_CODE` | Branch short code (2–5 chars, uppercase) from `branches` | `SUB`, `MKT` |
 | `CATEGORY_CODE` | Item category short code (2–5 chars) from the item's category lookup | `LAP`, `MON`, `PRN` |
 | `YEAR` | 4-digit year of registration, org timezone (Asia/Manila) | `2026` |
 | `SEQ` | Zero-padded 6-digit sequence | `000123` |
 
-Examples: `AST-MNL-LAP-2026-000123`, `AST-CEB-MON-2026-000045`.
+Examples: `AST-SUB-LAP-2026-000123`, `AST-MKT-MON-2026-000045`.
 
-Sequence scope: one counter per `(branch, category, year)` tuple, allocated from `sequence_counters` inside the same database transaction that creates the asset (counter key e.g. `asset_tag:MNL:LAP:2026`). Counters reset per year by virtue of the year being part of the key; they never rewind within a key. Gaps are acceptable (a rolled-back transaction may burn a number); duplicates are not — the `assets.asset_tag` column has a unique index.
+Sequence scope: one counter per `(branch, category, year)` tuple, allocated from `sequence_counters` inside the same database transaction that creates the asset (counter key e.g. `asset_tag:SUB:LAP:2026`). Counters reset per year by virtue of the year being part of the key; they never rewind within a key. Gaps are acceptable (a rolled-back transaction may burn a number); duplicates are not — the `assets.asset_tag` column has a unique index.
 
 The asset tag is immutable after registration. If an asset moves branches, the tag keeps its original branch code — the tag records provenance, and the asset's *current* branch lives in the `assets` row. Re-tagging is not a rename; it is an audited administrative action reserved for damaged/illegible labels and reuses the existing tag on a reprinted label.
 
@@ -57,9 +57,9 @@ The asset tag is immutable after registration. If an asset moves branches, the t
 
 Each asset label carries, per spec section 5:
 
-1. **Code 128 barcode** encoding the asset tag literally (`AST-MNL-LAP-2026-000123`). Chosen because it is dense, supports our full character set, and is read by every commodity 1D scanner.
+1. **Code 128 barcode** encoding the asset tag literally (`AST-SUB-LAP-2026-000123`). Chosen because it is dense, supports our full character set, and is read by every commodity 1D scanner.
 2. **QR code** encoding an opaque scan URL (section 4 below) — *not* the asset tag and not any record data.
-3. **Human-readable text**: the asset tag, item name (truncated), and "Property of GEM Cor".
+3. **Human-readable text**: the asset tag, item name (truncated), and "Property of GemCor".
 
 The 1D barcode and the QR code deliberately encode different things: the Code 128 is for operators inside GEM ERP scan screens (fast keyboard-wedge identification by tag), the QR is for camera scans that may start outside the app (resolves through the scan endpoint with full auth).
 
@@ -120,7 +120,7 @@ Warehouses, shelves, and bins get location labels:
 BIN-{BRANCH_CODE}-{WAREHOUSE_CODE}-{LOCATION_CODE}
 ```
 
-Example: `BIN-MNL-WH1-A-03-B2` (the location code segment may itself contain hyphens for zone/aisle/rack/shelf; parsing is prefix-plus-lookup, not positional). The code is derived from the org-structure codes created in Phase 1 and stored on `storage_locations`; labels are printable from the location admin screens once label generation ships in Phase 3.
+Example: `BIN-SUB-WH1-A-03-B2` (the location code segment may itself contain hyphens for zone/aisle/rack/shelf; parsing is prefix-plus-lookup, not positional). The code is derived from the org-structure codes created in Phase 1 and stored on `storage_locations`; labels are printable from the location admin screens once label generation ships in Phase 3.
 
 Scanning a bin label in a transaction screen sets or confirms the source/destination location; in count mode it scopes the count to that bin.
 

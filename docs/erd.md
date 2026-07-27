@@ -1,6 +1,6 @@
 # GEM ERP — Entity-Relationship Design (ERD)
 
-Asset & Inventory Management for GEM Cor. Single company, multi-branch.
+Asset & Inventory Management for GemCor. Single company, multi-branch.
 
 **Source of truth:** `packages/database/prisma/schema.prisma` (66 models, 20 enums).
 This document is generated from that schema and must be kept in sync with it. The
@@ -803,7 +803,7 @@ erDiagram
   }
   sequence_counters {
     uuid id PK
-    string key UK "e.g. AST-MNL-LAP-2026"
+    string key UK "e.g. AST-SUB-LAP-2026"
     bigint last_value
   }
 ```
@@ -824,7 +824,7 @@ deleted with its parent. Archival legend:
 
 | Table | Purpose | Constraints / uniques / indexes | Archival |
 |---|---|---|---|
-| `organizations` | Single-company root ("GEM Cor"); org timezone (Asia/Manila) and currency (PHP). | `code` unique. | soft-archive (`is_active`). |
+| `organizations` | Single-company root ("GemCor"); org timezone (Asia/Manila) and currency (PHP). | `code` unique. | soft-archive (`is_active`). |
 | `users` | Login accounts. Password argon2id; lockout counters for 5-failure/15-min throttling. | `email` unique; index `is_active`. | soft-archive (`is_active`, `archived_at`). |
 | `user_sessions` | Server-side cookie sessions; stores only SHA-256 hash of the opaque 256-bit token; 12h sliding expiry. | `token_hash` unique; indexes `user_id`, `expires_at`. Cascade on user delete. | rows expire (`expires_at`) or are revoked (`revoked_at`); purgeable. |
 | `roles` | Role catalog (7 seeded roles; `is_system` protects them). | `code` unique. | soft-archive (`is_active`). |
@@ -838,7 +838,7 @@ deleted with its parent. Archival legend:
 
 | Table | Purpose | Constraints / uniques / indexes | Archival |
 |---|---|---|---|
-| `branches` | Physical branches (MNL/CEB/DVO). | `code` globally unique; indexes `organization_id`, `is_active`. | soft-archive. |
+| `branches` | Physical branches (SUB/MKT). | `code` globally unique; indexes `organization_id`, `is_active`. | soft-archive. |
 | `warehouses` | Warehouses within a branch; optional default receiving/issue locations (`SetNull`). | unique `(branch_id, code)`; indexes `branch_id`, `is_active`. | soft-archive. |
 | `storage_locations` | Nested zone/aisle/rack/shelf/bin tree (self-FK `parent_id`); bins may carry their own barcode. | unique `(warehouse_id, code)`; `barcode` unique (nullable); indexes `warehouse_id`, `parent_id`. | soft-archive. |
 | `departments` | Departments, optionally branch-scoped (`branch_id` nullable). | `code` globally unique; index `branch_id`. | soft-archive. |
@@ -928,7 +928,7 @@ deleted with its parent. Archival legend:
 | `attachments` | File metadata; bytes live in MinIO/S3 bucket `gemerp-attachments`. Polymorphic owner; branch scoping enforced in the app layer. | `storage_key` unique; indexes `(resource_type, resource_id)`, `branch_id`. | soft-archive (`archived_at`). |
 | `audit_logs` | **Append-only** audit trail. No `updated_at` by design. `resource_id` is a plain string so non-UUID identifiers (e.g. permission codes) can be referenced. Old/new values as JSON; secrets redacted by the writer. | indexes `actor_user_id`, `action`, `(resource_type, resource_id)`, `branch_id`, `occurred_at`. | append-only; retention policy TBD. |
 | `lookup_values` | Business-managed configurable vocabularies keyed by `category` (ASSET_CONDITION, TRANSACTION_REASON, ADJUSTMENT_REASON, DISPOSAL_METHOD, MAINTENANCE_TYPE, MAINTENANCE_PRIORITY, SUPPLIER_CATEGORY, DOCUMENT_TYPE, ASSET_CRITICALITY, NOTIFICATION_TYPE, ...); optionally branch-scoped; `is_system` protects seeded values. All referencing FKs are Restrict — deactivate, never delete. | unique `(category, code)`; indexes `(category, is_active)`, `branch_id`. | soft-archive (`is_active`). |
-| `sequence_counters` | Named counters for business document numbers (asset tags, PO numbers, transaction numbers). Keys embed scope+period, e.g. `AST-MNL-LAP-2026`, `PO-2026`, `TRF-2026`. | `key` unique; `last_value` BigInt. | permanent. |
+| `sequence_counters` | Named counters for business document numbers (asset tags, PO numbers, transaction numbers). Keys embed scope+period, e.g. `AST-SUB-LAP-2026`, `PO-2026`, `TRF-2026`. | `key` unique; `last_value` BigInt. | permanent. |
 
 ---
 
@@ -983,7 +983,7 @@ contract; every service that touches stock must honor it.
   number, transaction number, transfer number, count number, WO number, lot
   barcodes, ...) is generated from a named counter row — **never** from the
   UUID primary key.
-- Counter keys embed the scope and period (e.g. `AST-MNL-LAP-2026`,
+- Counter keys embed the scope and period (e.g. `AST-SUB-LAP-2026`,
   `PO-2026`, `TRF-2026`), so sequences reset per year/prefix by key
   convention, not by resetting rows.
 - Increment protocol: `SELECT ... FOR UPDATE` (or an atomic

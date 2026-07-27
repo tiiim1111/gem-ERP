@@ -1,6 +1,6 @@
 # GEM ERP — Permission Matrix
 
-Authoritative catalog of every permission string in GEM ERP (Asset & Inventory Management for GEM Cor), the seven initial roles, and the enforcement rules that bind them. Source spec: `asset-inventory-system-codex-master-prompt.md`, sections 8 (roles, permissions, branch scope), 19 (approvals), 22 (audit), 28 (security).
+Authoritative catalog of every permission string in GEM ERP (Asset & Inventory Management for GemCor), the seven initial roles, and the enforcement rules that bind them. Source spec: `asset-inventory-system-codex-master-prompt.md`, sections 8 (roles, permissions, branch scope), 19 (approvals), 22 (audit), 28 (security).
 
 This document is the contract mirrored in code by `@gemerp/shared`:
 
@@ -274,7 +274,7 @@ Per spec section 19: **a requester cannot approve their own controlled transacti
 
 - Only a Super Admin may assign or remove the `SUPER_ADMIN` role, or deactivate/reset/manage a user who holds it. Branch Admins' `user.roles.manage` is restricted to non-system-critical roles (everything except `SUPER_ADMIN`).
 - `user.branch_access.manage` held by a Branch Admin can only grant/revoke branches within the admin's own branch access.
-- System roles (`isSystem: true`) cannot be renamed, deleted, or — for `SUPER_ADMIN` — repermissioned. `role.permissions.manage` on the other system roles is allowed (Super Admin only) so GEM Cor can tune defaults, and every change is audited.
+- System roles (`isSystem: true`) cannot be renamed, deleted, or — for `SUPER_ADMIN` — repermissioned. `role.permissions.manage` on the other system roles is allowed (Super Admin only) so GemCor can tune defaults, and every change is audited.
 - Users referenced by business records are never hard-deleted; `user.deactivate` is the terminal action and revokes all their sessions.
 - No permission exempts anyone from audit logging.
 

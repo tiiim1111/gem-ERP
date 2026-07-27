@@ -7,7 +7,7 @@ export const metadata: Metadata = {
     default: 'GEM ERP',
     template: '%s · GEM ERP',
   },
-  description: 'Asset & Inventory Management for GEM Cor',
+  description: 'Asset & Inventory Management for GemCor',
 };
 
 export const viewport: Viewport = {

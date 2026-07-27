@@ -2,13 +2,13 @@
  * GEM ERP development seed (idempotent - safe to run repeatedly).
  *
  * Seeds the canonical Phase 1 data set:
- * - Organization "GEM Cor" with branches MNL / CEB / DVO
+ * - Organization "GemCor" with branches SUB (Subic) / MKT (Makati)
  * - Warehouses and storage locations per branch (with default locations)
  * - The full permission catalog from @gemerp/shared ALL_PERMISSIONS
  * - The 7 initial roles from @gemerp/shared ROLE_DEFINITIONS
  * - One user per role, password "ChangeMe!123" (argon2id) - DEV ONLY,
  *   never use these credentials outside development
- * - Branch access: non-superadmin users -> MNL (branch admin also CEB)
+ * - Branch access: non-superadmin users -> SUB (branch admin gets SUB + MKT)
  * - An audit_logs entry recording that seeding ran
  *
  * All writes are upserts keyed on natural unique keys.
@@ -59,21 +59,22 @@ const STANDARD_LOCATIONS: LocationSeed[] = [
   { code: "A-02", name: "Rack A-02", locationType: "RACK" },
 ];
 
+// Real GemCor branches (confirmed by Tim, 2026-07-27).
 const BRANCHES: BranchSeed[] = [
   {
-    code: "MNL",
-    name: "Manila HQ",
-    city: "Manila",
+    code: "SUB",
+    name: "GemCor - Subic",
+    city: "Subic",
     warehouses: [
       {
-        code: "MNL-WH1",
-        name: "Manila Main Warehouse",
-        description: "Primary warehouse for Manila HQ",
+        code: "SUB-WH1",
+        name: "Subic Main Warehouse",
+        description: "Primary warehouse for GemCor - Subic",
         locations: STANDARD_LOCATIONS,
       },
       {
-        code: "MNL-SR1",
-        name: "Manila HQ Stockroom",
+        code: "SUB-SR1",
+        name: "Subic Stockroom",
         description: "Office consumables stockroom",
         locations: [
           { code: "RCV", name: "Receiving Shelf", locationType: "RECEIVING" },
@@ -84,27 +85,14 @@ const BRANCHES: BranchSeed[] = [
     ],
   },
   {
-    code: "CEB",
-    name: "Cebu Branch",
-    city: "Cebu City",
+    code: "MKT",
+    name: "GemCor - Makati",
+    city: "Makati",
     warehouses: [
       {
-        code: "CEB-WH1",
-        name: "Cebu Warehouse",
-        description: "Primary warehouse for Cebu Branch",
-        locations: STANDARD_LOCATIONS,
-      },
-    ],
-  },
-  {
-    code: "DVO",
-    name: "Davao Branch",
-    city: "Davao City",
-    warehouses: [
-      {
-        code: "DVO-WH1",
-        name: "Davao Warehouse",
-        description: "Primary warehouse for Davao Branch",
+        code: "MKT-WH1",
+        name: "Makati Warehouse",
+        description: "Primary warehouse for GemCor - Makati",
         locations: STANDARD_LOCATIONS,
       },
     ],
@@ -118,15 +106,15 @@ interface UserSeed {
   branchCodes: string[];
 }
 
-/** Non-superadmin users get MNL access only; branch admin also gets CEB. */
+/** Non-superadmin users get Subic access only; branch admin gets both branches. */
 const USERS: UserSeed[] = [
   { email: "superadmin@gemcor.dev", displayName: "Super Admin", roleCode: "SUPER_ADMIN", branchCodes: [] },
-  { email: "branchadmin@gemcor.dev", displayName: "Branch Admin", roleCode: "BRANCH_ADMIN", branchCodes: ["MNL", "CEB"] },
-  { email: "warehouse@gemcor.dev", displayName: "Warehouse Custodian", roleCode: "WAREHOUSE_CUSTODIAN", branchCodes: ["MNL"] },
-  { email: "assets@gemcor.dev", displayName: "Asset Custodian", roleCode: "ASSET_CUSTODIAN", branchCodes: ["MNL"] },
-  { email: "maintenance@gemcor.dev", displayName: "Maintenance Personnel", roleCode: "MAINTENANCE_PERSONNEL", branchCodes: ["MNL"] },
-  { email: "auditor@gemcor.dev", displayName: "Auditor", roleCode: "AUDITOR", branchCodes: ["MNL"] },
-  { email: "employee@gemcor.dev", displayName: "Employee Requester", roleCode: "EMPLOYEE", branchCodes: ["MNL"] },
+  { email: "branchadmin@gemcor.dev", displayName: "Branch Admin", roleCode: "BRANCH_ADMIN", branchCodes: ["SUB", "MKT"] },
+  { email: "warehouse@gemcor.dev", displayName: "Warehouse Custodian", roleCode: "WAREHOUSE_CUSTODIAN", branchCodes: ["SUB"] },
+  { email: "assets@gemcor.dev", displayName: "Asset Custodian", roleCode: "ASSET_CUSTODIAN", branchCodes: ["SUB"] },
+  { email: "maintenance@gemcor.dev", displayName: "Maintenance Personnel", roleCode: "MAINTENANCE_PERSONNEL", branchCodes: ["SUB"] },
+  { email: "auditor@gemcor.dev", displayName: "Auditor", roleCode: "AUDITOR", branchCodes: ["SUB"] },
+  { email: "employee@gemcor.dev", displayName: "Employee Requester", roleCode: "EMPLOYEE", branchCodes: ["SUB"] },
 ];
 
 function permissionParts(code: string): { resource: string; action: string } {
@@ -140,10 +128,10 @@ function permissionParts(code: string): { resource: string; action: string } {
 async function seedOrganizationAndBranches(): Promise<Map<string, string>> {
   const organization = await prisma.organization.upsert({
     where: { code: "GEMCOR" },
-    update: { name: "GEM Cor", timezone: "Asia/Manila", currencyCode: "PHP", isActive: true },
+    update: { name: "GemCor", timezone: "Asia/Manila", currencyCode: "PHP", isActive: true },
     create: {
       code: "GEMCOR",
-      name: "GEM Cor",
+      name: "GemCor",
       timezone: "Asia/Manila",
       currencyCode: "PHP",
     },

@@ -1,6 +1,6 @@
 # GEM ERP — Implementation Plan
 
-Asset & Inventory Management for GEM Cor. Single company, multi-branch.
+Asset & Inventory Management for GemCor. Single company, multi-branch.
 
 This document expands the phase plan from spec section 32 of
 [`asset-inventory-system-codex-master-prompt.md`](../asset-inventory-system-codex-master-prompt.md)
@@ -108,12 +108,12 @@ postponed, with reason.
       `roles`, `permissions`, `role_permissions`, `user_roles`, `user_branch_access`,
       `branches`, `warehouses`, `storage_locations`, `audit_logs`, `sequence_counters`.
 - [x] Initial migration files checked in.
-- [x] Seed script (dev only): org "GEM Cor"; branches MNL "Manila HQ",
-      CEB "Cebu Branch", DVO "Davao Branch"; 1–2 warehouses per branch with
+- [x] Seed script (dev only): org "GemCor"; branches SUB "GemCor - Subic",
+      MKT "GemCor - Makati"; 1–2 warehouses per branch with
       storage locations; the 7 roles from `ROLE_DEFINITIONS`; one user per role
       (`superadmin@` / `branchadmin@` / `warehouse@` / `assets@` / `maintenance@`
       / `auditor@` / `employee@` — all `…@gemcor.dev`, password `ChangeMe!123`);
-      non-superadmin users scoped to MNL (branchadmin also CEB).
+      non-superadmin users scoped to SUB (branchadmin also MKT).
 
 **Shared contract (`packages/shared`)**
 - [x] `PERMISSIONS` nested const, `ALL_PERMISSIONS`, `ROLE_DEFINITIONS`.
@@ -192,7 +192,7 @@ Manual/scripted checks against the running stack:
   `SessionUser` with all permissions; 6th consecutive bad password locks the
   account for 15 minutes; every attempt appears in `GET /audit-logs`.
 - A non-superadmin user (e.g. `warehouse@gemcor.dev`) cannot list users
-  (403 with machine-readable code) and sees only MNL-scoped org data.
+  (403 with machine-readable code) and sees only SUB-scoped org data.
 - Web: login → shell renders; admin pages perform real CRUD against the API;
   logout revokes the session (token unusable afterwards).
 - Deferred e2e suites executed once Docker is available (see table above).
@@ -236,7 +236,7 @@ Manual/scripted checks against the running stack:
   duplicate barcode rejection, lookup delete-protection.
 - Integration tests (real Postgres): employee CRUD + archival, item creation for
   each category/tracking combination, import dry-run vs. commit parity.
-- Branch-scope tests: MNL-only user cannot read CEB employees.
+- Branch-scope tests: SUB-only user cannot read MKT employees.
 - e2e: create item, import employees from template file.
 
 ---
@@ -384,13 +384,25 @@ Manual/scripted checks against the running stack:
       transactions — counts never overwrite balances directly.
 - [ ] Configurable approval framework (spec section 19) retrofitted onto POs,
       adjustments, inter-branch transfers, disposals, loss/damage declarations,
-      retirement, and high-value thresholds: multi-step, role or named approver,
-      branch scope, amount/quantity thresholds, delegation windows, required
-      rejection comments, full history; self-approval denied by default.
+      retirement, and high-value thresholds: multi-step, branch scope,
+      amount/quantity thresholds, delegation windows, required rejection
+      comments, full history; self-approval denied by default.
+- [ ] **Parameterized approver resolution** (GemCor requirement, 2026-07-27 —
+      already modeled in `approval_steps.approver_type`): each step resolves its
+      approver by one of
+      `ROLE` (any active user holding the role, branch-scoped) ·
+      `POSITION` (any active user whose employee record holds the position) ·
+      `DEPT_HEAD` (the requester's department head via
+      `departments.head_employee_id`, resolved at request time) ·
+      `USER` (a specific named person). Admin UI must let workflow editors pick
+      any of the four per step.
 - [ ] In-app notifications (spec section 20): low/out of stock, pending approval,
       rejected/returned, maintenance due/overdue, warranty expiry, lot expiry,
       overdue returns, unreceived transfers, separation with outstanding assets,
       failed jobs. Read/unread, deep links, recipient rules, deduplication.
+      External channels (email/SMS/Viber) are **on hold** per GemCor
+      (2026-07-27) — design the service interface channel-ready but ship
+      in-app only.
 - [ ] Worker: notification fan-out and scheduled detectors moved fully onto BullMQ.
 - [ ] Permissions: `approval.*`, count and notification actions.
 - [ ] Web: count session screens (mobile-first scanning), approval inbox,
@@ -433,7 +445,7 @@ Manual/scripted checks against the running stack:
 ### Verification criteria
 
 - Integration tests: every report query respects branch scope and permissions
-  (auditor sees, employee-role does not; MNL user never sees CEB rows).
+  (auditor sees, employee-role does not; SUB user never sees MKT rows).
 - Snapshot tests for export files against seeded data.
 - Queued export job test: enqueue → process → notify → download authorized only
   for the requester.
@@ -522,7 +534,7 @@ Manual/scripted checks against the running stack:
 
 | # | Assumption |
 | --- | --- |
-| A1 | Single organization ("GEM Cor"); no multi-tenant requirements. Multi-branch only. |
+| A1 | Single organization ("GemCor"); no multi-tenant requirements. Multi-branch only. |
 | A2 | Single currency PHP; no FX. Timezone: store UTC, display Asia/Manila org-wide. |
 | A3 | Online-first: no offline stock transactions in any planned phase. |
 | A4 | Local credential auth is sufficient; OIDC/SSO is future-ready but unscheduled. |
@@ -532,7 +544,7 @@ Manual/scripted checks against the running stack:
 | A8 | Modular monolith throughout; the worker shares domain packages but no microservices. |
 | A9 | Barcode scanners behave as keyboard input; camera scanning covers mobile. |
 | A10 | Accounting (AP/GL/payments) permanently out of scope; procurement stores amounts as reference data only. |
-| A11 | Dev seed data (branches MNL/CEB/DVO, 7 role users, `ChangeMe!123`) is development-only and never shipped to production. |
+| A11 | Dev seed data (branches SUB/MKT, 7 role users, `ChangeMe!123`) is development-only and never shipped to production. |
 
 ---
 

@@ -1,6 +1,6 @@
 # GEM ERP — Architecture Decision Record (Phase 0)
 
-**Product:** GEM ERP — Asset & Inventory Management for GEM Cor. Single company, multi-branch.
+**Product:** GEM ERP — Asset & Inventory Management for GemCor. Single company, multi-branch.
 **Status:** Accepted (Phase 0 baseline)
 **Date:** 2026-07-23
 **Authoritative spec:** [`asset-inventory-system-codex-master-prompt.md`](../asset-inventory-system-codex-master-prompt.md)
@@ -247,9 +247,9 @@ Spec §23: metadata in Postgres, bytes in object storage, never a public bucket.
 
 ### Seed data (dev only)
 
-- Org **GEM Cor**; branches **MNL** "Manila HQ", **CEB** "Cebu Branch", **DVO** "Davao Branch"; 1–2 warehouses per branch with a few storage locations each.
+- Org **GemCor**; branches **SUB** "GemCor - Subic", **MKT** "GemCor - Makati"; 1–2 warehouses per branch with a few storage locations each.
 - The 7 roles from `ROLE_DEFINITIONS`; one user per role: `superadmin@`, `branchadmin@`, `warehouse@`, `assets@`, `maintenance@`, `auditor@`, `employee@` — all `@gemcor.dev`, password `ChangeMe!123`.
-- Non-superadmin users get branch access to MNL only; branchadmin additionally gets CEB.
+- Non-superadmin users get branch access to SUB only; branchadmin additionally gets MKT.
 
 ---
 

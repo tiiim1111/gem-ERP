@@ -1,6 +1,6 @@
 # GEM ERP — REST API Contract (`/api/v1`)
 
-**Product:** GEM ERP — Asset & Inventory Management for GEM Cor (single company, multi-branch).
+**Product:** GEM ERP — Asset & Inventory Management for GemCor (single company, multi-branch).
 **Server:** `@gemerp/api` (NestJS 11, port 3001). Global prefix `api/v1`. Swagger UI at `/api/docs`.
 **Status legend:** `✅ Phase 1 — implemented` = live now. `P2`–`P7` = planned phase per spec §32. Phase 8 adds no new endpoints (hardening only).
 
@@ -119,10 +119,10 @@ State changes are **explicit action endpoints** (`submit`, `approve`, `reject`, 
 
 | Document | Pattern | Example |
 |---|---|---|
-| Asset tag | `AST-{BRANCH}-{CAT}-{YYYY}-{SEQ6}` | `AST-MNL-LAP-2026-000123` |
+| Asset tag | `AST-{BRANCH}-{CAT}-{YYYY}-{SEQ6}` | `AST-SUB-LAP-2026-000123` |
 | Item SKU | `SKU-{CAT}-{SEQ}` | `SKU-PPR-00017` |
 | Lot | `LOT-{SKU}-{YYYYMMDD}-{SEQ}` | `LOT-PPR-00017-20260301-01` |
-| Bin/location | `BIN-{BRANCH}-{WH}-{LOC}` | `BIN-MNL-WH1-A01` |
+| Bin/location | `BIN-{BRANCH}-{WH}-{LOC}` | `BIN-SUB-WH1-A01` |
 | Stock transaction | `STK-{YYYY}-{SEQ6}` | `STK-2026-000482` |
 | Purchase order | `PO-{YYYY}-{SEQ5}` | `PO-2026-00042` |
 | Goods receipt | `GR-{YYYY}-{SEQ5}` | `GR-2026-00108` |

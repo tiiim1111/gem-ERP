@@ -17,6 +17,22 @@ Entry format:
 
 ---
 
+## 2026-07-27 (later) — Real branches, parameterized approvers, notifications on hold
+
+Tim's answers to the kickoff questions, applied:
+
+**Done:**
+- **Real branches** (replaces MNL/CEB/DVO placeholders): `SUB` "GemCor - Subic" (2 warehouses) and `MKT` "GemCor - Makati" (1 warehouse). Seed, README, all docs, and web form example updated; org name normalized to "GemCor". Non-superadmin seed users scoped to SUB; branch admin gets SUB+MKT (assumption — flip if Makati is the main office). Dev DB reseeded and placeholder branch rows surgically removed (avoided full `migrate reset`); verified via API: superadmin sees both, auditor sees SUB only.
+- **Parameterized approvals** (Tim's requirement): approval steps now resolve approvers by `ROLE` | `POSITION` | `DEPT_HEAD` | `USER`. Schema migration `approval_approver_types_and_dept_head`: `approval_steps.approver_type` enum + `approver_position_id` FK; `departments.head_employee_id` FK (resolves DEPT_HEAD at request time). Behavior lands in Phase 6; requirement recorded in `docs/implementation-plan.md`.
+- **Notifications external channels on hold** per Tim — Phase 6 ships in-app only, service interface stays channel-ready.
+- Re-verified: build 4/4, typecheck 5/5, lint 3/3, 35/35 tests, live API smoke test.
+
+**Pending / Next:**
+- Confirm with Tim: which branch is the "main"/HQ branch (affects default seed scoping only).
+- Phase 6 must implement approver resolution for all four types + admin UI.
+
+---
+
 ## 2026-07-27 — Phase 1 verified end-to-end and pushed
 
 **Done:**
