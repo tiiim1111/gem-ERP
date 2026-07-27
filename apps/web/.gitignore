@@ -1,0 +1,12 @@
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+*.tsbuildinfo
+
+# vercel
+.vercel

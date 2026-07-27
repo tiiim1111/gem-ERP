@@ -1,0 +1,21 @@
+{
+  // GEM ERP shared TypeScript base. Every package extends this (directly or via
+  // library/nestjs/nextjs presets). Do NOT set outDir/rootDir/include here —
+  // relative paths in an extended config resolve against THIS file's directory.
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  }
+}

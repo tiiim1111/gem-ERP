@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* GEM ERP semantic design tokens (light theme). */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --primary: 221 83% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 94%;
+    --secondary-foreground: 222 47% 15%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 42%;
+
+    --accent: 220 14% 94%;
+    --accent-foreground: 222 47% 15%;
+
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 32%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 92% 38%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 13% 89%;
+    --input: 220 13% 85%;
+    --ring: 221 83% 45%;
+
+    --sidebar: 222 47% 11%;
+    --sidebar-foreground: 220 14% 83%;
+    --sidebar-accent: 221 60% 24%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-muted/40 text-foreground antialiased;
+    min-height: 100%;
+    font-feature-settings: 'tnum' 1;
+  }
+}

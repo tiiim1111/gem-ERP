@@ -1,0 +1,28 @@
+{
+  "name": "@gemerp/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript and ESLint presets for the GEM ERP monorepo",
+  "type": "module",
+  "exports": {
+    "./eslint": "./eslint/base.mjs",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/library.json": "./tsconfig/library.json",
+    "./tsconfig/nestjs.json": "./tsconfig/nestjs.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json"
+  },
+  "files": [
+    "eslint",
+    "tsconfig"
+  ],
+  "dependencies": {
+    "@eslint/js": "^9.25.0",
+    "eslint-config-prettier": "^10.1.0",
+    "globals": "^15.14.0",
+    "typescript-eslint": "^8.30.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0",
+    "typescript": "^5.5.0"
+  }
+}

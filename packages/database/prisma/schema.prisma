@@ -1,0 +1,2269 @@
+// GEM ERP - Asset & Inventory Management for GEM Cor.
+// Full-system data model (ERD backbone). Later phases refine; they should not restructure.
+//
+// Conventions
+// - UUID primary keys: @id @default(uuid()) @db.Uuid
+// - snake_case table names via @@map, snake_case columns via @map
+// - Money: Decimal @db.Decimal(14, 2). Quantities: Decimal @db.Decimal(14, 4)
+// - Enums ONLY for true invariants (document statuses, asset lifecycle, tracking
+//   method, business category, transaction types, approval states). All
+//   business-managed values (conditions, reasons, maintenance types, priorities,
+//   supplier categories, document types, ...) live in lookup_values and are
+//   referenced by FK with onDelete: Restrict so referenced values cannot vanish.
+// - onDelete: Restrict by default; Cascade only for pure child rows (document
+//   lines, join tables, contacts, per-item settings); SetNull only for optional
+//   convenience pointers (e.g. warehouse default locations).
+// - Master data carries is_active and/or archived_at (soft archive - never hard
+//   delete referenced records). Ledger/audit tables are append-only.
+// - Business document numbers (PO number, asset tag, transaction number, ...)
+//   are generated from sequence_counters, never from the primary key.
+// - All timestamps are stored in UTC. Display timezone: Asia/Manila.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums (true system invariants only)
+// ---------------------------------------------------------------------------
+
+/// Item business classification (spec section 4).
+enum BusinessCategory {
+  SERIALIZED_ASSET
+  CONSUMABLE
+  BULK_NON_CONSUMABLE
+}
+
+/// How stock of an item is tracked (spec section 4).
+enum TrackingMethod {
+  SERIAL
+  QUANTITY
+  LOT
+}
+
+/// Serialized asset lifecycle (spec section 12).
+enum AssetLifecycleStatus {
+  DRAFT
+  AVAILABLE
+  RESERVED
+  ASSIGNED
+  IN_TRANSFER
+  UNDER_INSPECTION
+  UNDER_MAINTENANCE
+  DAMAGED
+  LOST
+  RETIRED
+  DISPOSED
+}
+
+/// Stock transaction types (spec section 13).
+enum StockTransactionType {
+  OPENING_BALANCE
+  PURCHASE_RECEIPT
+  NON_PURCHASE_RECEIPT
+  ISSUE_TO_EMPLOYEE
+  ISSUE_TO_DEPARTMENT
+  RETURN_FROM_EMPLOYEE
+  RETURN_TO_SUPPLIER
+  LOCATION_TRANSFER
+  INTER_BRANCH_TRANSFER_OUT
+  INTER_BRANCH_TRANSFER_IN
+  ADJUSTMENT_INCREASE
+  ADJUSTMENT_DECREASE
+  MAINTENANCE_ISSUE
+  DISPOSAL
+  REVERSAL
+}
+
+/// Controlled-document workflow status (stock transactions, supplier returns).
+enum StockDocumentStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  POSTED
+  CANCELED
+  REVERSED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  CANCELED
+  CLOSED
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  POSTED
+  CANCELED
+  REVERSED
+}
+
+enum TransferType {
+  LOCATION
+  INTRA_BRANCH
+  INTER_BRANCH
+}
+
+enum TransferStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELED
+}
+
+enum InventoryCountType {
+  FULL
+  CYCLE
+}
+
+enum InventoryCountStatus {
+  DRAFT
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  CANCELED
+}
+
+/// Result flag for a counted line (asset verification flags, spec section 17).
+enum CountLineFlag {
+  MATCHED
+  VARIANCE
+  MISSING
+  UNEXPECTED
+  DUPLICATE
+  MISPLACED
+}
+
+enum MaintenanceWorkOrderStatus {
+  DRAFT
+  OPEN
+  ASSIGNED
+  SCHEDULED
+  IN_PROGRESS
+  ON_HOLD
+  AWAITING_PARTS
+  AWAITING_VENDOR
+  COMPLETED
+  VERIFIED
+  CANCELED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RETURNED
+  CANCELED
+}
+
+enum ApprovalActionType {
+  APPROVE
+  REJECT
+  RETURN
+  CANCEL
+  COMMENT
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  SEPARATED
+}
+
+enum AssetAssignmentStatus {
+  PENDING_ACKNOWLEDGMENT
+  ACTIVE
+  RETURNED
+  LOST
+  CANCELED
+}
+
+enum AcknowledgmentType {
+  ISSUE
+  RETURN
+}
+
+enum PermissionOverrideEffect {
+  ALLOW
+  DENY
+}
+
+enum StockReservationStatus {
+  ACTIVE
+  RELEASED
+  FULFILLED
+  CANCELED
+}
+
+// ---------------------------------------------------------------------------
+// Identity and access
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         String   @unique
+  name         String
+  legalName    String?  @map("legal_name")
+  timezone     String   @default("Asia/Manila")
+  currencyCode String   @default("PHP") @map("currency_code")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  branches Branch[] @relation("OrganizationBranches")
+
+  @@map("organizations")
+}
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  displayName        String    @map("display_name")
+  isActive           Boolean   @default(true) @map("is_active")
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until")
+  lastLoginAt        DateTime? @map("last_login_at")
+  lastActivityAt     DateTime? @map("last_activity_at")
+  passwordChangedAt  DateTime? @map("password_changed_at")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  archivedAt         DateTime? @map("archived_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  sessions                   UserSession[]              @relation("UserSessions")
+  userRoles                  UserRole[]                 @relation("UserRoleUser")
+  branchAccess               UserBranchAccess[]         @relation("UserBranchAccessUser")
+  permissionOverrides        UserPermissionOverride[]   @relation("UserPermissionOverrideUser")
+  permissionOverridesCreated UserPermissionOverride[]   @relation("UserPermissionOverrideCreatedBy")
+  employee                   Employee?                  @relation("EmployeeUser")
+  stockTransactionsCreated   StockTransaction[]         @relation("StockTransactionCreatedBy")
+  stockTransactionsApproved  StockTransaction[]         @relation("StockTransactionApprovedBy")
+  stockTransactionsPosted    StockTransaction[]         @relation("StockTransactionPostedBy")
+  stockTransactionsCanceled  StockTransaction[]         @relation("StockTransactionCanceledBy")
+  stockTransactionsReversed  StockTransaction[]         @relation("StockTransactionReversedBy")
+  stockReservationsCreated   StockReservation[]         @relation("StockReservationCreatedBy")
+  assetAssignmentsIssued     AssetAssignment[]          @relation("AssetAssignmentAssignedBy")
+  assetReturnsReceived       AssetAssignment[]          @relation("AssetAssignmentReturnReceivedBy")
+  assetMovementsRecorded     AssetMovement[]            @relation("AssetMovementMovedBy")
+  assetConditionsRecorded    AssetConditionHistory[]    @relation("AssetConditionHistoryRecordedBy")
+  assetStatusChangesRecorded AssetStatusHistory[]       @relation("AssetStatusHistoryChangedBy")
+  assetAcknowledgments       AssetAcknowledgment[]      @relation("AssetAcknowledgmentUser")
+  purchaseOrdersCreated      PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
+  purchaseOrdersApproved     PurchaseOrder[]            @relation("PurchaseOrderApprovedBy")
+  purchaseOrdersCanceled     PurchaseOrder[]            @relation("PurchaseOrderCanceledBy")
+  goodsReceiptsCreated       GoodsReceipt[]             @relation("GoodsReceiptCreatedBy")
+  goodsReceiptsPosted        GoodsReceipt[]             @relation("GoodsReceiptPostedBy")
+  goodsReceiptsCanceled      GoodsReceipt[]             @relation("GoodsReceiptCanceledBy")
+  supplierReturnsCreated     SupplierReturn[]           @relation("SupplierReturnCreatedBy")
+  supplierReturnsApproved    SupplierReturn[]           @relation("SupplierReturnApprovedBy")
+  supplierReturnsPosted      SupplierReturn[]           @relation("SupplierReturnPostedBy")
+  transfersCreated           Transfer[]                 @relation("TransferCreatedBy")
+  transfersApproved          Transfer[]                 @relation("TransferApprovedBy")
+  transfersDispatched        Transfer[]                 @relation("TransferDispatchedBy")
+  transfersCanceled          Transfer[]                 @relation("TransferCanceledBy")
+  transferReceiptsReceived   TransferReceipt[]          @relation("TransferReceiptReceivedBy")
+  countSessionsCreated       InventoryCountSession[]    @relation("InventoryCountSessionCreatedBy")
+  countSessionsApproved      InventoryCountSession[]    @relation("InventoryCountSessionApprovedBy")
+  countLinesCounted          InventoryCountLine[]       @relation("InventoryCountLineCountedBy")
+  workOrdersCreated          MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderCreatedBy")
+  workOrdersReported         MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderReportedBy")
+  workOrdersVerified         MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderVerifiedBy")
+  workOrderTasksCompleted    MaintenanceWorkOrderTask[] @relation("MaintenanceWorkOrderTaskCompletedBy")
+  meterReadingsRecorded      AssetMeterReading[]        @relation("AssetMeterReadingRecordedBy")
+  approvalStepsAsApprover    ApprovalStep[]             @relation("ApprovalStepApproverUser")
+  approvalRequestsMade       ApprovalRequest[]          @relation("ApprovalRequestRequestedBy")
+  approvalActions            ApprovalAction[]           @relation("ApprovalActionActor")
+  approvalActionsDelegated   ApprovalAction[]           @relation("ApprovalActionDelegatedFor")
+  delegationsGiven           ApprovalDelegation[]       @relation("ApprovalDelegationDelegator")
+  delegationsReceived        ApprovalDelegation[]       @relation("ApprovalDelegationDelegate")
+  notifications              Notification[]             @relation("NotificationRecipient")
+  attachmentsUploaded        Attachment[]               @relation("AttachmentUploadedBy")
+  auditLogs                  AuditLog[]                 @relation("AuditLogActor")
+
+  @@index([isActive])
+  @@map("users")
+}
+
+/// Server-side cookie sessions. Stores only the SHA-256 hash of the opaque
+/// 256-bit session token - never the token itself. 12h sliding expiry.
+model UserSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  user User @relation("UserSessions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[] @relation("RolePermissionRole")
+  userRoles       UserRole[]       @relation("UserRoleRole")
+  approvalSteps   ApprovalStep[]   @relation("ApprovalStepApproverRole")
+
+  @@map("roles")
+}
+
+/// Permission catalog. Codes use dot notation "resource.action" (spec section 8),
+/// e.g. asset.view, inventory.receive, procurement.po.create.
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  resource    String
+  action      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]         @relation("RolePermissionPermission")
+  userOverrides   UserPermissionOverride[] @relation("UserPermissionOverridePermission")
+
+  @@index([resource])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid()) @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  role       Role       @relation("RolePermissionRole", fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation("RolePermissionPermission", fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation("UserRoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation("UserRoleRole", fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model UserBranchAccess {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation("UserBranchAccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation("UserBranchAccessBranch", fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, branchId])
+  @@index([branchId])
+  @@map("user_branch_access")
+}
+
+/// Carefully audited per-user permission grants/denies on top of roles.
+model UserPermissionOverride {
+  id           String                   @id @default(uuid()) @db.Uuid
+  userId       String                   @map("user_id") @db.Uuid
+  permissionId String                   @map("permission_id") @db.Uuid
+  effect       PermissionOverrideEffect
+  reason       String?
+  createdById  String?                  @map("created_by_id") @db.Uuid
+  expiresAt    DateTime?                @map("expires_at")
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  updatedAt    DateTime                 @updatedAt @map("updated_at")
+
+  user       User       @relation("UserPermissionOverrideUser", fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation("UserPermissionOverridePermission", fields: [permissionId], references: [id], onDelete: Cascade)
+  createdBy  User?      @relation("UserPermissionOverrideCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([userId, permissionId])
+  @@index([permissionId])
+  @@map("user_permission_overrides")
+}
+
+// ---------------------------------------------------------------------------
+// Organization structure and employees
+// ---------------------------------------------------------------------------
+
+model Branch {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  code           String    @unique
+  name           String
+  address        String?
+  city           String?
+  region         String?
+  phone          String?
+  timezone       String?
+  isActive       Boolean   @default(true) @map("is_active")
+  archivedAt     DateTime? @map("archived_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation("OrganizationBranches", fields: [organizationId], references: [id], onDelete: Restrict)
+
+  warehouses                Warehouse[]             @relation("BranchWarehouses")
+  departments               Department[]            @relation("BranchDepartments")
+  employees                 Employee[]              @relation("BranchEmployees")
+  userAccess                UserBranchAccess[]      @relation("UserBranchAccessBranch")
+  stockTransactions         StockTransaction[]      @relation("StockTransactionBranch")
+  stockTransactionsAsSource StockTransaction[]      @relation("StockTransactionSourceBranch")
+  stockTransactionsAsDest   StockTransaction[]      @relation("StockTransactionDestinationBranch")
+  stockLedgerEntries        StockLedgerEntry[]      @relation("StockLedgerEntryBranch")
+  stockBalances             StockBalance[]          @relation("StockBalanceBranch")
+  assets                    Asset[]                 @relation("AssetBranch")
+  assetMovementsFrom        AssetMovement[]         @relation("AssetMovementFromBranch")
+  assetMovementsTo          AssetMovement[]         @relation("AssetMovementToBranch")
+  purchaseOrders            PurchaseOrder[]         @relation("PurchaseOrderBranch")
+  goodsReceipts             GoodsReceipt[]          @relation("GoodsReceiptBranch")
+  supplierReturns           SupplierReturn[]        @relation("SupplierReturnBranch")
+  transfersOut              Transfer[]              @relation("TransferSourceBranch")
+  transfersIn               Transfer[]              @relation("TransferDestinationBranch")
+  countSessions             InventoryCountSession[] @relation("InventoryCountSessionBranch")
+  maintenanceWorkOrders     MaintenanceWorkOrder[]  @relation("MaintenanceWorkOrderBranch")
+  approvalWorkflows         ApprovalWorkflow[]      @relation("ApprovalWorkflowBranch")
+  approvalRequests          ApprovalRequest[]       @relation("ApprovalRequestBranch")
+  notifications             Notification[]          @relation("NotificationBranch")
+  attachments               Attachment[]            @relation("AttachmentBranch")
+  auditLogs                 AuditLog[]              @relation("AuditLogBranch")
+  lookupValues              LookupValue[]           @relation("LookupValueBranch")
+
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("branches")
+}
+
+model Warehouse {
+  id                         String    @id @default(uuid()) @db.Uuid
+  branchId                   String    @map("branch_id") @db.Uuid
+  code                       String
+  name                       String
+  description                String?
+  defaultReceivingLocationId String?   @map("default_receiving_location_id") @db.Uuid
+  defaultIssueLocationId     String?   @map("default_issue_location_id") @db.Uuid
+  isActive                   Boolean   @default(true) @map("is_active")
+  archivedAt                 DateTime? @map("archived_at")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+
+  branch                   Branch           @relation("BranchWarehouses", fields: [branchId], references: [id], onDelete: Restrict)
+  defaultReceivingLocation StorageLocation? @relation("WarehouseDefaultReceivingLocation", fields: [defaultReceivingLocationId], references: [id], onDelete: SetNull)
+  defaultIssueLocation     StorageLocation? @relation("WarehouseDefaultIssueLocation", fields: [defaultIssueLocationId], references: [id], onDelete: SetNull)
+
+  storageLocations          StorageLocation[]       @relation("WarehouseStorageLocations")
+  itemSettings              ItemWarehouseSetting[]  @relation("ItemWarehouseSettingWarehouse")
+  stockTransactionsAsSource StockTransaction[]      @relation("StockTransactionSourceWarehouse")
+  stockTransactionsAsDest   StockTransaction[]      @relation("StockTransactionDestinationWarehouse")
+  stockLedgerEntries        StockLedgerEntry[]      @relation("StockLedgerEntryWarehouse")
+  stockBalances             StockBalance[]          @relation("StockBalanceWarehouse")
+  stockReservations         StockReservation[]      @relation("StockReservationWarehouse")
+  assets                    Asset[]                 @relation("AssetWarehouse")
+  assetMovementsFrom        AssetMovement[]         @relation("AssetMovementFromWarehouse")
+  assetMovementsTo          AssetMovement[]         @relation("AssetMovementToWarehouse")
+  purchaseOrders            PurchaseOrder[]         @relation("PurchaseOrderDestinationWarehouse")
+  goodsReceipts             GoodsReceipt[]          @relation("GoodsReceiptWarehouse")
+  supplierReturns           SupplierReturn[]        @relation("SupplierReturnWarehouse")
+  transfersOut              Transfer[]              @relation("TransferSourceWarehouse")
+  transfersIn               Transfer[]              @relation("TransferDestinationWarehouse")
+  countSessions             InventoryCountSession[] @relation("InventoryCountSessionWarehouse")
+
+  @@unique([branchId, code])
+  @@index([branchId])
+  @@index([isActive])
+  @@map("warehouses")
+}
+
+/// Nested storage hierarchy: zone / aisle / rack / shelf / bin. Bin labels may
+/// carry their own barcode (BIN-{BRANCH}-{WH}-{LOC} pattern).
+model StorageLocation {
+  id           String    @id @default(uuid()) @db.Uuid
+  warehouseId  String    @map("warehouse_id") @db.Uuid
+  parentId     String?   @map("parent_id") @db.Uuid
+  code         String
+  name         String
+  locationType String?   @map("location_type")
+  barcode      String?   @unique
+  sortOrder    Int       @default(0) @map("sort_order")
+  isActive     Boolean   @default(true) @map("is_active")
+  archivedAt   DateTime? @map("archived_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  warehouse Warehouse         @relation("WarehouseStorageLocations", fields: [warehouseId], references: [id], onDelete: Restrict)
+  parent    StorageLocation?  @relation("StorageLocationParent", fields: [parentId], references: [id], onDelete: Restrict)
+  children  StorageLocation[] @relation("StorageLocationParent")
+
+  receivingDefaultFor Warehouse[]            @relation("WarehouseDefaultReceivingLocation")
+  issueDefaultFor     Warehouse[]            @relation("WarehouseDefaultIssueLocation")
+  itemDefaultSettings ItemWarehouseSetting[] @relation("ItemWarehouseSettingDefaultLocation")
+  stockLinesFrom      StockTransactionLine[] @relation("StockTransactionLineSourceLocation")
+  stockLinesTo        StockTransactionLine[] @relation("StockTransactionLineDestinationLocation")
+  stockLedgerEntries  StockLedgerEntry[]     @relation("StockLedgerEntryLocation")
+  stockBalances       StockBalance[]         @relation("StockBalanceLocation")
+  stockReservations   StockReservation[]     @relation("StockReservationLocation")
+  assets              Asset[]                @relation("AssetStorageLocation")
+  assetMovementsFrom  AssetMovement[]        @relation("AssetMovementFromLocation")
+  assetMovementsTo    AssetMovement[]        @relation("AssetMovementToLocation")
+  assetAssignments    AssetAssignment[]      @relation("AssetAssignmentLocation")
+  goodsReceiptLines   GoodsReceiptLine[]     @relation("GoodsReceiptLineLocation")
+  transfersOut        Transfer[]             @relation("TransferSourceLocation")
+  transfersIn         Transfer[]             @relation("TransferDestinationLocation")
+  countSessions       InventoryCountSession[] @relation("InventoryCountSessionLocation")
+  countLines          InventoryCountLine[]   @relation("InventoryCountLineLocation")
+
+  @@unique([warehouseId, code])
+  @@index([warehouseId])
+  @@index([parentId])
+  @@map("storage_locations")
+}
+
+model Department {
+  id         String    @id @default(uuid()) @db.Uuid
+  branchId   String?   @map("branch_id") @db.Uuid
+  code       String    @unique
+  name       String
+  isActive   Boolean   @default(true) @map("is_active")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  branch Branch? @relation("BranchDepartments", fields: [branchId], references: [id], onDelete: Restrict)
+
+  employees         Employee[]         @relation("DepartmentEmployees")
+  stockTransactions StockTransaction[] @relation("StockTransactionDepartment")
+  assets            Asset[]            @relation("AssetDepartment")
+  assetAssignments  AssetAssignment[]  @relation("AssetAssignmentDepartment")
+
+  @@index([branchId])
+  @@map("departments")
+}
+
+model Position {
+  id         String    @id @default(uuid()) @db.Uuid
+  code       String    @unique
+  name       String
+  isActive   Boolean   @default(true) @map("is_active")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  employees Employee[] @relation("PositionEmployees")
+
+  @@map("positions")
+}
+
+/// Custody-only employee records (no payroll/attendance/HRIS - spec section 9).
+model Employee {
+  id             String         @id @default(uuid()) @db.Uuid
+  employeeNumber String         @unique @map("employee_number")
+  firstName      String         @map("first_name")
+  middleName     String?        @map("middle_name")
+  lastName       String         @map("last_name")
+  displayName    String?        @map("display_name")
+  workEmail      String?        @unique @map("work_email")
+  workPhone      String?        @map("work_phone")
+  branchId       String         @map("branch_id") @db.Uuid
+  departmentId   String?        @map("department_id") @db.Uuid
+  positionId     String?        @map("position_id") @db.Uuid
+  supervisorId   String?        @map("supervisor_id") @db.Uuid
+  status         EmployeeStatus @default(ACTIVE)
+  startDate      DateTime?      @map("start_date") @db.Date
+  separationDate DateTime?      @map("separation_date") @db.Date
+  photoUrl       String?        @map("photo_url")
+  notes          String?
+  userId         String?        @unique @map("user_id") @db.Uuid
+  archivedAt     DateTime?      @map("archived_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  branch     Branch      @relation("BranchEmployees", fields: [branchId], references: [id], onDelete: Restrict)
+  department Department? @relation("DepartmentEmployees", fields: [departmentId], references: [id], onDelete: Restrict)
+  position   Position?   @relation("PositionEmployees", fields: [positionId], references: [id], onDelete: Restrict)
+  supervisor Employee?   @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
+  reports    Employee[]  @relation("EmployeeSupervisor")
+  user       User?       @relation("EmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  stockTransactions    StockTransaction[]     @relation("StockTransactionEmployee")
+  assetsInCustody      Asset[]                @relation("AssetCustodian")
+  assetAssignments     AssetAssignment[]      @relation("AssetAssignmentEmployee")
+  assetMovementsFrom   AssetMovement[]        @relation("AssetMovementFromEmployee")
+  assetMovementsTo     AssetMovement[]        @relation("AssetMovementToEmployee")
+  assetAcknowledgments AssetAcknowledgment[]  @relation("AssetAcknowledgmentEmployee")
+  workOrdersAssigned   MaintenanceWorkOrder[] @relation("MaintenanceWorkOrderAssignedEmployee")
+
+  @@index([branchId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([lastName, firstName])
+  @@map("employees")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+model ItemCategory {
+  id          String    @id @default(uuid()) @db.Uuid
+  code        String    @unique
+  name        String
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  subcategories ItemSubcategory[]       @relation("ItemSubcategoryCategory")
+  items         Item[]                  @relation("ItemCategoryItems")
+  countSessions InventoryCountSession[] @relation("InventoryCountSessionCategory")
+
+  @@map("item_categories")
+}
+
+model ItemSubcategory {
+  id          String    @id @default(uuid()) @db.Uuid
+  categoryId  String    @map("category_id") @db.Uuid
+  code        String
+  name        String
+  description String?
+  sortOrder   Int       @default(0) @map("sort_order")
+  isActive    Boolean   @default(true) @map("is_active")
+  archivedAt  DateTime? @map("archived_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  category ItemCategory @relation("ItemSubcategoryCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+  items    Item[]       @relation("ItemSubcategoryItems")
+
+  @@unique([categoryId, code])
+  @@map("item_subcategories")
+}
+
+model Brand {
+  id         String    @id @default(uuid()) @db.Uuid
+  code       String    @unique
+  name       String
+  isActive   Boolean   @default(true) @map("is_active")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  items Item[] @relation("BrandItems")
+
+  @@map("brands")
+}
+
+model Manufacturer {
+  id         String    @id @default(uuid()) @db.Uuid
+  code       String    @unique
+  name       String
+  isActive   Boolean   @default(true) @map("is_active")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  items Item[] @relation("ManufacturerItems")
+
+  @@map("manufacturers")
+}
+
+model UnitOfMeasure {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  itemsAsBase          Item[]                 @relation("ItemBaseUom")
+  itemsAsPurchase      Item[]                 @relation("ItemPurchaseUom")
+  itemsAsIssue         Item[]                 @relation("ItemIssueUom")
+  conversionsFrom      UomConversion[]        @relation("UomConversionFrom")
+  conversionsTo        UomConversion[]        @relation("UomConversionTo")
+  itemBarcodes         ItemBarcode[]          @relation("ItemBarcodeUom")
+  stockTransactionLines StockTransactionLine[] @relation("StockTransactionLineUom")
+  purchaseOrderLines   PurchaseOrderLine[]    @relation("PurchaseOrderLineUom")
+  goodsReceiptLines    GoodsReceiptLine[]     @relation("GoodsReceiptLineUom")
+  supplierReturnLines  SupplierReturnLine[]   @relation("SupplierReturnLineUom")
+  transferLines        TransferLine[]         @relation("TransferLineUom")
+  countLines           InventoryCountLine[]   @relation("InventoryCountLineUom")
+  maintenanceParts     MaintenancePart[]      @relation("MaintenancePartUom")
+
+  @@map("units_of_measure")
+}
+
+/// Item-specific UOM conversion: 1 fromUom = factor x toUom
+/// (e.g. 1 BOX = 10 PACK, 1 PACK = 100 PIECE).
+model UomConversion {
+  id        String   @id @default(uuid()) @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  fromUomId String   @map("from_uom_id") @db.Uuid
+  toUomId   String   @map("to_uom_id") @db.Uuid
+  factor    Decimal  @db.Decimal(14, 4)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  item    Item          @relation("UomConversionItem", fields: [itemId], references: [id], onDelete: Cascade)
+  fromUom UnitOfMeasure @relation("UomConversionFrom", fields: [fromUomId], references: [id], onDelete: Restrict)
+  toUom   UnitOfMeasure @relation("UomConversionTo", fields: [toUomId], references: [id], onDelete: Restrict)
+
+  @@unique([itemId, fromUomId, toUomId])
+  @@map("uom_conversions")
+}
+
+/// Item master (spec section 11). SKU pattern: SKU-{CATEGORY_CODE}-{SEQUENCE}.
+model Item {
+  id                   String           @id @default(uuid()) @db.Uuid
+  sku                  String           @unique
+  name                 String
+  description          String?
+  businessCategory     BusinessCategory @map("business_category")
+  trackingMethod       TrackingMethod   @map("tracking_method")
+  categoryId           String?          @map("category_id") @db.Uuid
+  subcategoryId        String?          @map("subcategory_id") @db.Uuid
+  brandId              String?          @map("brand_id") @db.Uuid
+  manufacturerId       String?          @map("manufacturer_id") @db.Uuid
+  model                String?
+  baseUomId            String           @map("base_uom_id") @db.Uuid
+  purchaseUomId        String?          @map("purchase_uom_id") @db.Uuid
+  issueUomId           String?          @map("issue_uom_id") @db.Uuid
+  defaultSupplierId    String?          @map("default_supplier_id") @db.Uuid
+  standardCost         Decimal?         @map("standard_cost") @db.Decimal(14, 2)
+  lastPurchaseCost     Decimal?         @map("last_purchase_cost") @db.Decimal(14, 2)
+  isLotTracked         Boolean          @default(false) @map("is_lot_tracked")
+  isExpiryTracked      Boolean          @default(false) @map("is_expiry_tracked")
+  requiresSerialNumber Boolean          @default(false) @map("requires_serial_number")
+  isMaintainable       Boolean          @default(false) @map("is_maintainable")
+  imageUrl             String?          @map("image_url")
+  notes                String?
+  isActive             Boolean          @default(true) @map("is_active")
+  archivedAt           DateTime?        @map("archived_at")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+
+  category        ItemCategory?    @relation("ItemCategoryItems", fields: [categoryId], references: [id], onDelete: Restrict)
+  subcategory     ItemSubcategory? @relation("ItemSubcategoryItems", fields: [subcategoryId], references: [id], onDelete: Restrict)
+  brand           Brand?           @relation("BrandItems", fields: [brandId], references: [id], onDelete: Restrict)
+  manufacturer    Manufacturer?    @relation("ManufacturerItems", fields: [manufacturerId], references: [id], onDelete: Restrict)
+  baseUom         UnitOfMeasure    @relation("ItemBaseUom", fields: [baseUomId], references: [id], onDelete: Restrict)
+  purchaseUom     UnitOfMeasure?   @relation("ItemPurchaseUom", fields: [purchaseUomId], references: [id], onDelete: Restrict)
+  issueUom        UnitOfMeasure?   @relation("ItemIssueUom", fields: [issueUomId], references: [id], onDelete: Restrict)
+  defaultSupplier Supplier?        @relation("ItemDefaultSupplier", fields: [defaultSupplierId], references: [id], onDelete: Restrict)
+
+  barcodes              ItemBarcode[]          @relation("ItemBarcodeItem")
+  uomConversions        UomConversion[]        @relation("UomConversionItem")
+  warehouseSettings     ItemWarehouseSetting[] @relation("ItemWarehouseSettingItem")
+  lots                  InventoryLot[]         @relation("InventoryLotItem")
+  stockTransactionLines StockTransactionLine[] @relation("StockTransactionLineItem")
+  stockLedgerEntries    StockLedgerEntry[]     @relation("StockLedgerEntryItem")
+  stockBalances         StockBalance[]         @relation("StockBalanceItem")
+  stockReservations     StockReservation[]     @relation("StockReservationItem")
+  assets                Asset[]                @relation("AssetItem")
+  purchaseOrderLines    PurchaseOrderLine[]    @relation("PurchaseOrderLineItem")
+  goodsReceiptLines     GoodsReceiptLine[]     @relation("GoodsReceiptLineItem")
+  supplierReturnLines   SupplierReturnLine[]   @relation("SupplierReturnLineItem")
+  transferLines         TransferLine[]         @relation("TransferLineItem")
+  countLines            InventoryCountLine[]   @relation("InventoryCountLineItem")
+  maintenanceParts      MaintenancePart[]      @relation("MaintenancePartItem")
+  maintenancePlans      MaintenancePlan[]      @relation("MaintenancePlanItem")
+
+  @@index([businessCategory])
+  @@index([trackingMethod])
+  @@index([categoryId])
+  @@index([defaultSupplierId])
+  @@index([isActive])
+  @@index([name])
+  @@map("items")
+}
+
+/// Alternate barcodes per item (supplier, UPC, EAN, packaging).
+/// Unique-while-active: `active` is `true` for live mappings and NULL (never
+/// false) for deactivated ones. Postgres treats NULLs as distinct in unique
+/// constraints, so [barcode, active] allows unlimited deactivated duplicates
+/// while at most one ACTIVE mapping may exist for a barcode system-wide.
+model ItemBarcode {
+  id            String    @id @default(uuid()) @db.Uuid
+  itemId        String    @map("item_id") @db.Uuid
+  barcode       String
+  barcodeType   String?   @map("barcode_type")
+  uomId         String?   @map("uom_id") @db.Uuid
+  isPrimary     Boolean   @default(false) @map("is_primary")
+  active        Boolean?  @default(true) @map("is_active")
+  deactivatedAt DateTime? @map("deactivated_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  item Item           @relation("ItemBarcodeItem", fields: [itemId], references: [id], onDelete: Cascade)
+  uom  UnitOfMeasure? @relation("ItemBarcodeUom", fields: [uomId], references: [id], onDelete: Restrict)
+
+  @@unique([barcode, active])
+  @@index([itemId])
+  @@index([barcode])
+  @@map("item_barcodes")
+}
+
+/// Per-warehouse reorder policy (low-stock detection uses these).
+model ItemWarehouseSetting {
+  id                       String   @id @default(uuid()) @db.Uuid
+  itemId                   String   @map("item_id") @db.Uuid
+  warehouseId              String   @map("warehouse_id") @db.Uuid
+  reorderLevel             Decimal? @map("reorder_level") @db.Decimal(14, 4)
+  reorderQuantity          Decimal? @map("reorder_quantity") @db.Decimal(14, 4)
+  minQuantity              Decimal? @map("min_quantity") @db.Decimal(14, 4)
+  maxQuantity              Decimal? @map("max_quantity") @db.Decimal(14, 4)
+  defaultStorageLocationId String?  @map("default_storage_location_id") @db.Uuid
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  item                   Item             @relation("ItemWarehouseSettingItem", fields: [itemId], references: [id], onDelete: Cascade)
+  warehouse              Warehouse        @relation("ItemWarehouseSettingWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  defaultStorageLocation StorageLocation? @relation("ItemWarehouseSettingDefaultLocation", fields: [defaultStorageLocationId], references: [id], onDelete: SetNull)
+
+  @@unique([itemId, warehouseId])
+  @@index([warehouseId])
+  @@map("item_warehouse_settings")
+}
+
+/// Lot/batch records for lot-controlled consumables.
+/// Lot barcode pattern: LOT-{SKU_CODE}-{DATE}-{SEQUENCE}.
+model InventoryLot {
+  id                String    @id @default(uuid()) @db.Uuid
+  itemId            String    @map("item_id") @db.Uuid
+  lotNumber         String    @map("lot_number")
+  supplierLotNumber String?   @map("supplier_lot_number")
+  manufactureDate   DateTime? @map("manufacture_date") @db.Date
+  expiryDate        DateTime? @map("expiry_date") @db.Date
+  barcode           String?   @unique
+  notes             String?
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  item Item @relation("InventoryLotItem", fields: [itemId], references: [id], onDelete: Restrict)
+
+  stockTransactionLines StockTransactionLine[] @relation("StockTransactionLineLot")
+  stockLedgerEntries    StockLedgerEntry[]     @relation("StockLedgerEntryLot")
+  stockBalances         StockBalance[]         @relation("StockBalanceLot")
+  stockReservations     StockReservation[]     @relation("StockReservationLot")
+  goodsReceiptLines     GoodsReceiptLine[]     @relation("GoodsReceiptLineLot")
+  supplierReturnLines   SupplierReturnLine[]   @relation("SupplierReturnLineLot")
+  transferLines         TransferLine[]         @relation("TransferLineLot")
+  countLines            InventoryCountLine[]   @relation("InventoryCountLineLot")
+  maintenanceParts      MaintenancePart[]      @relation("MaintenancePartLot")
+
+  @@unique([itemId, lotNumber])
+  @@index([expiryDate])
+  @@map("inventory_lots")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory ledger
+// ---------------------------------------------------------------------------
+
+/// Controlled stock document. Only POSTED transactions affect stock, via
+/// immutable stock_ledger_entries created in the same database transaction.
+/// Mistakes are corrected with REVERSAL transactions, never edits.
+model StockTransaction {
+  id                     String               @id @default(uuid()) @db.Uuid
+  transactionNumber      String               @unique @map("transaction_number")
+  type                   StockTransactionType
+  status                 StockDocumentStatus  @default(DRAFT)
+  transactionDate        DateTime             @map("transaction_date") @db.Date
+  branchId               String               @map("branch_id") @db.Uuid
+  sourceBranchId         String?              @map("source_branch_id") @db.Uuid
+  destinationBranchId    String?              @map("destination_branch_id") @db.Uuid
+  sourceWarehouseId      String?              @map("source_warehouse_id") @db.Uuid
+  destinationWarehouseId String?              @map("destination_warehouse_id") @db.Uuid
+  employeeId             String?              @map("employee_id") @db.Uuid
+  departmentId           String?              @map("department_id") @db.Uuid
+  supplierId             String?              @map("supplier_id") @db.Uuid
+  purchaseOrderId        String?              @map("purchase_order_id") @db.Uuid
+  goodsReceiptId         String?              @map("goods_receipt_id") @db.Uuid
+  transferId             String?              @map("transfer_id") @db.Uuid
+  workOrderId            String?              @map("maintenance_work_order_id") @db.Uuid
+  countSessionId         String?              @map("count_session_id") @db.Uuid
+  projectRef             String?              @map("project_ref")
+  reasonId               String?              @map("reason_id") @db.Uuid
+  notes                  String?
+  reversalOfId           String?              @map("reversal_of_id") @db.Uuid
+  createdById            String               @map("created_by_id") @db.Uuid
+  submittedAt            DateTime?            @map("submitted_at")
+  approvedById           String?              @map("approved_by_id") @db.Uuid
+  approvedAt             DateTime?            @map("approved_at")
+  postedById             String?              @map("posted_by_id") @db.Uuid
+  postedAt               DateTime?            @map("posted_at")
+  canceledById           String?              @map("canceled_by_id") @db.Uuid
+  canceledAt             DateTime?            @map("canceled_at")
+  reversedById           String?              @map("reversed_by_id") @db.Uuid
+  reversedAt             DateTime?            @map("reversed_at")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+
+  branch               Branch                 @relation("StockTransactionBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  sourceBranch         Branch?                @relation("StockTransactionSourceBranch", fields: [sourceBranchId], references: [id], onDelete: Restrict)
+  destinationBranch    Branch?                @relation("StockTransactionDestinationBranch", fields: [destinationBranchId], references: [id], onDelete: Restrict)
+  sourceWarehouse      Warehouse?             @relation("StockTransactionSourceWarehouse", fields: [sourceWarehouseId], references: [id], onDelete: Restrict)
+  destinationWarehouse Warehouse?             @relation("StockTransactionDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  employee             Employee?              @relation("StockTransactionEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  department           Department?            @relation("StockTransactionDepartment", fields: [departmentId], references: [id], onDelete: Restrict)
+  supplier             Supplier?              @relation("StockTransactionSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrder        PurchaseOrder?         @relation("StockTransactionPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  goodsReceipt         GoodsReceipt?          @relation("StockTransactionGoodsReceipt", fields: [goodsReceiptId], references: [id], onDelete: Restrict)
+  transfer             Transfer?              @relation("StockTransactionTransfer", fields: [transferId], references: [id], onDelete: Restrict)
+  workOrder            MaintenanceWorkOrder?  @relation("StockTransactionWorkOrder", fields: [workOrderId], references: [id], onDelete: Restrict)
+  countSession         InventoryCountSession? @relation("StockTransactionCountSession", fields: [countSessionId], references: [id], onDelete: Restrict)
+  reason               LookupValue?           @relation("LookupStockTransactionReason", fields: [reasonId], references: [id], onDelete: Restrict)
+  reversalOf           StockTransaction?      @relation("StockTransactionReversalOf", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversals            StockTransaction[]     @relation("StockTransactionReversalOf")
+  createdBy            User                   @relation("StockTransactionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy           User?                  @relation("StockTransactionApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  postedBy             User?                  @relation("StockTransactionPostedBy", fields: [postedById], references: [id], onDelete: Restrict)
+  canceledBy           User?                  @relation("StockTransactionCanceledBy", fields: [canceledById], references: [id], onDelete: Restrict)
+  reversedBy           User?                  @relation("StockTransactionReversedBy", fields: [reversedById], references: [id], onDelete: Restrict)
+
+  lines            StockTransactionLine[] @relation("StockTransactionLines")
+  ledgerEntries    StockLedgerEntry[]     @relation("StockLedgerEntryTransaction")
+  maintenanceParts MaintenancePart[]      @relation("MaintenancePartStockTransaction")
+
+  @@index([type])
+  @@index([status])
+  @@index([transactionDate])
+  @@index([branchId])
+  @@index([postedAt])
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+  @@index([goodsReceiptId])
+  @@index([transferId])
+  @@index([workOrderId])
+  @@index([countSessionId])
+  @@index([employeeId])
+  @@map("stock_transactions")
+}
+
+model StockTransactionLine {
+  id                    String   @id @default(uuid()) @db.Uuid
+  transactionId         String   @map("transaction_id") @db.Uuid
+  lineNumber            Int      @map("line_number")
+  itemId                String   @map("item_id") @db.Uuid
+  lotId                 String?  @map("lot_id") @db.Uuid
+  assetId               String?  @map("asset_id") @db.Uuid
+  sourceLocationId      String?  @map("source_location_id") @db.Uuid
+  destinationLocationId String?  @map("destination_location_id") @db.Uuid
+  enteredUomId          String   @map("entered_uom_id") @db.Uuid
+  enteredQuantity       Decimal  @map("entered_quantity") @db.Decimal(14, 4)
+  baseQuantity          Decimal  @map("base_quantity") @db.Decimal(14, 4)
+  unitCost              Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  totalCost             Decimal? @map("total_cost") @db.Decimal(14, 2)
+  notes                 String?
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  transaction         StockTransaction @relation("StockTransactionLines", fields: [transactionId], references: [id], onDelete: Cascade)
+  item                Item             @relation("StockTransactionLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  lot                 InventoryLot?    @relation("StockTransactionLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  asset               Asset?           @relation("StockTransactionLineAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  sourceLocation      StorageLocation? @relation("StockTransactionLineSourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+  destinationLocation StorageLocation? @relation("StockTransactionLineDestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  enteredUom          UnitOfMeasure    @relation("StockTransactionLineUom", fields: [enteredUomId], references: [id], onDelete: Restrict)
+
+  ledgerEntries StockLedgerEntry[] @relation("StockLedgerEntryLine")
+
+  @@unique([transactionId, lineNumber])
+  @@index([itemId])
+  @@index([lotId])
+  @@index([assetId])
+  @@map("stock_transaction_lines")
+}
+
+/// Append-only inventory ledger. One signed base-quantity delta per item /
+/// warehouse / location / lot touched by a posted transaction. Never updated,
+/// never deleted; corrections come from reversal transactions.
+model StockLedgerEntry {
+  id                String   @id @default(uuid()) @db.Uuid
+  transactionId     String   @map("transaction_id") @db.Uuid
+  transactionLineId String?  @map("transaction_line_id") @db.Uuid
+  itemId            String   @map("item_id") @db.Uuid
+  lotId             String?  @map("lot_id") @db.Uuid
+  assetId           String?  @map("asset_id") @db.Uuid
+  branchId          String   @map("branch_id") @db.Uuid
+  warehouseId       String   @map("warehouse_id") @db.Uuid
+  storageLocationId String?  @map("storage_location_id") @db.Uuid
+  quantityDelta     Decimal  @map("quantity_delta") @db.Decimal(14, 4)
+  unitCost          Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  postedAt          DateTime @map("posted_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  transaction     StockTransaction      @relation("StockLedgerEntryTransaction", fields: [transactionId], references: [id], onDelete: Restrict)
+  transactionLine StockTransactionLine? @relation("StockLedgerEntryLine", fields: [transactionLineId], references: [id], onDelete: Restrict)
+  item            Item                  @relation("StockLedgerEntryItem", fields: [itemId], references: [id], onDelete: Restrict)
+  lot             InventoryLot?         @relation("StockLedgerEntryLot", fields: [lotId], references: [id], onDelete: Restrict)
+  asset           Asset?                @relation("StockLedgerEntryAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  branch          Branch                @relation("StockLedgerEntryBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse             @relation("StockLedgerEntryWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation?      @relation("StockLedgerEntryLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+
+  @@index([itemId, warehouseId])
+  @@index([itemId, branchId])
+  @@index([warehouseId, storageLocationId])
+  @@index([transactionId])
+  @@index([lotId])
+  @@index([assetId])
+  @@index([postedAt])
+  @@map("stock_ledger_entries")
+}
+
+/// Transactionally-maintained projection of the ledger (never edited directly).
+/// NOTE: Postgres treats NULL as distinct in unique constraints, so the posting
+/// service must upsert balances inside the same serialized transaction as the
+/// ledger write (SELECT ... FOR UPDATE); the constraint is defense in depth.
+model StockBalance {
+  id                String   @id @default(uuid()) @db.Uuid
+  itemId            String   @map("item_id") @db.Uuid
+  branchId          String   @map("branch_id") @db.Uuid
+  warehouseId       String   @map("warehouse_id") @db.Uuid
+  storageLocationId String?  @map("storage_location_id") @db.Uuid
+  lotId             String?  @map("lot_id") @db.Uuid
+  onHandQty         Decimal  @default(0) @map("on_hand_qty") @db.Decimal(14, 4)
+  reservedQty       Decimal  @default(0) @map("reserved_qty") @db.Decimal(14, 4)
+  inTransitQty      Decimal  @default(0) @map("in_transit_qty") @db.Decimal(14, 4)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  item            Item             @relation("StockBalanceItem", fields: [itemId], references: [id], onDelete: Restrict)
+  branch          Branch           @relation("StockBalanceBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse        @relation("StockBalanceWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation? @relation("StockBalanceLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+  lot             InventoryLot?    @relation("StockBalanceLot", fields: [lotId], references: [id], onDelete: Restrict)
+
+  @@unique([itemId, warehouseId, storageLocationId, lotId])
+  @@index([warehouseId])
+  @@index([branchId])
+  @@index([itemId])
+  @@map("stock_balances")
+}
+
+model StockReservation {
+  id                String                 @id @default(uuid()) @db.Uuid
+  itemId            String                 @map("item_id") @db.Uuid
+  warehouseId       String                 @map("warehouse_id") @db.Uuid
+  storageLocationId String?                @map("storage_location_id") @db.Uuid
+  lotId             String?                @map("lot_id") @db.Uuid
+  quantity          Decimal                @db.Decimal(14, 4)
+  status            StockReservationStatus @default(ACTIVE)
+  transferId        String?                @map("transfer_id") @db.Uuid
+  purpose           String?
+  createdById       String?                @map("created_by_id") @db.Uuid
+  expiresAt         DateTime?              @map("expires_at")
+  releasedAt        DateTime?              @map("released_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  item            Item             @relation("StockReservationItem", fields: [itemId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse        @relation("StockReservationWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation? @relation("StockReservationLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+  lot             InventoryLot?    @relation("StockReservationLot", fields: [lotId], references: [id], onDelete: Restrict)
+  transfer        Transfer?        @relation("StockReservationTransfer", fields: [transferId], references: [id], onDelete: Restrict)
+  createdBy       User?            @relation("StockReservationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([itemId, warehouseId])
+  @@index([status])
+  @@index([transferId])
+  @@map("stock_reservations")
+}
+
+// ---------------------------------------------------------------------------
+// Serialized assets
+// ---------------------------------------------------------------------------
+
+/// Physical asset instance. Asset tag pattern:
+/// AST-{BRANCH_CODE}-{CATEGORY_CODE}-{YEAR}-{SEQUENCE} (from sequence_counters).
+/// scanToken is the opaque token embedded in the QR code; scanning still
+/// requires authentication and authorization.
+model Asset {
+  id                 String               @id @default(uuid()) @db.Uuid
+  assetTag           String               @unique @map("asset_tag")
+  scanToken          String               @unique @map("scan_token")
+  serialNumber       String?              @map("serial_number")
+  itemId             String               @map("item_id") @db.Uuid
+  status             AssetLifecycleStatus @default(DRAFT)
+  conditionId        String?              @map("condition_id") @db.Uuid
+  criticalityId      String?              @map("criticality_id") @db.Uuid
+  branchId           String               @map("branch_id") @db.Uuid
+  warehouseId        String?              @map("warehouse_id") @db.Uuid
+  storageLocationId  String?              @map("storage_location_id") @db.Uuid
+  custodianId        String?              @map("custodian_employee_id") @db.Uuid
+  departmentId       String?              @map("department_id") @db.Uuid
+  acquisitionDate    DateTime?            @map("acquisition_date") @db.Date
+  acquisitionCost    Decimal?             @map("acquisition_cost") @db.Decimal(14, 2)
+  supplierId         String?              @map("supplier_id") @db.Uuid
+  purchaseOrderId    String?              @map("purchase_order_id") @db.Uuid
+  goodsReceiptLineId String?              @map("goods_receipt_line_id") @db.Uuid
+  warrantyStartDate  DateTime?            @map("warranty_start_date") @db.Date
+  warrantyEndDate    DateTime?            @map("warranty_end_date") @db.Date
+  maintenanceRequired Boolean             @default(false) @map("maintenance_required")
+  lastInspectionAt   DateTime?            @map("last_inspection_at")
+  nextMaintenanceAt  DateTime?            @map("next_maintenance_at")
+  retiredAt          DateTime?            @map("retired_at")
+  disposedAt         DateTime?            @map("disposed_at")
+  disposalMethodId   String?              @map("disposal_method_id") @db.Uuid
+  disposalNotes      String?              @map("disposal_notes")
+  notes              String?
+  archivedAt         DateTime?            @map("archived_at")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  item             Item              @relation("AssetItem", fields: [itemId], references: [id], onDelete: Restrict)
+  condition        LookupValue?      @relation("LookupAssetCondition", fields: [conditionId], references: [id], onDelete: Restrict)
+  criticality      LookupValue?      @relation("LookupAssetCriticality", fields: [criticalityId], references: [id], onDelete: Restrict)
+  disposalMethod   LookupValue?      @relation("LookupAssetDisposalMethod", fields: [disposalMethodId], references: [id], onDelete: Restrict)
+  branch           Branch            @relation("AssetBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse        Warehouse?        @relation("AssetWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  storageLocation  StorageLocation?  @relation("AssetStorageLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+  custodian        Employee?         @relation("AssetCustodian", fields: [custodianId], references: [id], onDelete: Restrict)
+  department       Department?       @relation("AssetDepartment", fields: [departmentId], references: [id], onDelete: Restrict)
+  supplier         Supplier?         @relation("AssetSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrder    PurchaseOrder?    @relation("PurchaseOrderAssets", fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  goodsReceiptLine GoodsReceiptLine? @relation("GoodsReceiptLineAssets", fields: [goodsReceiptLineId], references: [id], onDelete: Restrict)
+
+  assignments           AssetAssignment[]       @relation("AssetAssignmentAsset")
+  movements             AssetMovement[]         @relation("AssetMovementAsset")
+  conditionHistory      AssetConditionHistory[] @relation("AssetConditionHistoryAsset")
+  statusHistory         AssetStatusHistory[]    @relation("AssetStatusHistoryAsset")
+  acknowledgments       AssetAcknowledgment[]   @relation("AssetAcknowledgmentAsset")
+  stockTransactionLines StockTransactionLine[]  @relation("StockTransactionLineAsset")
+  stockLedgerEntries    StockLedgerEntry[]      @relation("StockLedgerEntryAsset")
+  transferLines         TransferLine[]          @relation("TransferLineAsset")
+  countLines            InventoryCountLine[]    @relation("InventoryCountLineAsset")
+  workOrders            MaintenanceWorkOrder[]  @relation("MaintenanceWorkOrderAsset")
+  maintenancePlans      MaintenancePlan[]       @relation("MaintenancePlanAsset")
+  meterReadings         AssetMeterReading[]     @relation("AssetMeterReadingAsset")
+
+  @@unique([itemId, serialNumber])
+  @@index([status])
+  @@index([branchId])
+  @@index([warehouseId])
+  @@index([custodianId])
+  @@index([itemId])
+  @@index([nextMaintenanceAt])
+  @@index([warrantyEndDate])
+  @@map("assets")
+}
+
+/// Custody record: assignment to an employee, department, project, or location.
+model AssetAssignment {
+  id                  String                @id @default(uuid()) @db.Uuid
+  assetId             String                @map("asset_id") @db.Uuid
+  status              AssetAssignmentStatus @default(PENDING_ACKNOWLEDGMENT)
+  employeeId          String?               @map("employee_id") @db.Uuid
+  departmentId        String?               @map("department_id") @db.Uuid
+  locationId          String?               @map("location_id") @db.Uuid
+  projectRef          String?               @map("project_ref")
+  assignedAt          DateTime              @map("assigned_at")
+  assignedById        String                @map("assigned_by_id") @db.Uuid
+  expectedReturnAt    DateTime?             @map("expected_return_at")
+  conditionAtIssueId  String?               @map("condition_at_issue_id") @db.Uuid
+  issueNotes          String?               @map("issue_notes")
+  acknowledgedAt      DateTime?             @map("acknowledged_at")
+  returnedAt          DateTime?             @map("returned_at")
+  returnReceivedById  String?               @map("return_received_by_id") @db.Uuid
+  conditionAtReturnId String?               @map("condition_at_return_id") @db.Uuid
+  returnNotes         String?               @map("return_notes")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  asset             Asset            @relation("AssetAssignmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  employee          Employee?        @relation("AssetAssignmentEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  department        Department?      @relation("AssetAssignmentDepartment", fields: [departmentId], references: [id], onDelete: Restrict)
+  location          StorageLocation? @relation("AssetAssignmentLocation", fields: [locationId], references: [id], onDelete: Restrict)
+  assignedBy        User             @relation("AssetAssignmentAssignedBy", fields: [assignedById], references: [id], onDelete: Restrict)
+  returnReceivedBy  User?            @relation("AssetAssignmentReturnReceivedBy", fields: [returnReceivedById], references: [id], onDelete: Restrict)
+  conditionAtIssue  LookupValue?     @relation("LookupAssignmentConditionAtIssue", fields: [conditionAtIssueId], references: [id], onDelete: Restrict)
+  conditionAtReturn LookupValue?     @relation("LookupAssignmentConditionAtReturn", fields: [conditionAtReturnId], references: [id], onDelete: Restrict)
+
+  acknowledgments AssetAcknowledgment[] @relation("AssetAcknowledgmentAssignment")
+  movements       AssetMovement[]       @relation("AssetMovementAssignment")
+
+  @@index([assetId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([expectedReturnAt])
+  @@map("asset_assignments")
+}
+
+/// Location/custody movement history (append-only).
+model AssetMovement {
+  id              String    @id @default(uuid()) @db.Uuid
+  assetId         String    @map("asset_id") @db.Uuid
+  movedAt         DateTime  @map("moved_at")
+  fromBranchId    String?   @map("from_branch_id") @db.Uuid
+  toBranchId      String?   @map("to_branch_id") @db.Uuid
+  fromWarehouseId String?   @map("from_warehouse_id") @db.Uuid
+  toWarehouseId   String?   @map("to_warehouse_id") @db.Uuid
+  fromLocationId  String?   @map("from_location_id") @db.Uuid
+  toLocationId    String?   @map("to_location_id") @db.Uuid
+  fromEmployeeId  String?   @map("from_employee_id") @db.Uuid
+  toEmployeeId    String?   @map("to_employee_id") @db.Uuid
+  transferId      String?   @map("transfer_id") @db.Uuid
+  assignmentId    String?   @map("assignment_id") @db.Uuid
+  reasonId        String?   @map("reason_id") @db.Uuid
+  movedById       String?   @map("moved_by_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  asset         Asset            @relation("AssetMovementAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  fromBranch    Branch?          @relation("AssetMovementFromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranch      Branch?          @relation("AssetMovementToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
+  fromWarehouse Warehouse?       @relation("AssetMovementFromWarehouse", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
+  toWarehouse   Warehouse?       @relation("AssetMovementToWarehouse", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  fromLocation  StorageLocation? @relation("AssetMovementFromLocation", fields: [fromLocationId], references: [id], onDelete: Restrict)
+  toLocation    StorageLocation? @relation("AssetMovementToLocation", fields: [toLocationId], references: [id], onDelete: Restrict)
+  fromEmployee  Employee?        @relation("AssetMovementFromEmployee", fields: [fromEmployeeId], references: [id], onDelete: Restrict)
+  toEmployee    Employee?        @relation("AssetMovementToEmployee", fields: [toEmployeeId], references: [id], onDelete: Restrict)
+  transfer      Transfer?        @relation("AssetMovementTransfer", fields: [transferId], references: [id], onDelete: Restrict)
+  assignment    AssetAssignment? @relation("AssetMovementAssignment", fields: [assignmentId], references: [id], onDelete: Restrict)
+  reason        LookupValue?     @relation("LookupAssetMovementReason", fields: [reasonId], references: [id], onDelete: Restrict)
+  movedBy       User?            @relation("AssetMovementMovedBy", fields: [movedById], references: [id], onDelete: Restrict)
+
+  @@index([assetId])
+  @@index([movedAt])
+  @@index([transferId])
+  @@map("asset_movements")
+}
+
+model AssetConditionHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  assetId      String   @map("asset_id") @db.Uuid
+  conditionId  String   @map("condition_id") @db.Uuid
+  recordedAt   DateTime @map("recorded_at")
+  recordedById String?  @map("recorded_by_id") @db.Uuid
+  source       String?
+  workOrderId  String?  @map("maintenance_work_order_id") @db.Uuid
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  asset      Asset                 @relation("AssetConditionHistoryAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  condition  LookupValue           @relation("LookupAssetConditionHistoryCondition", fields: [conditionId], references: [id], onDelete: Restrict)
+  recordedBy User?                 @relation("AssetConditionHistoryRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+  workOrder  MaintenanceWorkOrder? @relation("AssetConditionHistoryWorkOrder", fields: [workOrderId], references: [id], onDelete: Restrict)
+
+  @@index([assetId])
+  @@index([recordedAt])
+  @@map("asset_condition_history")
+}
+
+model AssetStatusHistory {
+  id          String                @id @default(uuid()) @db.Uuid
+  assetId     String                @map("asset_id") @db.Uuid
+  fromStatus  AssetLifecycleStatus? @map("from_status")
+  toStatus    AssetLifecycleStatus  @map("to_status")
+  changedAt   DateTime              @map("changed_at")
+  changedById String?               @map("changed_by_id") @db.Uuid
+  reasonId    String?               @map("reason_id") @db.Uuid
+  notes       String?
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  asset     Asset        @relation("AssetStatusHistoryAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  changedBy User?        @relation("AssetStatusHistoryChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+  reason    LookupValue? @relation("LookupAssetStatusReason", fields: [reasonId], references: [id], onDelete: Restrict)
+
+  @@index([assetId])
+  @@index([changedAt])
+  @@map("asset_status_history")
+}
+
+/// Captured issue/return acknowledgment by the receiving employee.
+model AssetAcknowledgment {
+  id                   String             @id @default(uuid()) @db.Uuid
+  assignmentId         String             @map("assignment_id") @db.Uuid
+  assetId              String             @map("asset_id") @db.Uuid
+  employeeId           String             @map("employee_id") @db.Uuid
+  type                 AcknowledgmentType
+  acknowledgedAt       DateTime           @map("acknowledged_at")
+  acknowledgedByUserId String?            @map("acknowledged_by_user_id") @db.Uuid
+  method               String?
+  notes                String?
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  assignment         AssetAssignment @relation("AssetAcknowledgmentAssignment", fields: [assignmentId], references: [id], onDelete: Restrict)
+  asset              Asset           @relation("AssetAcknowledgmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  employee           Employee        @relation("AssetAcknowledgmentEmployee", fields: [employeeId], references: [id], onDelete: Restrict)
+  acknowledgedByUser User?           @relation("AssetAcknowledgmentUser", fields: [acknowledgedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([assignmentId])
+  @@index([assetId])
+  @@index([employeeId])
+  @@map("asset_acknowledgments")
+}
+
+model AssetMeterReading {
+  id           String   @id @default(uuid()) @db.Uuid
+  assetId      String   @map("asset_id") @db.Uuid
+  meterType    String?  @map("meter_type")
+  readingValue Decimal  @map("reading_value") @db.Decimal(14, 4)
+  readingAt    DateTime @map("reading_at")
+  recordedById String?  @map("recorded_by_id") @db.Uuid
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  asset      Asset @relation("AssetMeterReadingAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  recordedBy User? @relation("AssetMeterReadingRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@index([assetId, readingAt])
+  @@map("asset_meter_readings")
+}
+
+// ---------------------------------------------------------------------------
+// Procurement
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id           String    @id @default(uuid()) @db.Uuid
+  code         String    @unique
+  legalName    String    @map("legal_name")
+  tradeName    String?   @map("trade_name")
+  email        String?
+  phone        String?
+  address      String?
+  city         String?
+  country      String?   @default("PH")
+  taxId        String?   @map("tax_id")
+  paymentTerms String?   @map("payment_terms")
+  categoryId   String?   @map("category_id") @db.Uuid
+  notes        String?
+  isActive     Boolean   @default(true) @map("is_active")
+  archivedAt   DateTime? @map("archived_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  category LookupValue? @relation("LookupSupplierCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+
+  contacts           SupplierContact[]      @relation("SupplierContactSupplier")
+  defaultForItems    Item[]                 @relation("ItemDefaultSupplier")
+  assets             Asset[]                @relation("AssetSupplier")
+  stockTransactions  StockTransaction[]     @relation("StockTransactionSupplier")
+  purchaseOrders     PurchaseOrder[]        @relation("PurchaseOrderSupplier")
+  supplierReturns    SupplierReturn[]       @relation("SupplierReturnSupplier")
+  maintenancePlans   MaintenancePlan[]      @relation("MaintenancePlanVendor")
+  workOrdersAssigned MaintenanceWorkOrder[] @relation("MaintenanceWorkOrderVendor")
+
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+model SupplierContact {
+  id         String   @id @default(uuid()) @db.Uuid
+  supplierId String   @map("supplier_id") @db.Uuid
+  name       String
+  position   String?
+  email      String?
+  phone      String?
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  supplier Supplier @relation("SupplierContactSupplier", fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@map("supplier_contacts")
+}
+
+model PurchaseOrder {
+  id                     String              @id @default(uuid()) @db.Uuid
+  poNumber               String              @unique @map("po_number")
+  supplierId             String              @map("supplier_id") @db.Uuid
+  branchId               String              @map("branch_id") @db.Uuid
+  destinationWarehouseId String              @map("destination_warehouse_id") @db.Uuid
+  status                 PurchaseOrderStatus @default(DRAFT)
+  orderDate              DateTime            @map("order_date") @db.Date
+  expectedDeliveryDate   DateTime?           @map("expected_delivery_date") @db.Date
+  currencyCode           String              @default("PHP") @map("currency_code")
+  subtotal               Decimal             @default(0) @db.Decimal(14, 2)
+  discountTotal          Decimal             @default(0) @map("discount_total") @db.Decimal(14, 2)
+  taxTotal               Decimal             @default(0) @map("tax_total") @db.Decimal(14, 2)
+  grandTotal             Decimal             @default(0) @map("grand_total") @db.Decimal(14, 2)
+  terms                  String?
+  notes                  String?
+  createdById            String              @map("created_by_id") @db.Uuid
+  submittedAt            DateTime?           @map("submitted_at")
+  approvedById           String?             @map("approved_by_id") @db.Uuid
+  approvedAt             DateTime?           @map("approved_at")
+  canceledById           String?             @map("canceled_by_id") @db.Uuid
+  canceledAt             DateTime?           @map("canceled_at")
+  closedAt               DateTime?           @map("closed_at")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+
+  supplier             Supplier  @relation("PurchaseOrderSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
+  branch               Branch    @relation("PurchaseOrderBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  destinationWarehouse Warehouse @relation("PurchaseOrderDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  createdBy            User      @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy           User?     @relation("PurchaseOrderApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  canceledBy           User?     @relation("PurchaseOrderCanceledBy", fields: [canceledById], references: [id], onDelete: Restrict)
+
+  lines             PurchaseOrderLine[] @relation("PurchaseOrderLines")
+  goodsReceipts     GoodsReceipt[]      @relation("GoodsReceiptPurchaseOrder")
+  assets            Asset[]             @relation("PurchaseOrderAssets")
+  stockTransactions StockTransaction[]  @relation("StockTransactionPurchaseOrder")
+
+  @@index([supplierId])
+  @@index([branchId])
+  @@index([status])
+  @@index([orderDate])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id               String   @id @default(uuid()) @db.Uuid
+  purchaseOrderId  String   @map("purchase_order_id") @db.Uuid
+  lineNumber       Int      @map("line_number")
+  itemId           String   @map("item_id") @db.Uuid
+  description      String?
+  uomId            String   @map("uom_id") @db.Uuid
+  quantity         Decimal  @db.Decimal(14, 4)
+  unitPrice        Decimal  @map("unit_price") @db.Decimal(14, 2)
+  discountAmount   Decimal  @default(0) @map("discount_amount") @db.Decimal(14, 2)
+  taxAmount        Decimal  @default(0) @map("tax_amount") @db.Decimal(14, 2)
+  lineTotal        Decimal  @map("line_total") @db.Decimal(14, 2)
+  receivedQuantity Decimal  @default(0) @map("received_quantity") @db.Decimal(14, 4)
+  canceledQuantity Decimal  @default(0) @map("canceled_quantity") @db.Decimal(14, 4)
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  purchaseOrder PurchaseOrder @relation("PurchaseOrderLines", fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item          Item          @relation("PurchaseOrderLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  uom           UnitOfMeasure @relation("PurchaseOrderLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+
+  goodsReceiptLines GoodsReceiptLine[] @relation("GoodsReceiptLinePoLine")
+
+  @@unique([purchaseOrderId, lineNumber])
+  @@index([itemId])
+  @@map("purchase_order_lines")
+}
+
+/// Receiving document against an approved PO. Supports partial and multiple
+/// receipts; stock and serialized assets are created only when POSTED.
+model GoodsReceipt {
+  id                String             @id @default(uuid()) @db.Uuid
+  receiptNumber     String             @unique @map("receipt_number")
+  purchaseOrderId   String             @map("purchase_order_id") @db.Uuid
+  branchId          String             @map("branch_id") @db.Uuid
+  warehouseId       String             @map("warehouse_id") @db.Uuid
+  status            GoodsReceiptStatus @default(DRAFT)
+  receiptDate       DateTime           @map("receipt_date") @db.Date
+  supplierReference String?            @map("supplier_reference")
+  notes             String?
+  createdById       String             @map("created_by_id") @db.Uuid
+  postedById        String?            @map("posted_by_id") @db.Uuid
+  postedAt          DateTime?          @map("posted_at")
+  canceledById      String?            @map("canceled_by_id") @db.Uuid
+  canceledAt        DateTime?          @map("canceled_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  purchaseOrder PurchaseOrder @relation("GoodsReceiptPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  branch        Branch        @relation("GoodsReceiptBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse     Warehouse     @relation("GoodsReceiptWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  createdBy     User          @relation("GoodsReceiptCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  postedBy      User?         @relation("GoodsReceiptPostedBy", fields: [postedById], references: [id], onDelete: Restrict)
+  canceledBy    User?         @relation("GoodsReceiptCanceledBy", fields: [canceledById], references: [id], onDelete: Restrict)
+
+  lines             GoodsReceiptLine[] @relation("GoodsReceiptLines")
+  stockTransactions StockTransaction[] @relation("StockTransactionGoodsReceipt")
+  supplierReturns   SupplierReturn[]   @relation("SupplierReturnGoodsReceipt")
+
+  @@index([purchaseOrderId])
+  @@index([branchId])
+  @@index([status])
+  @@index([receiptDate])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id                  String   @id @default(uuid()) @db.Uuid
+  goodsReceiptId      String   @map("goods_receipt_id") @db.Uuid
+  purchaseOrderLineId String   @map("purchase_order_line_id") @db.Uuid
+  lineNumber          Int      @map("line_number")
+  itemId              String   @map("item_id") @db.Uuid
+  uomId               String   @map("uom_id") @db.Uuid
+  receivedQuantity    Decimal  @map("received_quantity") @db.Decimal(14, 4)
+  baseQuantity        Decimal  @map("base_quantity") @db.Decimal(14, 4)
+  unitCost            Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  lotId               String?  @map("lot_id") @db.Uuid
+  storageLocationId   String?  @map("storage_location_id") @db.Uuid
+  notes               String?
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  goodsReceipt      GoodsReceipt      @relation("GoodsReceiptLines", fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderLine PurchaseOrderLine @relation("GoodsReceiptLinePoLine", fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  item              Item              @relation("GoodsReceiptLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  uom               UnitOfMeasure     @relation("GoodsReceiptLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+  lot               InventoryLot?     @relation("GoodsReceiptLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  storageLocation   StorageLocation?  @relation("GoodsReceiptLineLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+
+  assetsCreated Asset[] @relation("GoodsReceiptLineAssets")
+
+  @@unique([goodsReceiptId, lineNumber])
+  @@index([purchaseOrderLineId])
+  @@index([itemId])
+  @@map("goods_receipt_lines")
+}
+
+model SupplierReturn {
+  id             String              @id @default(uuid()) @db.Uuid
+  returnNumber   String              @unique @map("return_number")
+  supplierId     String              @map("supplier_id") @db.Uuid
+  branchId       String              @map("branch_id") @db.Uuid
+  warehouseId    String              @map("warehouse_id") @db.Uuid
+  goodsReceiptId String?             @map("goods_receipt_id") @db.Uuid
+  status         StockDocumentStatus @default(DRAFT)
+  returnDate     DateTime            @map("return_date") @db.Date
+  reasonId       String?             @map("reason_id") @db.Uuid
+  notes          String?
+  createdById    String              @map("created_by_id") @db.Uuid
+  approvedById   String?             @map("approved_by_id") @db.Uuid
+  approvedAt     DateTime?           @map("approved_at")
+  postedById     String?             @map("posted_by_id") @db.Uuid
+  postedAt       DateTime?           @map("posted_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  supplier     Supplier      @relation("SupplierReturnSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
+  branch       Branch        @relation("SupplierReturnBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse    Warehouse     @relation("SupplierReturnWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  goodsReceipt GoodsReceipt? @relation("SupplierReturnGoodsReceipt", fields: [goodsReceiptId], references: [id], onDelete: Restrict)
+  reason       LookupValue?  @relation("LookupSupplierReturnReason", fields: [reasonId], references: [id], onDelete: Restrict)
+  createdBy    User          @relation("SupplierReturnCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy   User?         @relation("SupplierReturnApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  postedBy     User?         @relation("SupplierReturnPostedBy", fields: [postedById], references: [id], onDelete: Restrict)
+
+  lines SupplierReturnLine[] @relation("SupplierReturnLines")
+
+  @@index([supplierId])
+  @@index([branchId])
+  @@index([status])
+  @@map("supplier_returns")
+}
+
+model SupplierReturnLine {
+  id               String   @id @default(uuid()) @db.Uuid
+  supplierReturnId String   @map("supplier_return_id") @db.Uuid
+  lineNumber       Int      @map("line_number")
+  itemId           String   @map("item_id") @db.Uuid
+  lotId            String?  @map("lot_id") @db.Uuid
+  uomId            String   @map("uom_id") @db.Uuid
+  quantity         Decimal  @db.Decimal(14, 4)
+  baseQuantity     Decimal  @map("base_quantity") @db.Decimal(14, 4)
+  unitCost         Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  supplierReturn SupplierReturn @relation("SupplierReturnLines", fields: [supplierReturnId], references: [id], onDelete: Cascade)
+  item           Item           @relation("SupplierReturnLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  lot            InventoryLot?  @relation("SupplierReturnLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  uom            UnitOfMeasure  @relation("SupplierReturnLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+
+  @@unique([supplierReturnId, lineNumber])
+  @@index([itemId])
+  @@map("supplier_return_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Transfers and physical counts
+// ---------------------------------------------------------------------------
+
+/// Transfer document: bin-to-bin, warehouse-to-warehouse, or inter-branch.
+/// Controlled inter-branch flow: draft -> approval -> dispatch (IN_TRANSIT)
+/// -> destination receipt(s) -> RECEIVED.
+model Transfer {
+  id                     String         @id @default(uuid()) @db.Uuid
+  transferNumber         String         @unique @map("transfer_number")
+  type                   TransferType
+  status                 TransferStatus @default(DRAFT)
+  sourceBranchId         String         @map("source_branch_id") @db.Uuid
+  sourceWarehouseId      String         @map("source_warehouse_id") @db.Uuid
+  sourceLocationId       String?        @map("source_location_id") @db.Uuid
+  destinationBranchId    String         @map("destination_branch_id") @db.Uuid
+  destinationWarehouseId String?        @map("destination_warehouse_id") @db.Uuid
+  destinationLocationId  String?        @map("destination_location_id") @db.Uuid
+  transferDate           DateTime       @map("transfer_date") @db.Date
+  reasonId               String?        @map("reason_id") @db.Uuid
+  notes                  String?
+  createdById            String         @map("created_by_id") @db.Uuid
+  submittedAt            DateTime?      @map("submitted_at")
+  approvedById           String?        @map("approved_by_id") @db.Uuid
+  approvedAt             DateTime?      @map("approved_at")
+  dispatchedById         String?        @map("dispatched_by_id") @db.Uuid
+  dispatchedAt           DateTime?      @map("dispatched_at")
+  completedAt            DateTime?      @map("completed_at")
+  canceledById           String?        @map("canceled_by_id") @db.Uuid
+  canceledAt             DateTime?      @map("canceled_at")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  sourceBranch         Branch           @relation("TransferSourceBranch", fields: [sourceBranchId], references: [id], onDelete: Restrict)
+  sourceWarehouse      Warehouse        @relation("TransferSourceWarehouse", fields: [sourceWarehouseId], references: [id], onDelete: Restrict)
+  sourceLocation       StorageLocation? @relation("TransferSourceLocation", fields: [sourceLocationId], references: [id], onDelete: Restrict)
+  destinationBranch    Branch           @relation("TransferDestinationBranch", fields: [destinationBranchId], references: [id], onDelete: Restrict)
+  destinationWarehouse Warehouse?       @relation("TransferDestinationWarehouse", fields: [destinationWarehouseId], references: [id], onDelete: Restrict)
+  destinationLocation  StorageLocation? @relation("TransferDestinationLocation", fields: [destinationLocationId], references: [id], onDelete: Restrict)
+  reason               LookupValue?     @relation("LookupTransferReason", fields: [reasonId], references: [id], onDelete: Restrict)
+  createdBy            User             @relation("TransferCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy           User?            @relation("TransferApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  dispatchedBy         User?            @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id], onDelete: Restrict)
+  canceledBy           User?            @relation("TransferCanceledBy", fields: [canceledById], references: [id], onDelete: Restrict)
+
+  lines             TransferLine[]     @relation("TransferLines")
+  receipts          TransferReceipt[]  @relation("TransferReceiptTransfer")
+  stockTransactions StockTransaction[] @relation("StockTransactionTransfer")
+  stockReservations StockReservation[] @relation("StockReservationTransfer")
+  assetMovements    AssetMovement[]    @relation("AssetMovementTransfer")
+
+  @@index([status])
+  @@index([sourceBranchId])
+  @@index([destinationBranchId])
+  @@index([transferDate])
+  @@map("transfers")
+}
+
+/// A line is either quantity stock (itemId + quantity) or one serialized asset.
+model TransferLine {
+  id                 String   @id @default(uuid()) @db.Uuid
+  transferId         String   @map("transfer_id") @db.Uuid
+  lineNumber         Int      @map("line_number")
+  itemId             String?  @map("item_id") @db.Uuid
+  assetId            String?  @map("asset_id") @db.Uuid
+  lotId              String?  @map("lot_id") @db.Uuid
+  uomId              String?  @map("uom_id") @db.Uuid
+  quantity           Decimal? @db.Decimal(14, 4)
+  baseQuantity       Decimal? @map("base_quantity") @db.Decimal(14, 4)
+  dispatchedQuantity Decimal  @default(0) @map("dispatched_quantity") @db.Decimal(14, 4)
+  receivedQuantity   Decimal  @default(0) @map("received_quantity") @db.Decimal(14, 4)
+  damagedQuantity    Decimal  @default(0) @map("damaged_quantity") @db.Decimal(14, 4)
+  shortQuantity      Decimal  @default(0) @map("short_quantity") @db.Decimal(14, 4)
+  rejectedQuantity   Decimal  @default(0) @map("rejected_quantity") @db.Decimal(14, 4)
+  notes              String?
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  transfer Transfer       @relation("TransferLines", fields: [transferId], references: [id], onDelete: Cascade)
+  item     Item?          @relation("TransferLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  asset    Asset?         @relation("TransferLineAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  lot      InventoryLot?  @relation("TransferLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  uom      UnitOfMeasure? @relation("TransferLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+
+  receiptLines TransferReceiptLine[] @relation("TransferReceiptLineLine")
+
+  @@unique([transferId, lineNumber])
+  @@index([itemId])
+  @@index([assetId])
+  @@map("transfer_lines")
+}
+
+/// Destination-side receipt (supports partial receipt and inspection results).
+model TransferReceipt {
+  id            String   @id @default(uuid()) @db.Uuid
+  transferId    String   @map("transfer_id") @db.Uuid
+  receiptNumber String   @unique @map("receipt_number")
+  receivedById  String   @map("received_by_id") @db.Uuid
+  receivedAt    DateTime @map("received_at")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  transfer   Transfer @relation("TransferReceiptTransfer", fields: [transferId], references: [id], onDelete: Restrict)
+  receivedBy User     @relation("TransferReceiptReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict)
+
+  lines TransferReceiptLine[] @relation("TransferReceiptLines")
+
+  @@index([transferId])
+  @@map("transfer_receipts")
+}
+
+model TransferReceiptLine {
+  id                String   @id @default(uuid()) @db.Uuid
+  transferReceiptId String   @map("transfer_receipt_id") @db.Uuid
+  transferLineId    String   @map("transfer_line_id") @db.Uuid
+  receivedQuantity  Decimal  @map("received_quantity") @db.Decimal(14, 4)
+  damagedQuantity   Decimal  @default(0) @map("damaged_quantity") @db.Decimal(14, 4)
+  shortQuantity     Decimal  @default(0) @map("short_quantity") @db.Decimal(14, 4)
+  rejectedQuantity  Decimal  @default(0) @map("rejected_quantity") @db.Decimal(14, 4)
+  conditionId       String?  @map("condition_id") @db.Uuid
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  transferReceipt TransferReceipt @relation("TransferReceiptLines", fields: [transferReceiptId], references: [id], onDelete: Cascade)
+  transferLine    TransferLine    @relation("TransferReceiptLineLine", fields: [transferLineId], references: [id], onDelete: Restrict)
+  condition       LookupValue?    @relation("LookupTransferReceiptLineCondition", fields: [conditionId], references: [id], onDelete: Restrict)
+
+  @@index([transferLineId])
+  @@map("transfer_receipt_lines")
+}
+
+/// Physical / cycle count session. Counts never overwrite stock: approved
+/// variances generate adjustment stock transactions (countSessionId back-link).
+model InventoryCountSession {
+  id                String               @id @default(uuid()) @db.Uuid
+  countNumber       String               @unique @map("count_number")
+  type              InventoryCountType
+  status            InventoryCountStatus @default(DRAFT)
+  branchId          String               @map("branch_id") @db.Uuid
+  warehouseId       String?              @map("warehouse_id") @db.Uuid
+  storageLocationId String?              @map("storage_location_id") @db.Uuid
+  categoryId        String?              @map("category_id") @db.Uuid
+  isBlind           Boolean              @default(false) @map("is_blind")
+  snapshotAt        DateTime?            @map("snapshot_at")
+  startedAt         DateTime?            @map("started_at")
+  completedAt       DateTime?            @map("completed_at")
+  notes             String?
+  createdById       String               @map("created_by_id") @db.Uuid
+  approvedById      String?              @map("approved_by_id") @db.Uuid
+  approvedAt        DateTime?            @map("approved_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  branch          Branch           @relation("InventoryCountSessionBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse?       @relation("InventoryCountSessionWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation? @relation("InventoryCountSessionLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+  category        ItemCategory?    @relation("InventoryCountSessionCategory", fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy       User             @relation("InventoryCountSessionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy      User?            @relation("InventoryCountSessionApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  lines                  InventoryCountLine[] @relation("InventoryCountLines")
+  adjustmentTransactions StockTransaction[]   @relation("StockTransactionCountSession")
+
+  @@index([branchId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("inventory_count_sessions")
+}
+
+model InventoryCountLine {
+  id                String         @id @default(uuid()) @db.Uuid
+  countSessionId    String         @map("count_session_id") @db.Uuid
+  itemId            String?        @map("item_id") @db.Uuid
+  assetId           String?        @map("asset_id") @db.Uuid
+  lotId             String?        @map("lot_id") @db.Uuid
+  storageLocationId String?        @map("storage_location_id") @db.Uuid
+  uomId             String?        @map("uom_id") @db.Uuid
+  expectedQuantity  Decimal?       @map("expected_quantity") @db.Decimal(14, 4)
+  countedQuantity   Decimal?       @map("counted_quantity") @db.Decimal(14, 4)
+  recountQuantity   Decimal?       @map("recount_quantity") @db.Decimal(14, 4)
+  varianceQuantity  Decimal?       @map("variance_quantity") @db.Decimal(14, 4)
+  flag              CountLineFlag?
+  countedById       String?        @map("counted_by_id") @db.Uuid
+  countedAt         DateTime?      @map("counted_at")
+  notes             String?
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  session         InventoryCountSession @relation("InventoryCountLines", fields: [countSessionId], references: [id], onDelete: Cascade)
+  item            Item?                 @relation("InventoryCountLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  asset           Asset?                @relation("InventoryCountLineAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  lot             InventoryLot?         @relation("InventoryCountLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation?      @relation("InventoryCountLineLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
+  uom             UnitOfMeasure?        @relation("InventoryCountLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+  countedBy       User?                 @relation("InventoryCountLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict)
+
+  @@index([countSessionId])
+  @@index([itemId])
+  @@index([assetId])
+  @@map("inventory_count_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance
+// ---------------------------------------------------------------------------
+
+/// Preventive maintenance template. Applies to a specific asset and/or every
+/// maintainable asset of an item. Frequency: date interval, meter interval,
+/// or cron-style schedule.
+model MaintenancePlan {
+  id                     String    @id @default(uuid()) @db.Uuid
+  code                   String    @unique
+  name                   String
+  description            String?
+  assetId                String?   @map("asset_id") @db.Uuid
+  itemId                 String?   @map("item_id") @db.Uuid
+  maintenanceTypeId      String    @map("maintenance_type_id") @db.Uuid
+  intervalDays           Int?      @map("interval_days")
+  meterInterval          Decimal?  @map("meter_interval") @db.Decimal(14, 4)
+  meterType              String?   @map("meter_type")
+  scheduleCron           String?   @map("schedule_cron")
+  assignedTeam           String?   @map("assigned_team")
+  vendorId               String?   @map("vendor_id") @db.Uuid
+  estimatedDurationHours Decimal?  @map("estimated_duration_hours") @db.Decimal(14, 2)
+  estimatedCost          Decimal?  @map("estimated_cost") @db.Decimal(14, 2)
+  reminderLeadDays       Int?      @map("reminder_lead_days")
+  nextDueAt              DateTime? @map("next_due_at")
+  isActive               Boolean   @default(true) @map("is_active")
+  archivedAt             DateTime? @map("archived_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  asset           Asset?       @relation("MaintenancePlanAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  item            Item?        @relation("MaintenancePlanItem", fields: [itemId], references: [id], onDelete: Restrict)
+  maintenanceType LookupValue  @relation("LookupMaintenancePlanType", fields: [maintenanceTypeId], references: [id], onDelete: Restrict)
+  vendor          Supplier?    @relation("MaintenancePlanVendor", fields: [vendorId], references: [id], onDelete: Restrict)
+
+  tasks      MaintenancePlanTask[]  @relation("MaintenancePlanTasks")
+  workOrders MaintenanceWorkOrder[] @relation("MaintenanceWorkOrderPlan")
+
+  @@index([assetId])
+  @@index([itemId])
+  @@index([isActive])
+  @@index([nextDueAt])
+  @@map("maintenance_plans")
+}
+
+model MaintenancePlanTask {
+  id          String   @id @default(uuid()) @db.Uuid
+  planId      String   @map("plan_id") @db.Uuid
+  sequence    Int
+  name        String
+  description String?
+  isRequired  Boolean  @default(true) @map("is_required")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  plan MaintenancePlan @relation("MaintenancePlanTasks", fields: [planId], references: [id], onDelete: Cascade)
+
+  workOrderTasks MaintenanceWorkOrderTask[] @relation("MaintenanceWorkOrderTaskPlanTask")
+
+  @@unique([planId, sequence])
+  @@map("maintenance_plan_tasks")
+}
+
+/// Work-order number pattern: WO-{BRANCH}-{YEAR}-{SEQUENCE} (sequence_counters).
+model MaintenanceWorkOrder {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  workOrderNumber       String                     @unique @map("work_order_number")
+  assetId               String                     @map("asset_id") @db.Uuid
+  planId                String?                    @map("plan_id") @db.Uuid
+  branchId              String                     @map("branch_id") @db.Uuid
+  typeId                String                     @map("maintenance_type_id") @db.Uuid
+  priorityId            String?                    @map("priority_id") @db.Uuid
+  status                MaintenanceWorkOrderStatus @default(DRAFT)
+  problemDescription    String?                    @map("problem_description")
+  reportedById          String?                    @map("reported_by_id") @db.Uuid
+  reportedAt            DateTime?                  @map("reported_at")
+  assignedToEmployeeId  String?                    @map("assigned_to_employee_id") @db.Uuid
+  assignedVendorId      String?                    @map("assigned_vendor_id") @db.Uuid
+  assignedTeam          String?                    @map("assigned_team")
+  scheduledStartAt      DateTime?                  @map("scheduled_start_at")
+  scheduledEndAt        DateTime?                  @map("scheduled_end_at")
+  actualStartAt         DateTime?                  @map("actual_start_at")
+  actualEndAt           DateTime?                  @map("actual_end_at")
+  diagnosis             String?
+  actionTaken           String?                    @map("action_taken")
+  resolution            String?
+  laborCost             Decimal?                   @map("labor_cost") @db.Decimal(14, 2)
+  partsCost             Decimal?                   @map("parts_cost") @db.Decimal(14, 2)
+  externalCost          Decimal?                   @map("external_cost") @db.Decimal(14, 2)
+  totalCost             Decimal?                   @map("total_cost") @db.Decimal(14, 2)
+  downtimeHours         Decimal?                   @map("downtime_hours") @db.Decimal(14, 2)
+  completionConditionId String?                    @map("completion_condition_id") @db.Uuid
+  nextMaintenanceAt     DateTime?                  @map("next_maintenance_at")
+  verifiedById          String?                    @map("verified_by_id") @db.Uuid
+  verifiedAt            DateTime?                  @map("verified_at")
+  canceledAt            DateTime?                  @map("canceled_at")
+  createdById           String                     @map("created_by_id") @db.Uuid
+  createdAt             DateTime                   @default(now()) @map("created_at")
+  updatedAt             DateTime                   @updatedAt @map("updated_at")
+
+  asset               Asset            @relation("MaintenanceWorkOrderAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  plan                MaintenancePlan? @relation("MaintenanceWorkOrderPlan", fields: [planId], references: [id], onDelete: Restrict)
+  branch              Branch           @relation("MaintenanceWorkOrderBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  type                LookupValue      @relation("LookupWorkOrderType", fields: [typeId], references: [id], onDelete: Restrict)
+  priority            LookupValue?     @relation("LookupWorkOrderPriority", fields: [priorityId], references: [id], onDelete: Restrict)
+  completionCondition LookupValue?     @relation("LookupWorkOrderCompletionCondition", fields: [completionConditionId], references: [id], onDelete: Restrict)
+  reportedBy          User?            @relation("MaintenanceWorkOrderReportedBy", fields: [reportedById], references: [id], onDelete: Restrict)
+  assignedToEmployee  Employee?        @relation("MaintenanceWorkOrderAssignedEmployee", fields: [assignedToEmployeeId], references: [id], onDelete: Restrict)
+  assignedVendor      Supplier?        @relation("MaintenanceWorkOrderVendor", fields: [assignedVendorId], references: [id], onDelete: Restrict)
+  verifiedBy          User?            @relation("MaintenanceWorkOrderVerifiedBy", fields: [verifiedById], references: [id], onDelete: Restrict)
+  createdBy           User             @relation("MaintenanceWorkOrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  tasks             MaintenanceWorkOrderTask[] @relation("MaintenanceWorkOrderTasks")
+  parts             MaintenancePart[]          @relation("MaintenancePartWorkOrder")
+  stockTransactions StockTransaction[]         @relation("StockTransactionWorkOrder")
+  conditionEntries  AssetConditionHistory[]    @relation("AssetConditionHistoryWorkOrder")
+
+  @@index([assetId])
+  @@index([branchId])
+  @@index([status])
+  @@index([scheduledStartAt])
+  @@index([assignedToEmployeeId])
+  @@map("maintenance_work_orders")
+}
+
+model MaintenanceWorkOrderTask {
+  id            String    @id @default(uuid()) @db.Uuid
+  workOrderId   String    @map("work_order_id") @db.Uuid
+  planTaskId    String?   @map("plan_task_id") @db.Uuid
+  sequence      Int
+  name          String
+  isRequired    Boolean   @default(true) @map("is_required")
+  isCompleted   Boolean   @default(false) @map("is_completed")
+  completedAt   DateTime? @map("completed_at")
+  completedById String?   @map("completed_by_id") @db.Uuid
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  workOrder   MaintenanceWorkOrder @relation("MaintenanceWorkOrderTasks", fields: [workOrderId], references: [id], onDelete: Cascade)
+  planTask    MaintenancePlanTask? @relation("MaintenanceWorkOrderTaskPlanTask", fields: [planTaskId], references: [id], onDelete: Restrict)
+  completedBy User?                @relation("MaintenanceWorkOrderTaskCompletedBy", fields: [completedById], references: [id], onDelete: Restrict)
+
+  @@unique([workOrderId, sequence])
+  @@map("maintenance_work_order_tasks")
+}
+
+/// Spare parts consumed by a work order, backed by a posted MAINTENANCE_ISSUE
+/// stock transaction (parts always move through the inventory ledger).
+model MaintenancePart {
+  id                 String   @id @default(uuid()) @db.Uuid
+  workOrderId        String   @map("work_order_id") @db.Uuid
+  itemId             String   @map("item_id") @db.Uuid
+  lotId              String?  @map("lot_id") @db.Uuid
+  uomId              String   @map("uom_id") @db.Uuid
+  quantity           Decimal  @db.Decimal(14, 4)
+  baseQuantity       Decimal? @map("base_quantity") @db.Decimal(14, 4)
+  unitCost           Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  totalCost          Decimal? @map("total_cost") @db.Decimal(14, 2)
+  stockTransactionId String?  @map("stock_transaction_id") @db.Uuid
+  notes              String?
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  workOrder        MaintenanceWorkOrder @relation("MaintenancePartWorkOrder", fields: [workOrderId], references: [id], onDelete: Restrict)
+  item             Item                 @relation("MaintenancePartItem", fields: [itemId], references: [id], onDelete: Restrict)
+  lot              InventoryLot?        @relation("MaintenancePartLot", fields: [lotId], references: [id], onDelete: Restrict)
+  uom              UnitOfMeasure        @relation("MaintenancePartUom", fields: [uomId], references: [id], onDelete: Restrict)
+  stockTransaction StockTransaction?    @relation("MaintenancePartStockTransaction", fields: [stockTransactionId], references: [id], onDelete: Restrict)
+
+  @@index([workOrderId])
+  @@index([itemId])
+  @@map("maintenance_parts")
+}
+
+// ---------------------------------------------------------------------------
+// Approvals, notifications, attachments, audit, lookups, sequences
+// ---------------------------------------------------------------------------
+
+/// Configurable approval rule for a resource type (purchase_order, transfer,
+/// stock_transaction, asset_disposal, ...), optionally branch-scoped and/or
+/// amount-thresholded.
+model ApprovalWorkflow {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         String   @unique
+  name         String
+  description  String?
+  resourceType String   @map("resource_type")
+  branchId     String?  @map("branch_id") @db.Uuid
+  minAmount    Decimal? @map("min_amount") @db.Decimal(14, 2)
+  maxAmount    Decimal? @map("max_amount") @db.Decimal(14, 2)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  branch Branch? @relation("ApprovalWorkflowBranch", fields: [branchId], references: [id], onDelete: Restrict)
+
+  steps    ApprovalStep[]    @relation("ApprovalWorkflowSteps")
+  requests ApprovalRequest[] @relation("ApprovalRequestWorkflow")
+
+  @@index([resourceType])
+  @@index([branchId])
+  @@map("approval_workflows")
+}
+
+/// One approval step: approver is a role or a named user.
+model ApprovalStep {
+  id             String   @id @default(uuid()) @db.Uuid
+  workflowId     String   @map("workflow_id") @db.Uuid
+  sequence       Int
+  name           String?
+  approverRoleId String?  @map("approver_role_id") @db.Uuid
+  approverUserId String?  @map("approver_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  workflow     ApprovalWorkflow @relation("ApprovalWorkflowSteps", fields: [workflowId], references: [id], onDelete: Cascade)
+  approverRole Role?            @relation("ApprovalStepApproverRole", fields: [approverRoleId], references: [id], onDelete: Restrict)
+  approverUser User?            @relation("ApprovalStepApproverUser", fields: [approverUserId], references: [id], onDelete: Restrict)
+
+  currentForRequests ApprovalRequest[] @relation("ApprovalRequestCurrentStep")
+  actions            ApprovalAction[]  @relation("ApprovalActionStep")
+
+  @@unique([workflowId, sequence])
+  @@map("approval_steps")
+}
+
+/// A running approval for one document (polymorphic resourceType/resourceId).
+model ApprovalRequest {
+  id            String         @id @default(uuid()) @db.Uuid
+  workflowId    String         @map("workflow_id") @db.Uuid
+  resourceType  String         @map("resource_type")
+  resourceId    String         @map("resource_id") @db.Uuid
+  status        ApprovalStatus @default(PENDING)
+  currentStepId String?        @map("current_step_id") @db.Uuid
+  amount        Decimal?       @db.Decimal(14, 2)
+  branchId      String?        @map("branch_id") @db.Uuid
+  requestedById String         @map("requested_by_id") @db.Uuid
+  requestedAt   DateTime       @default(now()) @map("requested_at")
+  completedAt   DateTime?      @map("completed_at")
+  notes         String?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  workflow    ApprovalWorkflow @relation("ApprovalRequestWorkflow", fields: [workflowId], references: [id], onDelete: Restrict)
+  currentStep ApprovalStep?    @relation("ApprovalRequestCurrentStep", fields: [currentStepId], references: [id], onDelete: Restrict)
+  branch      Branch?          @relation("ApprovalRequestBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  requestedBy User             @relation("ApprovalRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  actions ApprovalAction[] @relation("ApprovalActionRequest")
+
+  @@index([resourceType, resourceId])
+  @@index([status])
+  @@index([requestedById])
+  @@map("approval_requests")
+}
+
+/// Full approval history. delegatedFor records the original approver when the
+/// actor approved under an active delegation.
+model ApprovalAction {
+  id             String             @id @default(uuid()) @db.Uuid
+  requestId      String             @map("request_id") @db.Uuid
+  stepId         String?            @map("step_id") @db.Uuid
+  actorId        String             @map("actor_id") @db.Uuid
+  action         ApprovalActionType
+  comment        String?
+  delegatedForId String?            @map("delegated_for_id") @db.Uuid
+  actedAt        DateTime           @default(now()) @map("acted_at")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  request      ApprovalRequest @relation("ApprovalActionRequest", fields: [requestId], references: [id], onDelete: Cascade)
+  step         ApprovalStep?   @relation("ApprovalActionStep", fields: [stepId], references: [id], onDelete: Restrict)
+  actor        User            @relation("ApprovalActionActor", fields: [actorId], references: [id], onDelete: Restrict)
+  delegatedFor User?           @relation("ApprovalActionDelegatedFor", fields: [delegatedForId], references: [id], onDelete: Restrict)
+
+  @@index([requestId])
+  @@index([actorId])
+  @@map("approval_actions")
+}
+
+model ApprovalDelegation {
+  id          String   @id @default(uuid()) @db.Uuid
+  delegatorId String   @map("delegator_id") @db.Uuid
+  delegateId  String   @map("delegate_id") @db.Uuid
+  startsAt    DateTime @map("starts_at")
+  endsAt      DateTime @map("ends_at")
+  reason      String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  delegator User @relation("ApprovalDelegationDelegator", fields: [delegatorId], references: [id], onDelete: Cascade)
+  delegate  User @relation("ApprovalDelegationDelegate", fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@index([delegatorId])
+  @@index([delegateId])
+  @@map("approval_delegations")
+}
+
+/// In-app notification. `type` is a machine code (LOW_STOCK, PENDING_APPROVAL,
+/// MAINTENANCE_DUE, ...). dedupeKey prevents duplicate alerts per recipient.
+model Notification {
+  id           String    @id @default(uuid()) @db.Uuid
+  recipientId  String    @map("recipient_user_id") @db.Uuid
+  type         String
+  title        String
+  message      String
+  resourceType String?   @map("resource_type")
+  resourceId   String?   @map("resource_id") @db.Uuid
+  branchId     String?   @map("branch_id") @db.Uuid
+  dedupeKey    String?   @map("dedupe_key")
+  readAt       DateTime? @map("read_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  recipient User    @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  branch    Branch? @relation("NotificationBranch", fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@unique([recipientId, dedupeKey])
+  @@index([recipientId, readAt])
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+/// File metadata; bytes live in S3-compatible storage (bucket gemerp-attachments).
+/// Polymorphic owner via resourceType/resourceId; branch scoping enforced in app.
+model Attachment {
+  id             String    @id @default(uuid()) @db.Uuid
+  resourceType   String    @map("resource_type")
+  resourceId     String    @map("resource_id") @db.Uuid
+  fileName       String    @map("file_name")
+  mimeType       String    @map("mime_type")
+  sizeBytes      Int       @map("size_bytes")
+  storageKey     String    @unique @map("storage_key")
+  checksum       String?
+  documentTypeId String?   @map("document_type_id") @db.Uuid
+  branchId       String?   @map("branch_id") @db.Uuid
+  uploadedById   String    @map("uploaded_by_id") @db.Uuid
+  archivedAt     DateTime? @map("archived_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  documentType LookupValue? @relation("LookupAttachmentDocumentType", fields: [documentTypeId], references: [id], onDelete: Restrict)
+  branch       Branch?      @relation("AttachmentBranch", fields: [branchId], references: [id], onDelete: Restrict)
+  uploadedBy   User         @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([resourceType, resourceId])
+  @@index([branchId])
+  @@map("attachments")
+}
+
+/// Append-only audit trail (spec section 22). No updated_at by design; rows are
+/// never updated or deleted. Secrets and sensitive auth fields must be redacted
+/// by the writer. resourceId is a plain string so non-UUID identifiers (e.g.
+/// permission codes) can be referenced.
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorUserId  String?  @map("actor_user_id") @db.Uuid
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  branchId     String?  @map("branch_id") @db.Uuid
+  occurredAt   DateTime @default(now()) @map("occurred_at")
+  requestId    String?  @map("request_id")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+  reason       String?
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  actorUser User?   @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  branch    Branch? @relation("AuditLogBranch", fields: [branchId], references: [id], onDelete: Restrict)
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([branchId])
+  @@index([occurredAt])
+  @@map("audit_logs")
+}
+
+/// Business-managed configurable values (spec section 10). `category` is the
+/// lookup kind: ASSET_CONDITION, TRANSACTION_REASON, ADJUSTMENT_REASON,
+/// DISPOSAL_METHOD, MAINTENANCE_TYPE, MAINTENANCE_PRIORITY, SUPPLIER_CATEGORY,
+/// DOCUMENT_TYPE, ASSET_CRITICALITY, NOTIFICATION_TYPE, ... Referencing FKs use
+/// onDelete: Restrict so a value in use cannot be deleted (deactivate instead).
+model LookupValue {
+  id          String   @id @default(uuid()) @db.Uuid
+  category    String
+  code        String
+  name        String
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  isSystem    Boolean  @default(false) @map("is_system")
+  branchId    String?  @map("branch_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  branch Branch? @relation("LookupValueBranch", fields: [branchId], references: [id], onDelete: Restrict)
+
+  assetsWithCondition          Asset[]                 @relation("LookupAssetCondition")
+  assetsWithCriticality        Asset[]                 @relation("LookupAssetCriticality")
+  assetsWithDisposalMethod     Asset[]                 @relation("LookupAssetDisposalMethod")
+  assignmentIssueConditions    AssetAssignment[]       @relation("LookupAssignmentConditionAtIssue")
+  assignmentReturnConditions   AssetAssignment[]       @relation("LookupAssignmentConditionAtReturn")
+  assetConditionEntries        AssetConditionHistory[] @relation("LookupAssetConditionHistoryCondition")
+  assetStatusReasons           AssetStatusHistory[]    @relation("LookupAssetStatusReason")
+  assetMovementReasons         AssetMovement[]         @relation("LookupAssetMovementReason")
+  stockTransactionReasons      StockTransaction[]      @relation("LookupStockTransactionReason")
+  transferReasons              Transfer[]              @relation("LookupTransferReason")
+  supplierReturnReasons        SupplierReturn[]        @relation("LookupSupplierReturnReason")
+  suppliersInCategory          Supplier[]              @relation("LookupSupplierCategory")
+  maintenancePlansOfType       MaintenancePlan[]       @relation("LookupMaintenancePlanType")
+  workOrdersOfType             MaintenanceWorkOrder[]  @relation("LookupWorkOrderType")
+  workOrdersWithPriority       MaintenanceWorkOrder[]  @relation("LookupWorkOrderPriority")
+  workOrdersCompletedCondition MaintenanceWorkOrder[]  @relation("LookupWorkOrderCompletionCondition")
+  transferReceiptConditions    TransferReceiptLine[]   @relation("LookupTransferReceiptLineCondition")
+  attachmentsOfType            Attachment[]            @relation("LookupAttachmentDocumentType")
+
+  @@unique([category, code])
+  @@index([category, isActive])
+  @@index([branchId])
+  @@map("lookup_values")
+}
+
+/// Named counters for business document numbers (asset tags, PO numbers,
+/// transaction numbers, ...). Key examples: "AST-MNL-LAP-2026", "PO-2026",
+/// "TRF-2026". Increment with SELECT ... FOR UPDATE (or atomic UPDATE ...
+/// RETURNING) inside the same transaction that creates the document.
+model SequenceCounter {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  lastValue   BigInt   @default(0) @map("last_value")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("sequence_counters")
+}

@@ -1,0 +1,24 @@
+{
+  // Preset for NestJS apps (@gemerp/api, @gemerp/worker).
+  // strictPropertyInitialization is off because DTO/entity classes are populated
+  // by the framework (class-transformer / Prisma), not in constructors.
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // tsc compiles Nest apps as a whole program; isolatedModules conflicts
+    // with emitDecoratorMetadata (TS1272) and is only needed for per-file
+    // transpilers like swc/esbuild.
+    "isolatedModules": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
+    "declaration": false,
+    "sourceMap": true,
+    // incremental + nest's deleteOutDir leaves stale .tsbuildinfo outside dist,
+    // which makes tsc skip re-emitting files after a failed build → partial dist.
+    "incremental": false,
+    "removeComments": true
+  }
+}

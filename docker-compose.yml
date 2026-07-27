@@ -1,0 +1,84 @@
+# GEM ERP — development infrastructure only.
+#
+# This file runs Postgres, Redis, and MinIO for local development.
+# The apps (web/api/worker) run on the HOST via `pnpm dev` — no app containers
+# here on purpose. Production images and a production compose/deploy setup are
+# added in Phase 8 (Hardening and deployment).
+#
+# Credentials below are dev-only and match .env.example. Never reuse them
+# outside local development.
+
+name: gemerp
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gemerp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gemerp
+      POSTGRES_USER: gemerp
+      POSTGRES_PASSWORD: gemerp_dev_password
+    ports:
+      # Host port 5433 — 5432 is already used by another local project
+      # (devotion-app-postgres). Inside the compose network it is still 5432.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gemerp -d gemerp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: gemerp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: gemerp-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: gemerp
+      MINIO_ROOT_PASSWORD: gemerp_dev_password
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates the attachments bucket, then exits.
+  # Safe to re-run — `mc mb --ignore-existing` is idempotent.
+  minio-init:
+    image: minio/mc:latest
+    container_name: gemerp-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set gemerp http://minio:9000 gemerp gemerp_dev_password &&
+        mc mb --ignore-existing gemerp/gemerp-attachments &&
+        echo "MinIO bucket 'gemerp-attachments' is ready"
+
+volumes:
+  postgres_data:
+  minio_data:

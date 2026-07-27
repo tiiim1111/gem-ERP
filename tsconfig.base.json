@@ -1,0 +1,9 @@
+{
+  // Repo-root anchor for editors and ad-hoc tooling. Workspace packages extend
+  // the @gemerp/config presets directly:
+  //   @gemerp/config/tsconfig/library.json  — packages/shared, packages/database
+  //   @gemerp/config/tsconfig/nestjs.json   — apps/api, apps/worker
+  //   @gemerp/config/tsconfig/nextjs.json   — apps/web
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./packages/config/tsconfig/base.json"
+}

@@ -1,0 +1,17 @@
+{
+  // Jest/ts-jest compilation settings. CommonJS + classic node resolution keep
+  // ts-jest fast and let moduleNameMapper resolve @gemerp/shared straight to
+  // its TypeScript source, so `pnpm test` never needs a prior build step.
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDir": "../..",
+    "baseUrl": "./",
+    "paths": {
+      "@gemerp/shared": ["../../packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "../../packages/shared/src/**/*"]
+}
