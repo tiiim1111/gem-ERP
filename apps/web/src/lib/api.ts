@@ -37,6 +37,11 @@ export function isApiClientError(error: unknown): error is ApiClientError {
   return error instanceof ApiClientError;
 }
 
+/** True when the server rejected a PATCH because the record's `version` is stale. */
+export function isVersionConflict(error: unknown): boolean {
+  return isApiClientError(error) && error.code === 'VERSION_CONFLICT';
+}
+
 /** Human-safe message for any thrown value. */
 export function getErrorMessage(error: unknown, fallback = 'Something went wrong.'): string {
   if (isApiClientError(error)) return error.message;
@@ -132,6 +137,106 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload as T;
 }
 
+/**
+ * Multipart POST (file uploads). Content-Type is left to the browser so the
+ * multipart boundary is set correctly. Same error-envelope handling as JSON.
+ */
+async function postFormData<T>(path: string, form: FormData): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path), {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    });
+  } catch {
+    throw new ApiClientError(
+      0,
+      'NETWORK_ERROR',
+      'Could not reach the server. Check your connection and try again.',
+    );
+  }
+
+  const text = await response.text();
+  let payload: unknown;
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = undefined;
+    }
+  }
+
+  if (!response.ok) {
+    const envelope = parseErrorEnvelope(payload);
+    if (envelope) {
+      throw new ApiClientError(response.status, envelope.code, envelope.message, envelope.details);
+    }
+    throw new ApiClientError(
+      response.status,
+      'INTERNAL_ERROR',
+      `Upload failed with status ${response.status}.`,
+    );
+  }
+
+  return payload as T;
+}
+
+/**
+ * Authenticated file download (import templates, result files). Returns the
+ * blob plus the filename from Content-Disposition when the server provides one.
+ */
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+): Promise<{ blob: Blob; filename: string }> {
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path), { credentials: 'include' });
+  } catch {
+    throw new ApiClientError(
+      0,
+      'NETWORK_ERROR',
+      'Could not reach the server. Check your connection and try again.',
+    );
+  }
+
+  if (!response.ok) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await response.text());
+    } catch {
+      payload = undefined;
+    }
+    const envelope = parseErrorEnvelope(payload);
+    if (envelope) {
+      throw new ApiClientError(response.status, envelope.code, envelope.message, envelope.details);
+    }
+    throw new ApiClientError(
+      response.status,
+      'INTERNAL_ERROR',
+      `Download failed with status ${response.status}.`,
+    );
+  }
+
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  const filename = match?.[1] ? decodeURIComponent(match[1]) : fallbackName;
+  return { blob: await response.blob(), filename };
+}
+
+/** Trigger a browser download of a fetched blob. */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** Thin typed wrappers over fetch with cookie credentials and the error envelope. */
 export const api = {
   get<T>(path: string, params?: QueryParams, signal?: AbortSignal): Promise<T> {
@@ -139,6 +244,9 @@ export const api = {
   },
   post<T>(path: string, body?: unknown): Promise<T> {
     return request<T>(path, { method: 'POST', body });
+  },
+  postForm<T>(path: string, form: FormData): Promise<T> {
+    return postFormData<T>(path, form);
   },
   put<T>(path: string, body?: unknown): Promise<T> {
     return request<T>(path, { method: 'PUT', body });

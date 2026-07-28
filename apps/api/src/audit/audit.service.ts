@@ -6,6 +6,8 @@ import { redactSensitive } from '../common/utils/redact';
 export interface AuditLogEntry {
   /** Acting user's ID (absent for anonymous events such as failed logins). */
   actor?: string;
+  /** Alias for `actor` so an AuditContext spread attributes the actor. */
+  actorUserId?: string;
   /** Dot-notation action, e.g. "auth.login", "user.roles_replaced". */
   action: string;
   resourceType?: string;
@@ -35,7 +37,7 @@ export class AuditService {
     try {
       await this.prisma.auditLog.create({
         data: {
-          actorUserId: entry.actor ?? null,
+          actorUserId: entry.actor ?? entry.actorUserId ?? null,
           action: entry.action,
           resourceType: entry.resourceType ?? null,
           resourceId: entry.resourceId ?? null,

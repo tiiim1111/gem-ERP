@@ -6,12 +6,16 @@ import { usePathname } from 'next/navigation';
 import {
   Building2,
   ChevronDown,
+  FileUp,
+  IdCard,
   KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
+  Package,
   ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   TriangleAlert,
   Users,
   X,
@@ -35,12 +39,24 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Permission required to see this entry; null = visible to any session. */
-  permission: string | null;
+  /**
+   * Permission(s) required to see this entry; null = visible to any session.
+   * An array means ANY of the listed permissions unlocks the entry.
+   */
+  permission: string | readonly string[] | null;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, permission: null },
+  { href: '/employees', label: 'Employees', icon: IdCard, permission: PERMISSIONS.employee.view },
+  { href: '/items', label: 'Items', icon: Package, permission: PERMISSIONS.item.view },
+  {
+    href: '/imports',
+    label: 'Imports',
+    icon: FileUp,
+    permission: [PERMISSIONS.employee.import, PERMISSIONS.item.import, PERMISSIONS.lookup.manage],
+  },
+  { href: '/lookups', label: 'Lookups', icon: SlidersHorizontal, permission: PERMISSIONS.lookup.view },
   { href: '/users', label: 'Users', icon: Users, permission: PERMISSIONS.user.view },
   { href: '/roles', label: 'Roles', icon: ShieldCheck, permission: PERMISSIONS.role.view },
   { href: '/branches', label: 'Branches', icon: Building2, permission: PERMISSIONS.branch.view },
@@ -54,8 +70,14 @@ function isActivePath(pathname: string, href: string): boolean {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { can } = useSession();
-  const visibleItems = NAV_ITEMS.filter((item) => item.permission === null || can(item.permission));
+  const { can, canAny } = useSession();
+  const visibleItems = NAV_ITEMS.filter((item) =>
+    item.permission === null
+      ? true
+      : Array.isArray(item.permission)
+        ? canAny(item.permission)
+        : can(item.permission as string),
+  );
 
   return (
     <div className="flex h-full flex-col">

@@ -76,7 +76,9 @@ async function bootstrap(): Promise<void> {
     .setTitle('GEM ERP API')
     .setDescription(
       'Asset & Inventory Management for GEM Cor — Phase 1: authentication, ' +
-        'users, roles & permissions, organization structure, audit trail, health.',
+        'users, roles & permissions, organization structure, audit trail, health. ' +
+        'Phase 2: employees, lookup configuration, item master (UOMs, barcodes, ' +
+        'warehouse settings), staged CSV imports.',
     )
     .setVersion('1.0')
     .addCookieAuth(config.sessionCookieName)

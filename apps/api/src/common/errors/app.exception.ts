@@ -48,6 +48,23 @@ export class AppException extends HttpException {
     return new AppException(409, 'DUPLICATE_CODE', message);
   }
 
+  /** Optimistic-concurrency failure: stale `version` supplied (outline 1.6). */
+  static versionConflict(
+    message = 'The record was modified by someone else. Refetch and retry.',
+  ): AppException {
+    return new AppException(409, 'VERSION_CONFLICT', message);
+  }
+
+  /** Action not allowed from the record's current status (outline 1.8). */
+  static invalidStateTransition(message: string): AppException {
+    return new AppException(409, 'INVALID_STATE_TRANSITION', message);
+  }
+
+  /** Deletion/removal refused because the record is referenced (spec §10). */
+  static inUse(message: string): AppException {
+    return new AppException(409, 'IN_USE', message);
+  }
+
   static validation(details: ApiErrorDetail[], message = 'Validation failed.') {
     return new AppException(400, 'VALIDATION_ERROR', message, details);
   }

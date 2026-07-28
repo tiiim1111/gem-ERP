@@ -11,9 +11,14 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { CsrfOriginGuard } from './auth/csrf-origin.guard';
 import { SessionAuthGuard } from './auth/session-auth.guard';
+import { EmployeesModule } from './employees/employees.module';
 import { HealthModule } from './health/health.module';
+import { ImportsModule } from './imports/imports.module';
+import { ItemsModule } from './items/items.module';
+import { LookupsModule } from './lookups/lookups.module';
 import { OrgModule } from './org/org.module';
 import { RolesModule } from './roles/roles.module';
+import { SequencesModule } from './sequences/sequences.module';
 import { UsersModule } from './users/users.module';
 
 const env = loadEnv();
@@ -58,10 +63,16 @@ const env = loadEnv();
     PrismaModule,
     RbacModule,
     AuditModule,
+    SequencesModule,
     AuthModule,
     UsersModule,
     RolesModule,
     OrgModule,
+    // Phase 2: employees, lookup configuration, item master, staged imports.
+    EmployeesModule,
+    LookupsModule,
+    ItemsModule,
+    ImportsModule,
     HealthModule,
   ],
   providers: [

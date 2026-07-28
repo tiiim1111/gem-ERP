@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
+  IdCard,
   MonitorSmartphone,
+  Package,
   ScrollText,
   ShieldCheck,
   Users,
@@ -16,6 +18,8 @@ import { getErrorMessage } from '@/lib/api';
 import {
   listAuditLogs,
   listBranches,
+  listEmployees,
+  listItems,
   listMySessions,
   listRoles,
   listUsers,
@@ -249,6 +253,8 @@ export function DashboardPage() {
   const canViewBranches = can(PERMISSIONS.branch.view);
   const canViewRoles = can(PERMISSIONS.role.view);
   const canViewAudit = can(PERMISSIONS.audit.view);
+  const canViewEmployees = can(PERMISSIONS.employee.view);
+  const canViewItems = can(PERMISSIONS.item.view);
 
   const usersCount = useQuery({
     queryKey: ['users', 'count'],
@@ -265,13 +271,29 @@ export function DashboardPage() {
     queryFn: ({ signal }) => listRoles({ page: 1, pageSize: 1 }, signal),
     enabled: canViewRoles,
   });
+  const employeesCount = useQuery({
+    queryKey: ['employees', 'count'],
+    queryFn: ({ signal }) => listEmployees({ page: 1, pageSize: 1 }, signal),
+    enabled: canViewEmployees,
+  });
+  const itemsCount = useQuery({
+    queryKey: ['items', 'count'],
+    queryFn: ({ signal }) => listItems({ page: 1, pageSize: 1 }, signal),
+    enabled: canViewItems,
+  });
   const sessionsCount = useQuery({
     queryKey: ['auth', 'sessions'],
     queryFn: ({ signal }) => listMySessions(signal),
   });
 
   React.useEffect(() => {
-    const failed = [usersCount.error, branchesCount.error, rolesCount.error].find(Boolean);
+    const failed = [
+      usersCount.error,
+      branchesCount.error,
+      rolesCount.error,
+      employeesCount.error,
+      itemsCount.error,
+    ].find(Boolean);
     if (failed) {
       toast({
         title: 'Some dashboard data failed to load',
@@ -280,7 +302,14 @@ export function DashboardPage() {
       });
     }
     // Intentionally keyed on error identity only.
-  }, [usersCount.error, branchesCount.error, rolesCount.error, toast]);
+  }, [
+    usersCount.error,
+    branchesCount.error,
+    rolesCount.error,
+    employeesCount.error,
+    itemsCount.error,
+    toast,
+  ]);
 
   return (
     <>
@@ -290,6 +319,26 @@ export function DashboardPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {canViewEmployees ? (
+          <StatCard
+            title="Employees"
+            icon={IdCard}
+            value={employeesCount.data?.meta.total}
+            loading={employeesCount.isPending}
+            error={employeesCount.error}
+            href="/employees"
+          />
+        ) : null}
+        {canViewItems ? (
+          <StatCard
+            title="Items"
+            icon={Package}
+            value={itemsCount.data?.meta.total}
+            loading={itemsCount.isPending}
+            error={itemsCount.error}
+            href="/items"
+          />
+        ) : null}
         {canViewUsers ? (
           <StatCard
             title="Users"

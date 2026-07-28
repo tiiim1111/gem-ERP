@@ -626,6 +626,9 @@ model Employee {
   photoUrl       String?        @map("photo_url")
   notes          String?
   userId         String?        @unique @map("user_id") @db.Uuid
+  /// Optimistic-concurrency token (api-outline 1.6): starts at 1, increments
+  /// on every successful mutation. PATCH must send the current value.
+  version        Int            @default(1)
   archivedAt     DateTime?      @map("archived_at")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
@@ -748,22 +751,27 @@ model UnitOfMeasure {
   @@map("units_of_measure")
 }
 
-/// Item-specific UOM conversion: 1 fromUom = factor x toUom
+/// UOM conversion: 1 fromUom = factor x toUom
 /// (e.g. 1 BOX = 10 PACK, 1 PACK = 100 PIECE).
+/// itemId NULL = global conversion (api-outline 3.4); itemId set = item-specific
+/// override. A partial unique index (raw SQL in the phase2 migration) keeps
+/// global (from, to) pairs unique despite NULL being distinct in Postgres.
 model UomConversion {
   id        String   @id @default(uuid()) @db.Uuid
-  itemId    String   @map("item_id") @db.Uuid
+  itemId    String?  @map("item_id") @db.Uuid
   fromUomId String   @map("from_uom_id") @db.Uuid
   toUomId   String   @map("to_uom_id") @db.Uuid
   factor    Decimal  @db.Decimal(14, 4)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  item    Item          @relation("UomConversionItem", fields: [itemId], references: [id], onDelete: Cascade)
+  item    Item?         @relation("UomConversionItem", fields: [itemId], references: [id], onDelete: Cascade)
   fromUom UnitOfMeasure @relation("UomConversionFrom", fields: [fromUomId], references: [id], onDelete: Restrict)
   toUom   UnitOfMeasure @relation("UomConversionTo", fields: [toUomId], references: [id], onDelete: Restrict)
 
   @@unique([itemId, fromUomId, toUomId])
+  @@index([fromUomId])
+  @@index([toUomId])
   @@map("uom_conversions")
 }
 
@@ -792,6 +800,9 @@ model Item {
   isMaintainable       Boolean          @default(false) @map("is_maintainable")
   imageUrl             String?          @map("image_url")
   notes                String?
+  /// Optimistic-concurrency token (api-outline 1.6): starts at 1, increments
+  /// on every successful mutation. PATCH must send the current value.
+  version              Int              @default(1)
   isActive             Boolean          @default(true) @map("is_active")
   archivedAt           DateTime?        @map("archived_at")
   createdAt            DateTime         @default(now()) @map("created_at")
@@ -2270,6 +2281,35 @@ model LookupValue {
   @@index([category, isActive])
   @@index([branchId])
   @@map("lookup_values")
+}
+
+/// Staged CSV imports (spec section 24): validate first (rows + row-level
+/// errors stored here as JSON), commit explicitly in a second call. createdById
+/// is a plain UUID (no FK) - staging rows are short-lived working data, not
+/// part of the referential business graph.
+model ImportStaging {
+  id          String    @id @default(uuid()) @db.Uuid
+  /// Import type: "employees" | "items" | "lookups" (P2); more in later phases.
+  type        String
+  /// VALIDATED -> COMMITTED | PARTIALLY_COMMITTED. FAILED when nothing usable.
+  status      String    @default("VALIDATED")
+  totalRows   Int       @default(0) @map("total_rows")
+  validRows   Int       @default(0) @map("valid_rows")
+  /// Parsed rows: [{ row: 1, data: {...}, valid: true }]
+  rows        Json
+  /// Row-level errors: [{ row, field, code, message }]
+  errors      Json
+  /// Commit result summary: { mode, created, failed, errors }
+  result      Json?
+  createdById String    @map("created_by_id") @db.Uuid
+  committedAt DateTime? @map("committed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([type])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("import_stagings")
 }
 
 /// Named counters for business document numbers (asset tags, PO numbers,

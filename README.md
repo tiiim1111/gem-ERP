@@ -94,7 +94,8 @@ Then open:
 > credentials are provisioned separately, and the seed refuses to double as a
 > production bootstrap.
 
-All seed users share the password **`ChangeMe!123`**.
+All seed users share the password **`ChangeMe!123`**. Quick cheat sheet:
+[`user_access.md`](./user_access.md).
 
 | Email | Role | Branch access |
 | --- | --- | --- |

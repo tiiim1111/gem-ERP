@@ -28,7 +28,7 @@ register.
 | --- | --- | --- |
 | 0 | Discovery & architecture | ✅ Delivered (this session) |
 | 1 | Foundation | 🟡 Delivered — verification pending (e2e against live DB deferred) |
-| 2 | Employees, lookups, and catalog | 📋 Planned |
+| 2 | Employees, lookups, and catalog | ✅ Delivered |
 | 3 | Inventory and serialized assets | 📋 Planned |
 | 4 | Procurement | 📋 Planned |
 | 5 | Maintenance | 📋 Planned |
@@ -199,34 +199,34 @@ Manual/scripted checks against the running stack:
 
 ---
 
-## Phase 2 — Employees, Lookups, and Catalog — 📋 Planned
+## Phase 2 — Employees, Lookups, and Catalog — ✅ Delivered (2026-07-27)
 
 ### Deliverables
 
-- [ ] Migrations: `departments`, `positions`, `employees`, `lookup_values`,
+- [x] Migrations: `departments`, `positions`, `employees`, `lookup_values`,
       `item_categories`, `item_subcategories`, `brands`, `manufacturers`,
       `units_of_measure`, `uom_conversions`, `items`, `item_barcodes`,
       `item_warehouse_settings`.
-- [ ] Employee management (spec section 9): list/detail/filter, activate/archive,
+- [x] Employee management (spec section 9): list/detail/filter, activate/archive,
       optional link to a system user, restricted-visibility notes. No payroll,
       attendance, or leave features. Custody/issuance history panels stubbed to
       real (empty) queries that Phase 3 populates.
-- [ ] Lookup/configuration admin (spec section 10): code/name/description/sort/
+- [x] Lookup/configuration admin (spec section 10): code/name/description/sort/
       active/optional branch scope; referenced records protected from deletion.
-- [ ] Item master (spec section 11): business category
+- [x] Item master (spec section 11): business category
       (`SERIALIZED_ASSET` | `CONSUMABLE` | `BULK_NON_CONSUMABLE`) ×
       tracking method (`SERIAL` | `QUANTITY` | `LOT`) with the default rules from
       spec section 4; UOM conversions storing entered + normalized base quantity;
       primary + alternate barcodes with duplicate-active-mapping prevention;
       per-warehouse reorder level/quantity and min/max.
-- [ ] CSV/XLSX import (spec section 24 workflow: template → upload → validate
+- [x] CSV/XLSX import (spec section 24 workflow: template → upload → validate
       without writing → row-level errors → preview → confirm → transactional
       apply → result file → audit) for employees, items, suppliers-ready lookups.
-- [ ] Permissions added to `@gemerp/shared` matrix: `employee.*`, `item.*`,
+- [x] Permissions added to `@gemerp/shared` matrix: `employee.*`, `item.*`,
       lookup/settings actions; role definitions extended accordingly.
-- [ ] Web: employees, lookups, and item-master pages with server-side pagination,
+- [x] Web: employees, lookups, and item-master pages with server-side pagination,
       filtering, and import wizard.
-- [ ] Seed extension: departments, positions, employees; sample items across all
+- [x] Seed extension: departments, positions, employees; sample items across all
       three categories and all three tracking methods.
 
 ### Verification criteria

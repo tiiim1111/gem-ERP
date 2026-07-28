@@ -17,6 +17,27 @@ Entry format:
 
 ---
 
+## 2026-07-28 — Phase 2 delivered: employees, lookups, item master, imports
+
+**Done:**
+- Built via two parallel builder agents (backend + frontend) against the `docs/api-outline.md` §3 contract, then integrated and verified.
+- **Backend** (`apps/api`): EmployeesModule (CRUD, filters, branch-scoped, EMP-{SEQ} auto-numbering, optimistic `version` checks → 409 VERSION_CONFLICT, activate/deactivate/separate/archive — separation returns outstanding custody and blocks archive until clean, notes gated on `employee.view_notes`); LookupsModule (departments + head assignment, positions, brands, manufacturers, item categories/subcategories, UOMs + global/item conversions, generic `/lookups/:type` for 11 spec-§10 lists, IN_USE delete protection); ItemsModule (SKU-{CAT}-{SEQ} auto-gen, §4 category×tracking validation, tracking immutable once stock/assets exist, barcode mapping unique-while-active → DUPLICATE_CODE, per-warehouse settings with branch access, `resolve-barcode` for scanner flows, cost fields gated on `item.view_cost`); ImportsModule (CSV template → multipart validate with row-level machine-coded errors → staged commit strict/partial, `import_stagings` table, audit-logged). New SequencesModule; fixed latent Phase 1 bug (AuditService dropped `actorUserId` → NULL actors).
+- **Migration** `phase2_versions_uom_globals_import_stagings`: version columns on employees/items, global UOM conversions (nullable item_id + partial unique index), import_stagings.
+- **Frontend** (`apps/web`): Employees (table/filters/dialogs, separation flow, custody section that hides on 404 until Phase 3), Lookups admin (8 tabs + generic lists engine), Items (full-page form: basics/units/flags/costs/barcodes/warehouse-settings grid), 4-step CSV Import wizard, nav + dashboard tiles, new Tabs + Combobox UI-kit components.
+- **Seed**: 4 departments (ADMIN head wired), 5 positions, 8 employees (EMP-000001–8, one linked to employee@gemcor.dev), 6 UOMs + conversions, 7 categories + subcats, brands/manufacturers, 12 items covering every category × tracking method (incl. LOT+expiry), 14 barcodes, 8 warehouse settings (5 low-stock examples), 41 lookup values.
+- **Verification**: build 4/4, typecheck 5/5, lint 3/3, **91/91 tests** (from 35). Live smoke: employees/items/lookups/conversions listed; SKU + bin barcode resolution; full import E2E (validate caught bad branch ref → partial commit imported 1 row → record searchable); web routes guard-redirect. Security spot-checks: cost fields hidden from warehouse custodian, notes hidden from auditor, employee branch scoping (auditor 5 vs superadmin 8), import template 403 for employee role, cross-branch warehouse-settings PUT 403.
+- Added `user_access.md` (dev accounts cheat sheet — Tim request) + README link.
+- `docs/implementation-plan.md`: Phase 2 marked ✅ Delivered.
+
+**Decisions:**
+- Imports are CSV-only for now; XLSX deferred to Phase 8 polish (commented in code). Supplier import type arrives with Phase 4.
+- An adversarial review workflow was attempted but hit session limits; replaced with targeted manual security spot-checks (all passed). Deeper review can ride along with Phase 3.
+
+**Pending / Next:**
+- Phase 3: stock-ledger engine, receiving/issue/return/transfer/adjustment/reversal, serialized asset instances + lifecycle, barcode/QR generation + scanning, low-stock detection.
+
+---
+
 ## 2026-07-27 (later) — Real branches, parameterized approvers, notifications on hold
 
 Tim's answers to the kickoff questions, applied:
