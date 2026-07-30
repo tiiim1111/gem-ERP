@@ -28,6 +28,8 @@ import "./load-env";
 import { BusinessCategory, PrismaClient, TrackingMethod } from "@prisma/client";
 import * as argon2 from "argon2";
 import { ALL_PERMISSIONS, ROLE_DEFINITIONS } from "@gemerp/shared";
+import { seedPhase3Inventory } from "./seed-phase3-inventory";
+import { seedPhase3Assets } from "./seed-phase3-assets";
 
 const prisma = new PrismaClient();
 
@@ -961,6 +963,12 @@ async function main(): Promise<void> {
 
   const lookupCount = await seedLookupValues();
   console.log(`  ${lookupCount} lookup values across ${Object.keys(LOOKUP_VALUES).length} spec-§10 categories`);
+
+  // Phase 3: opening stock + lots + an in-transit transfer, then asset instances.
+  await seedPhase3Inventory(prisma);
+  console.log("  Phase 3 inventory: opening balances, lots, low-stock examples, in-transit transfer");
+  await seedPhase3Assets(prisma);
+  console.log("  Phase 3 assets: serialized instances with custody + history");
 
   await prisma.auditLog.create({
     data: {

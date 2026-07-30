@@ -2,31 +2,47 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeftRight,
+  BadgeCheck,
   Building2,
   IdCard,
   MonitorSmartphone,
   Package,
   ScrollText,
   ShieldCheck,
+  TriangleAlert,
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { PERMISSIONS } from '@gemerp/shared';
+import { AssetStatus, PERMISSIONS, TransferStatus } from '@gemerp/shared';
 import { getErrorMessage } from '@/lib/api';
 import {
+  listAssets,
   listAuditLogs,
   listBranches,
+  listEmployeeAcknowledgments,
   listEmployees,
   listItems,
+  listLowStock,
   listMySessions,
   listRoles,
+  listTotal,
+  listTransfers,
   listUsers,
   revokeMySession,
 } from '@/lib/endpoints';
-import { auditTimestamp, type SessionInfo } from '@/lib/types';
-import { formatDateTime, formatRelativeTime, humanize } from '@/lib/utils';
+import {
+  assetTag,
+  auditTimestamp,
+  custodyExpectedReturn,
+  custodyIsOverdue,
+  itemRefLabel,
+  meEmployeeId,
+  type SessionInfo,
+} from '@/lib/types';
+import { formatDate, formatDateTime, formatRelativeTime, humanize } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -245,6 +261,176 @@ function RecentActivityCard() {
   );
 }
 
+/** Prominent low-stock tile — live count linking to the report. */
+function LowStockTile() {
+  const lowStockQuery = useQuery({
+    queryKey: ['low-stock', 'count'],
+    queryFn: ({ signal }) => listLowStock({ page: 1, pageSize: 100 }, signal),
+  });
+  const count = lowStockQuery.data ? listTotal(lowStockQuery.data) : undefined;
+  const alarming = (count ?? 0) > 0;
+
+  return (
+    <Link
+      href="/inventory/low-stock"
+      className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Card
+        className={
+          alarming
+            ? 'border-warning/50 bg-warning/5 transition-colors hover:border-warning'
+            : 'transition-colors hover:border-primary/40'
+        }
+      >
+        <CardContent className="flex items-center gap-4 p-4 sm:p-5">
+          <div className={alarming ? 'rounded-md bg-warning/15 p-2.5' : 'rounded-md bg-primary/10 p-2.5'}>
+            <TriangleAlert
+              className={alarming ? 'h-5 w-5 text-warning' : 'h-5 w-5 text-primary'}
+              aria-hidden
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm text-muted-foreground">Low-stock items</p>
+            {lowStockQuery.isPending ? (
+              <Skeleton className="mt-1 h-7 w-14" />
+            ) : lowStockQuery.isError ? (
+              <p className="text-sm text-destructive">Unavailable</p>
+            ) : (
+              <p className="text-2xl font-semibold tabular-nums">{count}</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+/** Assets grouped by key lifecycle statuses. */
+function AssetStatusCard() {
+  const statuses = [
+    { status: AssetStatus.AVAILABLE, label: 'Available' },
+    { status: AssetStatus.ASSIGNED, label: 'Assigned' },
+    { status: AssetStatus.UNDER_MAINTENANCE, label: 'Maintenance' },
+    { status: AssetStatus.DAMAGED, label: 'Damaged' },
+  ] as const;
+
+  const queries = useQueries({
+    queries: statuses.map((entry) => ({
+      queryKey: ['assets', 'count', entry.status],
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        listAssets({ page: 1, pageSize: 1, status: entry.status }, signal),
+    })),
+  });
+
+  return (
+    <Link
+      href="/assets"
+      className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Card className="transition-colors hover:border-primary/40">
+        <CardContent className="p-4 sm:p-5">
+          <div className="mb-2 flex items-center gap-2">
+            <div className="rounded-md bg-primary/10 p-2">
+              <MonitorSmartphone className="h-4 w-4 text-primary" aria-hidden />
+            </div>
+            <p className="text-sm text-muted-foreground">Assets by status</p>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {statuses.map((entry, index) => {
+              const query = queries[index]!;
+              return (
+                <div key={entry.status} className="min-w-0">
+                  {query.isPending ? (
+                    <Skeleton className="h-6 w-10" />
+                  ) : query.isError ? (
+                    <p className="text-sm text-destructive">—</p>
+                  ) : (
+                    <p className="text-lg font-semibold tabular-nums">{query.data.meta.total}</p>
+                  )}
+                  <p className="truncate text-[11px] text-muted-foreground">{entry.label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+/** Outstanding acknowledgments for the session user's employee record. */
+function MyAcknowledgmentsCard({ employeeId }: { employeeId: string }) {
+  const acknowledgmentsQuery = useQuery({
+    queryKey: ['employees', 'acknowledgments', employeeId],
+    queryFn: ({ signal }) => listEmployeeAcknowledgments(employeeId, signal),
+    retry: false,
+  });
+
+  const data = acknowledgmentsQuery.data;
+  const outstanding = data?.outstanding ?? [];
+  const overdue = data?.overdueReturns ?? [];
+
+  // 403/404 (no self-view scope yet) — hide silently rather than error noise.
+  if (acknowledgmentsQuery.isError) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>My pending acknowledgments</CardTitle>
+        <CardDescription>
+          Assets issued to you awaiting confirmation, plus overdue expected returns.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0 sm:p-0">
+        {acknowledgmentsQuery.isPending ? (
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : outstanding.length === 0 && overdue.length === 0 ? (
+          <EmptyState icon={BadgeCheck} title="Nothing pending" description="You're all caught up." />
+        ) : (
+          <ul className="divide-y">
+            {[...outstanding, ...overdue.filter((row) => !outstanding.some((o) => o.id === row.id))].map(
+              (row) => {
+                const isOverdue = custodyIsOverdue(row);
+                return (
+                  <li key={row.id}>
+                    <Link
+                      href={row.asset ? `/assets/${row.asset.id}` : '#'}
+                      className={
+                        'flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 sm:px-5 ' +
+                        (isOverdue ? 'bg-destructive/5' : '')
+                      }
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {row.asset ? assetTag(row.asset) : 'Asset'}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {row.asset ? itemRefLabel(row.asset.item ?? null) : ''}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        {!row.acknowledgedAt ? <Badge variant="warning">Acknowledge</Badge> : null}
+                        {isOverdue ? (
+                          <Badge variant="destructive" className="ml-1">
+                            Overdue since {formatDate(custodyExpectedReturn(row))}
+                          </Badge>
+                        ) : null}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              },
+            )}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function DashboardPage() {
   const { user, can } = useSession();
   const { toast } = useToast();
@@ -255,6 +441,10 @@ export function DashboardPage() {
   const canViewAudit = can(PERMISSIONS.audit.view);
   const canViewEmployees = can(PERMISSIONS.employee.view);
   const canViewItems = can(PERMISSIONS.item.view);
+  const canViewInventory = can(PERMISSIONS.inventory.view);
+  const canViewAssets = can(PERMISSIONS.asset.view);
+  const canViewTransfers = can(PERMISSIONS.transfer.view);
+  const myEmployeeId = meEmployeeId(user);
 
   const usersCount = useQuery({
     queryKey: ['users', 'count'],
@@ -284,6 +474,12 @@ export function DashboardPage() {
   const sessionsCount = useQuery({
     queryKey: ['auth', 'sessions'],
     queryFn: ({ signal }) => listMySessions(signal),
+  });
+  const inTransitCount = useQuery({
+    queryKey: ['transfers', 'count', 'in-transit'],
+    queryFn: ({ signal }) =>
+      listTransfers({ page: 1, pageSize: 1, status: TransferStatus.IN_TRANSIT }, signal),
+    enabled: canViewTransfers,
   });
 
   React.useEffect(() => {
@@ -317,6 +513,22 @@ export function DashboardPage() {
         title={`Welcome, ${user.displayName}`}
         description="Overview of your GEM ERP workspace."
       />
+
+      {/* Phase 3 operations tiles */}
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {canViewInventory ? <LowStockTile /> : null}
+        {canViewAssets ? <AssetStatusCard /> : null}
+        {canViewTransfers ? (
+          <StatCard
+            title="Transfers in transit"
+            icon={ArrowLeftRight}
+            value={inTransitCount.data?.meta.total}
+            loading={inTransitCount.isPending}
+            error={inTransitCount.error}
+            href="/inventory/transfers"
+          />
+        ) : null}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {canViewEmployees ? (
@@ -377,6 +589,12 @@ export function DashboardPage() {
           error={sessionsCount.error}
         />
       </div>
+
+      {myEmployeeId ? (
+        <div className="mt-4">
+          <MyAcknowledgmentsCard employeeId={myEmployeeId} />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <MySessionsCard />

@@ -9,7 +9,7 @@ criteria that gate phase completion, and current status. The acceptance criteria
 from spec section 33 are tracked at the end, together with the risks/assumptions
 register.
 
-**Last updated:** 2026-07-23
+**Last updated:** 2026-07-30
 
 ---
 
@@ -29,7 +29,7 @@ register.
 | 0 | Discovery & architecture | ✅ Delivered (this session) |
 | 1 | Foundation | 🟡 Delivered — verification pending (e2e against live DB deferred) |
 | 2 | Employees, lookups, and catalog | ✅ Delivered |
-| 3 | Inventory and serialized assets | 📋 Planned |
+| 3 | Inventory and serialized assets | ✅ Delivered (attachments + global search deferred to Phase 3.5) |
 | 4 | Procurement | 📋 Planned |
 | 5 | Maintenance | 📋 Planned |
 | 6 | Counts, approvals, and notifications | 📋 Planned |
@@ -241,47 +241,55 @@ Manual/scripted checks against the running stack:
 
 ---
 
-## Phase 3 — Inventory and Serialized Assets — 📋 Planned
+## Phase 3 — Inventory and Serialized Assets — ✅ Delivered (2026-07-30)
 
 ### Deliverables
 
-- [ ] Migrations: `stock_transactions`, `stock_transaction_lines`,
+- [x] Migrations: `stock_transactions`, `stock_transaction_lines`,
       `stock_ledger_entries`, `stock_balances`, `stock_reservations`,
       `inventory_lots`, `assets`, `asset_assignments`, `asset_movements`,
       `asset_condition_history`, `asset_status_history`, `asset_acknowledgments`.
-- [ ] Stock-ledger engine (spec sections 3.1, 13): every stock change is an
+- [x] Stock-ledger engine (spec sections 3.1, 13): every stock change is an
       immutable ledger entry; balances are a transactionally updated projection;
       posting validates availability inside a DB transaction with row locks;
       negative stock blocked by default; corrections via reversal, never edits.
-- [ ] Transaction types: opening balance, purchase/non-purchase receipt, issue
+- [x] Transaction types: opening balance, purchase/non-purchase receipt, issue
       (employee/department/project), returns, location transfer, inter-branch
       transfer (draft → submit → approve → dispatch → in-transfer → receive →
       post), adjustments, disposal/write-off, reversal. Statuses per spec
       (Draft → … → Posted/Canceled/Reversed); only Posted affects stock.
-- [ ] Document numbering from `sequence_counters` (per type, per branch, per year)
+- [x] Document numbering from `sequence_counters` (per type, per branch, per year)
       with concurrency-safe allocation.
-- [ ] Serialized assets (spec section 12): asset instances with unique tag
+- [x] Serialized assets (spec section 12): asset instances with unique tag
       (`AST-{BRANCH}-{CAT}-{YEAR}-{SEQ}`), Code 128 barcode + QR scan token,
       lifecycle state machine with enforced transitions, full custody/condition/
       location/status history.
-- [ ] Assignment/issuance/return (spec section 15): assign to employee/department/
+- [x] Assignment/issuance/return (spec section 15): assign to employee/department/
       project/location, acknowledgment records, condition at issue/return,
       printable acknowledgment form, overdue-return detection, lost/damaged
       reporting; separation workflow surfaces outstanding assets.
-- [ ] Barcode/QR generation and label rendering; scan endpoint resolving opaque
+- [x] Barcode/QR generation and label rendering; scan endpoint resolving opaque
       tokens with auth + branch checks; rapid-scan receive/issue/count input
       modes (keyboard-wedge scanners + camera scanning); duplicate-scan protection.
-- [ ] Low-stock detection job (worker): available vs. per-warehouse reorder level;
+- [x] Low-stock detection job (worker): available vs. per-warehouse reorder level;
       idempotent scheduled scan feeding Phase 6 notifications (interim: surfaced
       via API/report).
-- [ ] Idempotency keys on posting-sensitive endpoints; optimistic concurrency on
+- [x] Idempotency keys on posting-sensitive endpoints; optimistic concurrency on
       mutable drafts.
-- [ ] Permissions: `inventory.*`, `asset.*` completed; cost fields gated behind
+- [x] Permissions: `inventory.*`, `asset.*` completed; cost fields gated behind
       view-cost permission.
-- [ ] Web: stock transaction screens, asset register/detail with history timelines,
+- [x] Web: stock transaction screens, asset register/detail with history timelines,
       assignment/return flows, label preview/print, mobile-friendly scan screens.
-- [ ] Seed extension: opening balances, sample assets, an active assignment,
+- [x] Seed extension: opening balances, sample assets, an active assignment,
       a low-stock example.
+
+### Deferred to Phase 3.5 (honest gaps, tracked)
+
+- Attachments module (api-outline §4.6) and global search (§4.7).
+- XLSX import/export (CSV shipped); draft-line editing UI (cancel+recreate flow shipped).
+- Approval-framework routing for controlled actions (Phase 6; actions run under direct permissions, fully audited, self-approval already blocked).
+- `assets.version` column (PATCH uses an atomic updatedAt guard — same 409 contract); `inventory.approve` permission string (approve uses `approval.act` from the shared catalog).
+- Batch label printing UI and `/employees/:id/issuances` UI (endpoints live).
 
 ### Verification criteria
 

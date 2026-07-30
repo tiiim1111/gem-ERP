@@ -17,6 +17,26 @@ Entry format:
 
 ---
 
+## 2026-07-30 — Phase 3 delivered: stock ledger, transfers, serialized assets, scanning
+
+**Done:**
+- Built by three parallel builder agents (inventory/ledger, assets/scan, frontend) against the `docs/api-outline.md` §4 contract; interrupted once by session limits and resumed with context intact; integrated, verified, and hardened by the orchestrator.
+- **Stock ledger engine** (`apps/api/src/inventory`): all spec-§13 transaction types; draft→submit→(auto-)approve→post workflow; posting in a single DB transaction with advisory locks + conditional decrements — **concurrency proven live**: two racing 5-unit issues for the last 5 on hand → exactly one POSTED, one 409 INSUFFICIENT_STOCK, ledger reconciled to zero; `Idempotency-Key` required on post/reverse with replay returning the original result (verified: no duplicate movement); reversal creates negating entries, original never edited; lots with expiry validation (LOT_EXPIRED + permissioned override) and FEFO ordering; balances as projections (onHand/available/reserved/inTransit); low-stock report driven by per-warehouse reorder settings.
+- **Transfers** (`apps/api/src/transfers`): location/intra-branch immediate moves + INTER_BRANCH documents TRF-{YYYY}-{SEQ} with dispatch (source leg + in-transit) → receive (per-line accepted/short/damaged) → close; both-end branch access enforced; seeded TRF-2026-00001 in transit SUB→MKT.
+- **Serialized assets** (`apps/api/src/assets`): registration (single/bulk) with atomic AST-{BRANCH}-{CAT}-{YYYY}-{SEQ6} tags; full lifecycle state machine per docs/status-transitions.md (11 statuses × 23 events walked in tests — every illegal transition 409); assign/acknowledge/return with condition capture; damage/loss/recover; retire/dispose/reverse-disposal; custody + movement + status + condition history; employee custody endpoints (assets, acknowledgments with overdue).
+- **Labels + scanning** (`apps/api/src/scan`): Code128 + QR labels (SVG/PNG, two sizes, batch sheet) — QR carries only an opaque scan URL; scan tokens never serialized in API responses; `/scan/:token` returns summary + permitted actions; unknown/wrong-branch tokens get identical 404 (no oracle).
+- **Frontend**: transaction wizard (per-type fields, lot select-or-create, live UOM preview, per-line INSUFFICIENT_STOCK rendering), balances/ledger/lots/low-stock browsers, transfer screens incl. receive with exception quantities, asset list/detail with status-driven action dialogs + label print, `/scan` page (keyboard-wedge + native BarcodeDetector camera + manual fallback, duplicate-scan guard), dashboard tiles (low stock, assets by status, in-transit, my acknowledgments). 12 new routes (25 total).
+- **Integration fix (mine):** issue lines without a storage location hit the location-bucket balance and failed with a misleading "available 0". `prepareLines` now defaults receipts to the warehouse's default receiving location and auto-resolves outbound lines to the single stocked location (explicit-location error when stock sits in several; accurate warehouse-level INSUFFICIENT_STOCK when none) — spec §6 default-locations behavior.
+- **Verification:** build 4/4, typecheck 5/5, lint 3/3, **185/185 unit tests**; migration `phase3_stock_txn_idempotency_and_versions` applied; seed integrated + idempotent (re-run clean). Live smoke: overdraw 999 → 409 with available 30; issue 5 auto-location → POSTED, 30→25; replay → unchanged; reverse → 30 restored; label SVG renders; scan token resolves with permitted actions; transfers show in-transit; security checks (employee@ valid-body create → 403, dispose → 403; warehouse@ sees SUB only; bogus scan token opaque 404).
+
+**Decisions / debt (tracked in implementation-plan Phase 3.5):**
+- Deferred: attachments (§4.6), global search (§4.7), XLSX, draft-line editing UI, batch-label UI. Approval routing for controlled actions arrives with Phase 6 (self-approval already blocked). `assets.version` column + `inventory.approve` permission string to add in the next migration/catalog batch.
+
+**Pending / Next:**
+- Phase 3.5 cleanup ride-along, then Phase 4: suppliers, purchase orders + approvals, partial receiving (serialized receipts create asset instances), purchase history.
+
+---
+
 ## 2026-07-28 — Phase 2 delivered: employees, lookups, item master, imports
 
 **Done:**

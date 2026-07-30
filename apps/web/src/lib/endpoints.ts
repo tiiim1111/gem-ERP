@@ -1,6 +1,6 @@
 /**
- * Typed functions for the Phase 1 + Phase 2 API surface
- * (docs/api-outline.md §2–3). All paths are relative to the /api/v1 base
+ * Typed functions for the Phase 1–3 API surface
+ * (docs/api-outline.md §2–4). All paths are relative to the /api/v1 base
  * handled by src/lib/api.ts.
  */
 import type {
@@ -8,11 +8,19 @@ import type {
   ItemBusinessCategory,
   Paginated,
   SessionUser,
+  StockTransactionStatus,
+  StockTransactionType,
   TrackingMethod,
+  TransferStatus,
 } from '@gemerp/shared';
-import { api, type QueryParams } from './api';
+import { api, fetchBinary, type QueryParams } from './api';
 import type {
+  Asset,
+  AssetAssignment,
+  AssetHistoryEntry,
   AuditLogEntry,
+  CustodyAssignment,
+  EmployeeAcknowledgmentsView,
   Branch,
   Brand,
   Department,
@@ -26,6 +34,8 @@ import type {
   ItemSubcategory,
   ItemWarehouseSetting,
   LookupValue,
+  Lot,
+  LowStockRow,
   Manufacturer,
   Me,
   OutstandingAsset,
@@ -33,8 +43,13 @@ import type {
   Position,
   ResolvedBarcode,
   Role,
+  ScanResolution,
   SessionInfo,
+  StockBalance,
+  StockLedgerEntry,
+  StockTransaction,
   StorageLocation,
+  Transfer,
   Uom,
   UomConversion,
   UserRecord,
@@ -748,4 +763,518 @@ export function commitImport(
 
 export function getImport(id: string, signal?: AbortSignal): Promise<ImportCommitResult> {
   return api.get<ImportCommitResult>(`/imports/${id}`, undefined, signal);
+}
+
+/* ========================================================================== */
+/* Phase 3 — Inventory, stock ledger, serialized assets (docs/api-outline §4) */
+/* ========================================================================== */
+
+/* ------------------- Stock transactions (contract §4.1) ------------------- */
+
+export interface StockTransactionListParams extends ListParams {
+  type?: StockTransactionType | string;
+  status?: StockTransactionStatus | string;
+  branchId?: string;
+  warehouseId?: string;
+  itemId?: string;
+  number?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface StockTransactionLineInput {
+  itemId: string;
+  uomId: string;
+  quantity: string | number;
+  lotId?: string;
+  /** Create-a-new-lot input for LOT-tracked items without an existing lot. */
+  lotInput?: { lotNumber?: string; expiryDate?: string | null; manufactureDate?: string | null };
+  locationId?: string;
+  /** Only sent when the caller holds inventory.view_cost. */
+  unitCost?: string | number;
+}
+
+export interface StockTransactionCreateBody {
+  type: StockTransactionType | string;
+  branchId: string;
+  warehouseId: string;
+  lines: StockTransactionLineInput[];
+  reasonCode?: string;
+  employeeId?: string;
+  departmentId?: string;
+  workOrderId?: string;
+  notes?: string;
+}
+
+export function listStockTransactions(
+  params: StockTransactionListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<StockTransaction>> {
+  return api.get<Paginated<StockTransaction>>('/stock-transactions', params, signal);
+}
+
+export function getStockTransaction(id: string, signal?: AbortSignal): Promise<StockTransaction> {
+  return api.get<StockTransaction>(`/stock-transactions/${id}`, undefined, signal);
+}
+
+export function createStockTransaction(body: StockTransactionCreateBody): Promise<StockTransaction> {
+  return api.post<StockTransaction>('/stock-transactions', body);
+}
+
+/** Draft-only edit; requires the current `version`. */
+export function updateStockTransaction(
+  id: string,
+  body: Partial<StockTransactionCreateBody> & { version: number },
+): Promise<StockTransaction> {
+  return api.patch<StockTransaction>(`/stock-transactions/${id}`, body);
+}
+
+export function submitStockTransaction(id: string): Promise<StockTransaction> {
+  return api.post<StockTransaction>(`/stock-transactions/${id}/submit`);
+}
+
+export function approveStockTransaction(id: string): Promise<StockTransaction> {
+  return api.post<StockTransaction>(`/stock-transactions/${id}/approve`);
+}
+
+export function rejectStockTransaction(id: string, comment: string): Promise<StockTransaction> {
+  return api.post<StockTransaction>(`/stock-transactions/${id}/reject`, { comment });
+}
+
+/** Posting requires an Idempotency-Key (contract §1.5). */
+export function postStockTransaction(id: string, idempotencyKey: string): Promise<StockTransaction> {
+  return api.post<StockTransaction>(`/stock-transactions/${id}/post`, undefined, { idempotencyKey });
+}
+
+export function cancelStockTransaction(id: string, reason: string): Promise<StockTransaction> {
+  return api.post<StockTransaction>(`/stock-transactions/${id}/cancel`, { reason });
+}
+
+/** Reversal requires a reason and an Idempotency-Key (contract §1.5). */
+export function reverseStockTransaction(
+  id: string,
+  reason: string,
+  idempotencyKey: string,
+): Promise<StockTransaction> {
+  return api.post<StockTransaction>(
+    `/stock-transactions/${id}/reverse`,
+    { reason },
+    { idempotencyKey },
+  );
+}
+
+/* ------------- Balances, ledger, lots, low stock (contract §4.2) ---------- */
+
+export interface StockBalanceListParams extends ListParams {
+  branchId?: string;
+  warehouseId?: string;
+  locationId?: string;
+  itemId?: string;
+  lotId?: string;
+}
+
+export function listStockBalances(
+  params: StockBalanceListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<StockBalance>> {
+  return api.get<Paginated<StockBalance>>('/stock-balances', params, signal);
+}
+
+export interface StockLedgerListParams extends ListParams {
+  itemId?: string;
+  warehouseId?: string;
+  locationId?: string;
+  lotId?: string;
+  type?: StockTransactionType | string;
+  from?: string;
+  to?: string;
+}
+
+export function listStockLedger(
+  params: StockLedgerListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<StockLedgerEntry>> {
+  return api.get<Paginated<StockLedgerEntry>>('/stock-ledger', params, signal);
+}
+
+/** Per-item balance rollup across accessible warehouses. */
+export function getItemStock(
+  itemId: string,
+  signal?: AbortSignal,
+): Promise<Paginated<StockBalance> | StockBalance[]> {
+  return api.get<Paginated<StockBalance> | StockBalance[]>(`/items/${itemId}/stock`, undefined, signal);
+}
+
+export interface LotListParams extends ListParams {
+  itemId?: string;
+  warehouseId?: string;
+  expiresBefore?: string;
+  status?: string;
+}
+
+export function listLots(params: LotListParams, signal?: AbortSignal): Promise<Paginated<Lot>> {
+  return api.get<Paginated<Lot>>('/lots', params, signal);
+}
+
+export function getLot(id: string, signal?: AbortSignal): Promise<Lot> {
+  return api.get<Lot>(`/lots/${id}`, undefined, signal);
+}
+
+export interface LowStockListParams extends ListParams {
+  branchId?: string;
+  warehouseId?: string;
+}
+
+export function listLowStock(
+  params: LowStockListParams = {},
+  signal?: AbortSignal,
+): Promise<Paginated<LowStockRow> | LowStockRow[]> {
+  return api.get<Paginated<LowStockRow> | LowStockRow[]>('/stock-alerts/low-stock', params, signal);
+}
+
+/** Total row count of a maybe-paginated list payload. */
+export function listTotal<T>(payload: Paginated<T> | T[]): number {
+  return Array.isArray(payload) ? payload.length : payload.meta.total;
+}
+
+/* ------------------- Serialized assets (contract §4.3) -------------------- */
+
+export interface AssetListParams extends ListParams {
+  q?: string;
+  branchId?: string;
+  warehouseId?: string;
+  status?: string;
+  conditionId?: string;
+  itemId?: string;
+  categoryId?: string;
+  custodianEmployeeId?: string;
+  departmentId?: string;
+  /** Warranty ends within N days (server filters warrantyEndDate ≤ now+N). */
+  warrantyExpiringDays?: number;
+}
+
+export interface AssetRegisterBody {
+  itemId: string;
+  branchId: string;
+  warehouseId?: string;
+  storageLocationId?: string;
+  /** Bulk registration: create N draft assets in one call (max 100). */
+  quantity?: number;
+  serialNumber?: string;
+  serialNumbers?: string[];
+  conditionId?: string;
+  criticalityId?: string;
+  departmentId?: string;
+  acquisitionDate?: string;
+  /** Only sent when the caller holds asset.view_cost. */
+  acquisitionCost?: string;
+  supplierId?: string;
+  warrantyStartDate?: string;
+  warrantyEndDate?: string;
+  nextMaintenanceAt?: string;
+  notes?: string;
+  initialStatus?: 'DRAFT' | 'AVAILABLE';
+}
+
+export function listAssets(params: AssetListParams, signal?: AbortSignal): Promise<Paginated<Asset>> {
+  return api.get<Paginated<Asset>>('/assets', params, signal);
+}
+
+export function getAsset(id: string, signal?: AbortSignal): Promise<Asset> {
+  return api.get<Asset>(`/assets/${id}`, undefined, signal);
+}
+
+/** Register one or more Draft assets; the server may return one or many. */
+export function registerAsset(body: AssetRegisterBody): Promise<Asset | Asset[]> {
+  return api.post<Asset | Asset[]>('/assets', body);
+}
+
+export function updateAsset(
+  id: string,
+  body: Record<string, unknown> & { version: number },
+): Promise<Asset> {
+  return api.patch<Asset>(`/assets/${id}`, body);
+}
+
+export function activateAsset(id: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/activate`);
+}
+
+export interface AssetAssignBody {
+  employeeId?: string;
+  departmentId?: string;
+  projectRef?: string;
+  locationId?: string;
+  expectedReturnDate?: string;
+  /** Condition lookup id (asset-conditions). */
+  conditionId: string;
+  notes?: string;
+}
+
+/** Assign requires an Idempotency-Key (contract §1.5). */
+export function assignAsset(id: string, body: AssetAssignBody, idempotencyKey: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/assign`, body, { idempotencyKey });
+}
+
+export function acknowledgeAsset(id: string, notes?: string): Promise<unknown> {
+  return api.post<unknown>(`/assets/${id}/acknowledge`, notes ? { notes } : {});
+}
+
+export interface AssetReturnBody {
+  conditionId: string;
+  /** Damaged return routes the asset to Damaged instead of Available. */
+  damaged?: boolean;
+  warehouseId?: string;
+  locationId?: string;
+  notes?: string;
+}
+
+/** Return requires an Idempotency-Key (contract §1.5). */
+export function returnAsset(id: string, body: AssetReturnBody, idempotencyKey: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/return`, body, { idempotencyKey });
+}
+
+export interface AssetTransferBody {
+  /** Employee-to-employee reassignment when set. */
+  employeeId?: string;
+  branchId?: string;
+  warehouseId?: string;
+  locationId?: string;
+  conditionId?: string;
+  expectedReturnDate?: string;
+  notes?: string;
+}
+
+/** Reassignment or location/warehouse/branch move. */
+export function transferAssetAction(
+  id: string,
+  body: AssetTransferBody,
+  idempotencyKey: string,
+): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/transfer`, body, { idempotencyKey });
+}
+
+export function reserveAsset(id: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/reserve`);
+}
+
+export function releaseAsset(id: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/release`);
+}
+
+export function sendAssetToInspection(id: string, notes?: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/send-to-inspection`, notes ? { notes } : {});
+}
+
+export interface AssetInspectBody {
+  outcome: 'PASS' | 'FAIL';
+  conditionId: string;
+  /** Findings — required when the inspection fails. */
+  notes?: string;
+  maintenanceRequired?: boolean;
+}
+
+export function inspectAsset(id: string, body: AssetInspectBody): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/inspect`, body);
+}
+
+export function sendAssetToMaintenance(id: string, notes?: string): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/send-to-maintenance`, notes ? { notes } : {});
+}
+
+export function reportAssetDamage(
+  id: string,
+  body: { description: string; conditionId?: string },
+): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/report-damage`, body);
+}
+
+export function reportAssetLoss(id: string, body: { description: string }): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/report-loss`, body);
+}
+
+export function recoverAsset(id: string, body: { reason: string }): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/recover`, body);
+}
+
+export function retireAsset(id: string, body: { reason: string }): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/retire`, body);
+}
+
+/** Disposal requires an Idempotency-Key (contract §1.5). */
+export function disposeAsset(
+  id: string,
+  body: { disposalMethodId: string; reason: string },
+  idempotencyKey: string,
+): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/dispose`, body, { idempotencyKey });
+}
+
+/** Disposal reversal requires an Idempotency-Key (contract §1.5). */
+export function reverseAssetDisposal(
+  id: string,
+  body: { reason: string },
+  idempotencyKey: string,
+): Promise<Asset> {
+  return api.post<Asset>(`/assets/${id}/reverse-disposal`, body, { idempotencyKey });
+}
+
+export function listAssetHistory(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Paginated<AssetHistoryEntry> | AssetHistoryEntry[]> {
+  return api.get<Paginated<AssetHistoryEntry> | AssetHistoryEntry[]>(
+    `/assets/${id}/history`,
+    undefined,
+    signal,
+  );
+}
+
+export function listAssetAssignments(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Paginated<AssetAssignment> | AssetAssignment[]> {
+  return api.get<Paginated<AssetAssignment> | AssetAssignment[]>(
+    `/assets/${id}/assignments`,
+    undefined,
+    signal,
+  );
+}
+
+/** Fetch the rendered label (`svg` default, or `png`; sizes `2x1` / `3x2`). */
+export function fetchAssetLabel(
+  id: string,
+  params: { format?: 'svg' | 'png'; size?: '2x1' | '3x2' } = {},
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/assets/${id}/label`, params, signal);
+}
+
+/* --------------- Employee custody & acknowledgments (§3.1 P3) ------------- */
+
+/** GET /employees/:id/assets — open custody assignments with nested asset. */
+export function listEmployeeCustody(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Paginated<CustodyAssignment> | CustodyAssignment[]> {
+  return api.get<Paginated<CustodyAssignment> | CustodyAssignment[]>(
+    `/employees/${id}/assets`,
+    undefined,
+    signal,
+  );
+}
+
+export function listEmployeeAcknowledgments(
+  id: string,
+  signal?: AbortSignal,
+): Promise<EmployeeAcknowledgmentsView> {
+  return api.get<EmployeeAcknowledgmentsView>(`/employees/${id}/acknowledgments`, undefined, signal);
+}
+
+/* -------------------------- Scanning (contract §4.4) ---------------------- */
+
+export function resolveScanToken(token: string, signal?: AbortSignal): Promise<ScanResolution> {
+  return api.get<ScanResolution>(`/scan/${encodeURIComponent(token)}`, undefined, signal);
+}
+
+export function resolveScanCode(code: string): Promise<ScanResolution> {
+  return api.post<ScanResolution>('/scan/resolve', { code });
+}
+
+/* -------------------------- Transfers (contract §4.5) --------------------- */
+
+export interface TransferListParams extends ListParams {
+  status?: TransferStatus | string;
+  sourceBranchId?: string;
+  destinationBranchId?: string;
+  kind?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface TransferEndpointInput {
+  branchId?: string;
+  warehouseId?: string;
+  locationId?: string;
+}
+
+/** Transfer documents move stock lines; asset moves use /assets/:id/transfer. */
+export interface TransferLineInput {
+  itemId: string;
+  uomId: string;
+  quantity: string | number;
+  lotId?: string;
+  notes?: string;
+}
+
+export interface TransferCreateBody {
+  /** LOCATION | INTRA_BRANCH | INTER_BRANCH. */
+  kind: string;
+  transferDate?: string;
+  source: TransferEndpointInput & { branchId: string; warehouseId: string };
+  destination: TransferEndpointInput;
+  lines: TransferLineInput[];
+  reasonId?: string;
+  notes?: string;
+}
+
+export function listTransfers(
+  params: TransferListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<Transfer>> {
+  return api.get<Paginated<Transfer>>('/transfers', params, signal);
+}
+
+export function getTransfer(id: string, signal?: AbortSignal): Promise<Transfer> {
+  return api.get<Transfer>(`/transfers/${id}`, undefined, signal);
+}
+
+export function createTransfer(body: TransferCreateBody): Promise<Transfer> {
+  return api.post<Transfer>('/transfers', body);
+}
+
+export function updateTransfer(
+  id: string,
+  body: Partial<TransferCreateBody> & { version: number },
+): Promise<Transfer> {
+  return api.patch<Transfer>(`/transfers/${id}`, body);
+}
+
+export function submitTransfer(id: string): Promise<Transfer> {
+  return api.post<Transfer>(`/transfers/${id}/submit`);
+}
+
+export function approveTransfer(id: string): Promise<Transfer> {
+  return api.post<Transfer>(`/transfers/${id}/approve`);
+}
+
+export function rejectTransfer(id: string, comment: string): Promise<Transfer> {
+  return api.post<Transfer>(`/transfers/${id}/reject`, { comment });
+}
+
+/** Dispatch requires an Idempotency-Key (contract §1.5). */
+export function dispatchTransfer(id: string, idempotencyKey: string): Promise<Transfer> {
+  return api.post<Transfer>(`/transfers/${id}/dispatch`, undefined, { idempotencyKey });
+}
+
+export interface TransferReceiveLineInput {
+  lineId: string;
+  received: string | number;
+  damaged: string | number;
+  short: string | number;
+  rejected: string | number;
+  notes?: string;
+}
+
+/** Receive requires an Idempotency-Key (contract §1.5). */
+export function receiveTransfer(
+  id: string,
+  body: { lines: TransferReceiveLineInput[]; notes?: string },
+  idempotencyKey: string,
+): Promise<Transfer> {
+  return api.post<Transfer>(`/transfers/${id}/receive`, body, { idempotencyKey });
+}
+
+export function cancelTransfer(id: string, reason: string): Promise<Transfer> {
+  return api.post<Transfer>(`/transfers/${id}/cancel`, { reason });
 }

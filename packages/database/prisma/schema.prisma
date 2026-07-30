@@ -953,6 +953,13 @@ model StockTransaction {
   reasonId               String?              @map("reason_id") @db.Uuid
   notes                  String?
   reversalOfId           String?              @map("reversal_of_id") @db.Uuid
+  /// Idempotency-Key of the post/reverse (and transfer dispatch/receive)
+  /// request that produced this document's stock movement (api-outline 1.5).
+  /// Unique: replaying the key returns the original result, never a
+  /// duplicate movement.
+  idempotencyKey         String?              @unique @map("idempotency_key")
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version                Int                  @default(1)
   createdById            String               @map("created_by_id") @db.Uuid
   submittedAt            DateTime?            @map("submitted_at")
   approvedById           String?              @map("approved_by_id") @db.Uuid
@@ -1664,6 +1671,8 @@ model Transfer {
   transferDate           DateTime       @map("transfer_date") @db.Date
   reasonId               String?        @map("reason_id") @db.Uuid
   notes                  String?
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version                Int            @default(1)
   createdById            String         @map("created_by_id") @db.Uuid
   submittedAt            DateTime?      @map("submitted_at")
   approvedById           String?        @map("approved_by_id") @db.Uuid

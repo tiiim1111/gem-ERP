@@ -5,14 +5,31 @@
  * payloads.
  */
 import type {
+  AssetStatus,
   EmployeeStatus,
   ItemBusinessCategory,
   SessionUser,
+  StockTransactionStatus,
+  StockTransactionType,
   TrackingMethod,
+  TransferStatus,
 } from '@gemerp/shared';
 
-/** GET /auth/me — SessionUser plus the forced-password-change flag. */
-export type Me = SessionUser & { mustChangePassword?: boolean };
+/**
+ * GET /auth/me — SessionUser plus the forced-password-change flag. The
+ * optional employee link (when the account is tied to an employee record)
+ * powers self-service views such as "my pending acknowledgments".
+ */
+export type Me = SessionUser & {
+  mustChangePassword?: boolean;
+  employeeId?: string | null;
+  employee?: { id: string } | null;
+};
+
+/** Employee id linked to the session user, when the API exposes one. */
+export function meEmployeeId(me: Me): string | null {
+  return me.employeeId ?? me.employee?.id ?? null;
+}
 
 /** One of the caller's own sessions (GET /auth/sessions). */
 export interface SessionInfo {
@@ -537,4 +554,696 @@ export function commitCounts(result: ImportCommitResult): Array<{ label: string;
   return Object.entries(source)
     .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
     .map(([label, value]) => ({ label, value }));
+}
+
+/* ========================================================================== */
+/* Phase 3 — Inventory, stock ledger, serialized assets (api-outline §4)      */
+/* ========================================================================== */
+
+/** Decimal quantities/costs are serialized as strings; tolerate numbers. */
+export type DecimalString = string | number;
+
+/** "12.0000" -> "12", "2.5000" -> "2.5" for display; null-safe. */
+export function formatQuantity(value: DecimalString | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const parsed = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(parsed)) return String(value);
+  return String(parsed);
+}
+
+/** Numeric value of a decimal string (NaN-safe, defaults to 0). */
+export function decimalValue(value: DecimalString | null | undefined): number {
+  if (value === null || value === undefined || value === '') return 0;
+  const parsed = typeof value === 'string' ? Number(value) : value;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+const phpFormatter = new Intl.NumberFormat('en-PH', {
+  style: 'currency',
+  currency: 'PHP',
+  minimumFractionDigits: 2,
+});
+
+/** "1250.00" -> "₱1,250.00"; null-safe (cost fields are permission-gated). */
+export function formatMoney(value: DecimalString | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const parsed = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(parsed)) return String(value);
+  return phpFormatter.format(parsed);
+}
+
+/** Compact reference embeds (server may hydrate relations differently). */
+export interface ItemRef {
+  id: string;
+  sku?: string;
+  name?: string;
+  trackingMethod?: TrackingMethod | string;
+  baseUomId?: string;
+  baseUom?: Uom | null;
+  isExpiryTracked?: boolean;
+}
+
+export interface WarehouseRef {
+  id: string;
+  code?: string;
+  name?: string;
+  branchId?: string;
+}
+
+export interface LocationRef {
+  id: string;
+  code?: string;
+  name?: string;
+  barcode?: string | null;
+}
+
+export interface UserRef {
+  id: string;
+  displayName?: string;
+  email?: string;
+}
+
+export function refLabel(
+  ref: { code?: string; name?: string; id: string } | null | undefined,
+  fallback = '—',
+): string {
+  if (!ref) return fallback;
+  return ref.name ?? ref.code ?? fallback;
+}
+
+export function itemRefLabel(item: ItemRef | null | undefined): string {
+  if (!item) return '—';
+  if (item.name && item.sku) return `${item.name} (${item.sku})`;
+  return item.name ?? item.sku ?? item.id;
+}
+
+/* ------------------------- Lots (contract §4.2) --------------------------- */
+
+export interface Lot {
+  id: string;
+  lotNumber?: string;
+  number?: string;
+  code?: string;
+  itemId?: string;
+  item?: ItemRef | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  manufactureDate?: string | null;
+  manufacturingDate?: string | null;
+  expiryDate?: string | null;
+  expirationDate?: string | null;
+  status?: string | null;
+  onHand?: DecimalString | null;
+  quantityOnHand?: DecimalString | null;
+  available?: DecimalString | null;
+  availableQuantity?: DecimalString | null;
+  createdAt?: string;
+}
+
+export function lotNumber(lot: Lot): string {
+  return lot.lotNumber ?? lot.number ?? lot.code ?? lot.id;
+}
+
+export function lotExpiry(lot: Lot): string | null {
+  return lot.expiryDate ?? lot.expirationDate ?? null;
+}
+
+export function lotOnHand(lot: Lot): DecimalString | null {
+  return lot.onHand ?? lot.quantityOnHand ?? null;
+}
+
+export function lotAvailable(lot: Lot): DecimalString | null {
+  return lot.available ?? lot.availableQuantity ?? null;
+}
+
+/** Days until an ISO date (negative = past). Null when the date is absent. */
+export function daysUntil(date: string | null | undefined): number | null {
+  if (!date) return null;
+  const target = new Date(date).getTime();
+  if (Number.isNaN(target)) return null;
+  return Math.ceil((target - Date.now()) / 86_400_000);
+}
+
+/* ----------------- Stock transactions (contract §4.1) --------------------- */
+
+export interface StockTransactionLine {
+  id?: string;
+  lineNumber?: number;
+  itemId: string;
+  item?: ItemRef | null;
+  uomId?: string;
+  uom?: Uom | null;
+  /** Entered quantity in the entered UOM. */
+  quantity: DecimalString;
+  enteredQuantity?: DecimalString;
+  /** Normalized base-unit quantity. */
+  baseQuantity?: DecimalString | null;
+  baseUomId?: string;
+  baseUom?: Uom | null;
+  lotId?: string | null;
+  lot?: Lot | null;
+  locationId?: string | null;
+  location?: LocationRef | null;
+  /** Cost fields present only with inventory.view_cost. */
+  unitCost?: DecimalString | null;
+  totalCost?: DecimalString | null;
+  notes?: string | null;
+}
+
+export interface ApprovalTrailEntry {
+  id?: string;
+  step?: number | null;
+  action?: string;
+  status?: string;
+  decision?: string;
+  actorUserId?: string | null;
+  actor?: UserRef | null;
+  actorDisplayName?: string | null;
+  comment?: string | null;
+  decidedAt?: string | null;
+  createdAt?: string | null;
+}
+
+export interface StockLedgerEntry {
+  id: string;
+  transactionId?: string | null;
+  transactionNumber?: string | null;
+  transactionType?: StockTransactionType | string | null;
+  type?: string | null;
+  itemId?: string;
+  item?: ItemRef | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  locationId?: string | null;
+  location?: LocationRef | null;
+  lotId?: string | null;
+  lot?: Lot | null;
+  /** Signed base-unit quantity (+ in, − out). */
+  quantity: DecimalString;
+  baseQuantity?: DecimalString;
+  uomId?: string;
+  uom?: Uom | null;
+  unitCost?: DecimalString | null;
+  balanceAfter?: DecimalString | null;
+  occurredAt?: string;
+  postedAt?: string;
+  createdAt?: string;
+}
+
+export function ledgerTimestamp(entry: StockLedgerEntry): string | undefined {
+  return entry.occurredAt ?? entry.postedAt ?? entry.createdAt;
+}
+
+export function ledgerQuantity(entry: StockLedgerEntry): number {
+  return decimalValue(entry.baseQuantity ?? entry.quantity);
+}
+
+export interface StockTransaction {
+  id: string;
+  number?: string;
+  transactionNumber?: string;
+  type: StockTransactionType | string;
+  status: StockTransactionStatus | string;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  transactionDate?: string | null;
+  postedAt?: string | null;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  canceledAt?: string | null;
+  reversedAt?: string | null;
+  rejectedAt?: string | null;
+  reasonCode?: string | null;
+  reason?: string | { id: string; code?: string; name?: string } | null;
+  employeeId?: string | null;
+  employee?: EmployeeSummary | null;
+  departmentId?: string | null;
+  department?: { id: string; code?: string; name?: string } | null;
+  workOrderId?: string | null;
+  notes?: string | null;
+  lines?: StockTransactionLine[];
+  ledgerEntries?: StockLedgerEntry[];
+  approvals?: ApprovalTrailEntry[];
+  approvalTrail?: ApprovalTrailEntry[];
+  createdBy?: UserRef | null;
+  createdByUserId?: string | null;
+  approvedBy?: UserRef | null;
+  postedBy?: UserRef | null;
+  reversalOfId?: string | null;
+  reversedByTransactionId?: string | null;
+  cancelReason?: string | null;
+  reverseReason?: string | null;
+  /** Optimistic-concurrency version; must be echoed on PATCH. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function stockTransactionNumber(txn: StockTransaction): string {
+  return txn.number ?? txn.transactionNumber ?? txn.id.slice(0, 8);
+}
+
+export function stockTransactionApprovals(txn: StockTransaction): ApprovalTrailEntry[] {
+  return txn.approvals ?? txn.approvalTrail ?? [];
+}
+
+export function stockTransactionReasonLabel(txn: StockTransaction): string | null {
+  if (txn.reasonCode) return txn.reasonCode;
+  if (!txn.reason) return null;
+  if (typeof txn.reason === 'string') return txn.reason;
+  return txn.reason.name ?? txn.reason.code ?? null;
+}
+
+/* -------------------- Balances (contract §4.2) ---------------------------- */
+
+export interface StockBalance {
+  id?: string;
+  itemId?: string;
+  item?: ItemRef | null;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  locationId?: string | null;
+  location?: LocationRef | null;
+  lotId?: string | null;
+  lot?: Lot | null;
+  uomId?: string;
+  uom?: Uom | null;
+  onHand?: DecimalString;
+  onHandQuantity?: DecimalString;
+  available?: DecimalString;
+  availableQuantity?: DecimalString;
+  reserved?: DecimalString;
+  reservedQuantity?: DecimalString;
+  inTransfer?: DecimalString;
+  inTransferQuantity?: DecimalString;
+  quarantined?: DecimalString;
+  quarantinedQuantity?: DecimalString;
+}
+
+export function balanceOnHand(row: StockBalance): DecimalString | null {
+  return row.onHand ?? row.onHandQuantity ?? null;
+}
+
+export function balanceAvailable(row: StockBalance): DecimalString | null {
+  return row.available ?? row.availableQuantity ?? null;
+}
+
+export function balanceReserved(row: StockBalance): DecimalString | null {
+  return row.reserved ?? row.reservedQuantity ?? null;
+}
+
+export function balanceInTransfer(row: StockBalance): DecimalString | null {
+  return row.inTransfer ?? row.inTransferQuantity ?? null;
+}
+
+/* -------------------- Low stock (contract §4.2) --------------------------- */
+
+export interface LowStockRow {
+  id?: string;
+  itemId?: string;
+  item?: ItemRef | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  available?: DecimalString;
+  availableQuantity?: DecimalString;
+  onHand?: DecimalString;
+  reorderLevel?: DecimalString | null;
+  reorderQuantity?: DecimalString | null;
+  suggestedQuantity?: DecimalString | null;
+  suggestedOrderQuantity?: DecimalString | null;
+}
+
+export function lowStockAvailable(row: LowStockRow): DecimalString | null {
+  return row.available ?? row.availableQuantity ?? row.onHand ?? null;
+}
+
+export function lowStockSuggested(row: LowStockRow): DecimalString | null {
+  return row.suggestedQuantity ?? row.suggestedOrderQuantity ?? row.reorderQuantity ?? null;
+}
+
+/* -------------------- Serialized assets (contract §4.3) ------------------- */
+
+/** Lookup-backed condition value; the server may embed or flatten it. */
+export type AssetCondition = string | { id: string; code?: string; name?: string } | null;
+
+export function conditionLabel(condition: AssetCondition | undefined): string | null {
+  if (!condition) return null;
+  if (typeof condition === 'string') return condition;
+  return condition.name ?? condition.code ?? null;
+}
+
+export interface Asset {
+  id: string;
+  assetTag?: string;
+  tag?: string;
+  serialNumber?: string | null;
+  scanToken?: string | null;
+  barcode?: string | null;
+  itemId?: string;
+  item?: ItemRef | null;
+  status: AssetStatus | string;
+  condition?: AssetCondition;
+  conditionId?: string | null;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  warehouseId?: string | null;
+  warehouse?: WarehouseRef | null;
+  locationId?: string | null;
+  location?: LocationRef | null;
+  /** Server field name is storageLocation; location kept as an alias. */
+  storageLocationId?: string | null;
+  storageLocation?: LocationRef | null;
+  custodianEmployeeId?: string | null;
+  custodianEmployee?: EmployeeSummary | null;
+  custodian?: EmployeeSummary | null;
+  departmentId?: string | null;
+  department?: { id: string; code?: string; name?: string } | null;
+  projectRef?: string | null;
+  acquisitionDate?: string | null;
+  /** Present only with asset.view_cost. */
+  acquisitionCost?: DecimalString | null;
+  supplierId?: string | null;
+  supplier?: { id: string; code?: string; name?: string; legalName?: string } | null;
+  warrantyStartDate?: string | null;
+  warrantyEndDate?: string | null;
+  maintenanceRequired?: boolean;
+  criticality?: { id: string; code?: string; name?: string } | null;
+  lastInspectionAt?: string | null;
+  nextMaintenanceAt?: string | null;
+  retiredAt?: string | null;
+  disposedAt?: string | null;
+  disposalMethodId?: string | null;
+  disposalMethod?: { id: string; code?: string; name?: string } | null;
+  disposalNotes?: string | null;
+  expectedReturnDate?: string | null;
+  notes?: string | null;
+  archivedAt?: string | null;
+  /** Open custody record on the detail view. */
+  openAssignment?: AssetAssignment | null;
+  /** Lifecycle events the caller may fire; drives action-button visibility. */
+  permittedActions?: string[];
+  allowedActions?: string[];
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function assetTag(asset: Asset): string {
+  return asset.assetTag ?? asset.tag ?? asset.id.slice(0, 8);
+}
+
+export function assetCustodian(asset: Asset): EmployeeSummary | null {
+  return asset.custodianEmployee ?? asset.custodian ?? null;
+}
+
+export function assetPermittedActions(asset: Asset): string[] | null {
+  return asset.permittedActions ?? asset.allowedActions ?? null;
+}
+
+export interface AssetAssignment {
+  id: string;
+  assetId?: string;
+  asset?: Asset | null;
+  employeeId?: string | null;
+  employee?: EmployeeSummary | null;
+  departmentId?: string | null;
+  department?: { id: string; name?: string } | null;
+  projectRef?: string | null;
+  locationId?: string | null;
+  location?: LocationRef | null;
+  assignedAt?: string | null;
+  issuedAt?: string | null;
+  expectedReturnAt?: string | null;
+  expectedReturnDate?: string | null;
+  returnedAt?: string | null;
+  conditionAtIssue?: AssetCondition;
+  conditionAtReturn?: AssetCondition;
+  acknowledgedAt?: string | null;
+  acknowledgmentStatus?: string | null;
+  status?: string | null;
+  issueNotes?: string | null;
+  returnNotes?: string | null;
+  notes?: string | null;
+  assignedBy?: UserRef | null;
+  returnReceivedBy?: UserRef | null;
+  acknowledgments?: Array<{
+    id: string;
+    type?: string | null;
+    acknowledgedAt?: string | null;
+    method?: string | null;
+    notes?: string | null;
+    acknowledgedByUser?: UserRef | null;
+  }>;
+  createdAt?: string | null;
+}
+
+/**
+ * GET /assets/:id/history — unified timeline entry. `detail` carries the
+ * kind-specific row (status: fromStatus/toStatus/reason/changedBy; condition:
+ * condition/source/recordedBy; movement: from/to branch-warehouse-location-
+ * employee + movedBy).
+ */
+export interface AssetHistoryEntry {
+  kind: 'status' | 'condition' | 'movement' | string;
+  at?: string | null;
+  detail?: Record<string, unknown>;
+}
+
+export function historyTimestamp(entry: AssetHistoryEntry): string | null {
+  return entry.at ?? null;
+}
+
+/** Read a nested display name out of a history `detail` blob. */
+export function historyDetailName(
+  detail: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const value = detail?.[key];
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.displayName === 'string' && record.displayName) return record.displayName;
+  if (typeof record.name === 'string' && record.name) return record.name;
+  const first = typeof record.firstName === 'string' ? record.firstName : '';
+  const last = typeof record.lastName === 'string' ? record.lastName : '';
+  const full = [first, last].filter(Boolean).join(' ');
+  if (full) return full;
+  if (typeof record.code === 'string' && record.code) return record.code;
+  return null;
+}
+
+export function historyDetailString(
+  detail: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const value = detail?.[key];
+  return typeof value === 'string' && value ? value : null;
+}
+
+/**
+ * Open custody assignment row (GET /employees/:id/assets and the
+ * outstanding/overdueReturns arrays of /employees/:id/acknowledgments).
+ */
+export interface CustodyAssignment {
+  id: string;
+  status?: string | null;
+  assignedAt?: string | null;
+  expectedReturnAt?: string | null;
+  expectedReturnDate?: string | null;
+  acknowledgedAt?: string | null;
+  conditionAtIssue?: AssetCondition;
+  issueNotes?: string | null;
+  asset?: Asset | null;
+}
+
+/** GET /employees/:id/acknowledgments response. */
+export interface EmployeeAcknowledgmentsView {
+  outstanding?: CustodyAssignment[];
+  overdueReturns?: CustodyAssignment[];
+}
+
+export function custodyExpectedReturn(row: CustodyAssignment): string | null {
+  return row.expectedReturnAt ?? row.expectedReturnDate ?? null;
+}
+
+export function custodyIsOverdue(row: CustodyAssignment): boolean {
+  const due = custodyExpectedReturn(row);
+  if (!due) return false;
+  const days = daysUntil(due);
+  return days !== null && days < 0;
+}
+
+/* ------------------------- Transfers (contract §4.5) ---------------------- */
+
+export interface TransferEndpoint {
+  branchId?: string;
+  branch?: BranchSummary | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  locationId?: string | null;
+  location?: LocationRef | null;
+}
+
+export interface TransferLine {
+  id?: string;
+  lineNumber?: number;
+  itemId?: string | null;
+  item?: ItemRef | null;
+  assetId?: string | null;
+  asset?: Asset | null;
+  uomId?: string | null;
+  uom?: Uom | null;
+  lotId?: string | null;
+  lot?: Lot | null;
+  quantity?: DecimalString | null;
+  qty?: DecimalString | null;
+  requestedQuantity?: DecimalString | null;
+  dispatchedQuantity?: DecimalString | null;
+  receivedQuantity?: DecimalString | null;
+  damagedQuantity?: DecimalString | null;
+  shortQuantity?: DecimalString | null;
+  rejectedQuantity?: DecimalString | null;
+  notes?: string | null;
+  status?: string | null;
+}
+
+export function transferLineQuantity(line: TransferLine): DecimalString | null {
+  return line.quantity ?? line.qty ?? line.requestedQuantity ?? null;
+}
+
+export interface Transfer {
+  id: string;
+  number?: string;
+  transferNumber?: string;
+  kind?: string;
+  status: TransferStatus | string;
+  sourceBranchId?: string;
+  sourceBranch?: BranchSummary | null;
+  sourceWarehouseId?: string;
+  sourceWarehouse?: WarehouseRef | null;
+  sourceLocationId?: string | null;
+  sourceLocation?: LocationRef | null;
+  destinationBranchId?: string;
+  destinationBranch?: BranchSummary | null;
+  destinationWarehouseId?: string;
+  destinationWarehouse?: WarehouseRef | null;
+  destinationLocationId?: string | null;
+  destinationLocation?: LocationRef | null;
+  source?: TransferEndpoint | null;
+  destination?: TransferEndpoint | null;
+  notes?: string | null;
+  lines?: TransferLine[];
+  approvals?: ApprovalTrailEntry[];
+  approvalTrail?: ApprovalTrailEntry[];
+  createdBy?: UserRef | null;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  dispatchedAt?: string | null;
+  receivedAt?: string | null;
+  canceledAt?: string | null;
+  rejectedAt?: string | null;
+  cancelReason?: string | null;
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function transferNumber(transfer: Transfer): string {
+  return transfer.number ?? transfer.transferNumber ?? transfer.id.slice(0, 8);
+}
+
+export function transferSource(transfer: Transfer): TransferEndpoint {
+  return (
+    transfer.source ?? {
+      branchId: transfer.sourceBranchId,
+      branch: transfer.sourceBranch,
+      warehouseId: transfer.sourceWarehouseId,
+      warehouse: transfer.sourceWarehouse,
+      locationId: transfer.sourceLocationId,
+      location: transfer.sourceLocation,
+    }
+  );
+}
+
+export function transferDestination(transfer: Transfer): TransferEndpoint {
+  return (
+    transfer.destination ?? {
+      branchId: transfer.destinationBranchId,
+      branch: transfer.destinationBranch,
+      warehouseId: transfer.destinationWarehouseId,
+      warehouse: transfer.destinationWarehouse,
+      locationId: transfer.destinationLocationId,
+      location: transfer.destinationLocation,
+    }
+  );
+}
+
+export function transferApprovals(transfer: Transfer): ApprovalTrailEntry[] {
+  return transfer.approvals ?? transfer.approvalTrail ?? [];
+}
+
+/* ------------------------- Scanning (contract §4.4) ----------------------- */
+
+export interface ScanResolution {
+  kind?: string;
+  type?: string;
+  id?: string;
+  /** Kind-specific record snapshot (asset: tag/serial/status/item, …). */
+  summary?: string | Record<string, unknown> | null;
+  /** Asset resolutions include the lifecycle actions the caller may fire. */
+  permittedActions?: string[];
+}
+
+export function scanKind(resolution: ScanResolution): string {
+  return (resolution.kind ?? resolution.type ?? '').toLowerCase();
+}
+
+export function scanTargetId(resolution: ScanResolution): string | null {
+  return resolution.id ?? null;
+}
+
+function summaryString(summary: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = summary[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return null;
+}
+
+/** Primary display line for a scan hit. */
+export function scanSummaryText(resolution: ScanResolution): string {
+  const summary = resolution.summary;
+  if (typeof summary === 'string' && summary) return summary;
+  if (summary && typeof summary === 'object') {
+    const direct = summaryString(summary, ['assetTag', 'lotNumber', 'name', 'sku', 'code', 'barcode']);
+    if (direct) return direct;
+    const item = summary['item'];
+    if (item && typeof item === 'object') {
+      const viaItem = summaryString(item as Record<string, unknown>, ['name', 'sku']);
+      if (viaItem) return viaItem;
+    }
+  }
+  return 'Resolved record';
+}
+
+/** Secondary display line for a scan hit (item name, status, …). */
+export function scanSummaryDetail(resolution: ScanResolution): string | null {
+  const summary = resolution.summary;
+  if (!summary || typeof summary !== 'object') return null;
+  const parts: string[] = [];
+  const item = summary['item'];
+  if (item && typeof item === 'object') {
+    const label = summaryString(item as Record<string, unknown>, ['name', 'sku']);
+    if (label && label !== scanSummaryText(resolution)) parts.push(label);
+  }
+  const status = summary['status'];
+  if (typeof status === 'string' && status) parts.push(status);
+  const serial = summary['serialNumber'];
+  if (typeof serial === 'string' && serial) parts.push(`SN ${serial}`);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }

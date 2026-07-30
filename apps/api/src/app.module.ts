@@ -20,6 +20,10 @@ import { OrgModule } from './org/org.module';
 import { RolesModule } from './roles/roles.module';
 import { SequencesModule } from './sequences/sequences.module';
 import { UsersModule } from './users/users.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { TransfersModule } from './transfers/transfers.module';
+import { AssetsModule } from './assets/assets.module';
+import { ScanModule } from './scan/scan.module';
 
 const env = loadEnv();
 
@@ -73,6 +77,11 @@ const env = loadEnv();
     LookupsModule,
     ItemsModule,
     ImportsModule,
+    // Phase 3: stock ledger, transfers, serialized assets, scanning.
+    InventoryModule,
+    TransfersModule,
+    AssetsModule,
+    ScanModule,
     HealthModule,
   ],
   providers: [

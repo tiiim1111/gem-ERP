@@ -1,18 +1,29 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { PERMISSIONS } from '@gemerp/shared';
 import { isApiClientError } from '@/lib/api';
-import { getEmployee, listEmployeeAssets, unwrapList } from '@/lib/endpoints';
 import {
+  getEmployee,
+  listEmployeeAcknowledgments,
+  listEmployeeCustody,
+  unwrapList,
+} from '@/lib/endpoints';
+import {
+  assetTag,
+  conditionLabel,
+  custodyExpectedReturn,
+  custodyIsOverdue,
   employeeName,
-  outstandingAssetLabel,
+  itemRefLabel,
+  type CustodyAssignment,
   type Employee,
-  type OutstandingAsset,
 } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
+import { assetStatusBadge } from '@/components/inventory/badges';
 import { Badge } from '@/components/ui/badge';
 import { ErrorState } from '@/components/ui/error-state';
 import { Sheet } from '@/components/ui/sheet';
@@ -39,60 +50,143 @@ function ProfileRow({ label, value }: { label: string; value: React.ReactNode })
   );
 }
 
+function CustodyAssignmentRow({ row }: { row: CustodyAssignment }) {
+  const asset = row.asset;
+  return (
+    <li className="flex items-center justify-between gap-2 px-3 py-2">
+      <span className="min-w-0">
+        {asset ? (
+          <Link
+            href={`/assets/${asset.id}`}
+            className="block truncate font-mono text-xs font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {assetTag(asset)}
+          </Link>
+        ) : (
+          <span className="block truncate text-sm font-medium">Asset</span>
+        )}
+        <span className="block truncate text-xs text-muted-foreground">
+          {asset ? itemRefLabel(asset.item ?? null) : ''}
+          {row.assignedAt ? ` · since ${formatDate(row.assignedAt)}` : ''}
+          {conditionLabel(row.conditionAtIssue) ? ` · ${conditionLabel(row.conditionAtIssue)}` : ''}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        {asset?.status ? assetStatusBadge(asset.status) : null}
+      </span>
+    </li>
+  );
+}
+
 /**
- * Custody section backed by the Phase 3 GET /employees/:id/assets endpoint.
- * Until that phase ships the API answers 404 — in that case the section is
- * hidden entirely (no fake data, no error noise).
+ * Custody section backed by the live Phase 3 endpoints: currently-assigned
+ * assets plus outstanding/overdue acknowledgments (overdue highlighted).
+ * Degrades gracefully — a 404 (endpoint unavailable) hides the section
+ * rather than erroring.
  */
 function CustodySection({ employeeId }: { employeeId: string }) {
   const assetsQuery = useQuery({
-    queryKey: ['employees', 'assets', employeeId],
-    queryFn: ({ signal }) => listEmployeeAssets(employeeId, signal),
+    queryKey: ['employees', 'custody', employeeId],
+    queryFn: ({ signal }) => listEmployeeCustody(employeeId, signal),
+    retry: false,
+  });
+  const acknowledgmentsQuery = useQuery({
+    queryKey: ['employees', 'acknowledgments', employeeId],
+    queryFn: ({ signal }) => listEmployeeAcknowledgments(employeeId, signal),
     retry: false,
   });
 
-  if (assetsQuery.isError && isApiClientError(assetsQuery.error) && assetsQuery.error.status === 404) {
-    return null; // Phase 3 endpoint not available yet.
+  const notFound = (error: unknown) => isApiClientError(error) && error.status === 404;
+  if (assetsQuery.isError && notFound(assetsQuery.error) && acknowledgmentsQuery.isError) {
+    return null; // endpoints unavailable — degrade silently
   }
 
+  const assignments: CustodyAssignment[] = assetsQuery.data ? unwrapList(assetsQuery.data) : [];
+  const outstanding = acknowledgmentsQuery.data?.outstanding ?? [];
+  const overdueReturns = acknowledgmentsQuery.data?.overdueReturns ?? [];
+
   return (
-    <section aria-label="Assigned assets" className="space-y-2">
-      <h3 className="text-sm font-semibold">Assigned assets</h3>
-      {assetsQuery.isPending ? (
-        <div className="space-y-2">
+    <div className="space-y-5">
+      <section aria-label="Assigned assets" className="space-y-2">
+        <h3 className="text-sm font-semibold">Assigned assets</h3>
+        {assetsQuery.isPending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : assetsQuery.isError ? (
+          notFound(assetsQuery.error) ? (
+            <p className="text-sm text-muted-foreground">Custody data is not available.</p>
+          ) : (
+            <ErrorState error={assetsQuery.error} onRetry={() => assetsQuery.refetch()} />
+          )
+        ) : assignments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No assets currently assigned.</p>
+        ) : (
+          <ul className="divide-y rounded-md border">
+            {assignments.map((row) => (
+              <CustodyAssignmentRow key={row.id} row={row} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-label="Acknowledgments" className="space-y-2">
+        <h3 className="text-sm font-semibold">Acknowledgments &amp; returns</h3>
+        {acknowledgmentsQuery.isPending ? (
           <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-        </div>
-      ) : assetsQuery.isError ? (
-        <ErrorState error={assetsQuery.error} onRetry={() => assetsQuery.refetch()} />
-      ) : (
-        (() => {
-          const assets: OutstandingAsset[] = unwrapList(assetsQuery.data);
-          if (assets.length === 0) {
-            return <p className="text-sm text-muted-foreground">No assets currently assigned.</p>;
-          }
-          return (
-            <ul className="divide-y rounded-md border">
-              {assets.map((asset) => (
-                <li key={asset.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">
-                      {outstandingAssetLabel(asset)}
-                    </span>
-                    {asset.item?.name && asset.item.name !== outstandingAssetLabel(asset) ? (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {asset.item.name}
-                      </span>
-                    ) : null}
+        ) : acknowledgmentsQuery.isError ? (
+          notFound(acknowledgmentsQuery.error) ? (
+            <p className="text-sm text-muted-foreground">Acknowledgment data is not available.</p>
+          ) : (
+            <ErrorState
+              error={acknowledgmentsQuery.error}
+              onRetry={() => acknowledgmentsQuery.refetch()}
+            />
+          )
+        ) : outstanding.length === 0 && overdueReturns.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No outstanding acknowledgments or overdue returns.
+          </p>
+        ) : (
+          <ul className="divide-y rounded-md border">
+            {outstanding.map((row) => (
+              <li
+                key={`ack-${row.id}`}
+                className="flex items-center justify-between gap-2 px-3 py-2"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">
+                    {row.asset ? assetTag(row.asset) : 'Asset'}
                   </span>
-                  {asset.status ? <Badge variant="outline">{humanize(asset.status)}</Badge> : null}
-                </li>
-              ))}
-            </ul>
-          );
-        })()
-      )}
-    </section>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    Issued {formatDate(row.assignedAt)} — awaiting employee acknowledgment
+                  </span>
+                </span>
+                <Badge variant="warning">Unacknowledged</Badge>
+              </li>
+            ))}
+            {overdueReturns.map((row) => (
+              <li
+                key={`overdue-${row.id}`}
+                className="flex items-center justify-between gap-2 bg-destructive/5 px-3 py-2"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">
+                    {row.asset ? assetTag(row.asset) : 'Asset'}
+                  </span>
+                  <span className="block truncate text-xs text-destructive">
+                    Expected back {formatDate(custodyExpectedReturn(row))}
+                    {custodyIsOverdue(row) ? ' — overdue' : ''}
+                  </span>
+                </span>
+                <Badge variant="destructive">Overdue</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
   );
 }
 

@@ -59,6 +59,11 @@ interface RequestOptions {
   params?: QueryParams;
   body?: unknown;
   signal?: AbortSignal;
+  /**
+   * Sent as the Idempotency-Key header on posting-sensitive operations
+   * (post/reverse/dispatch/receive/assign/return/dispose per contract §1.5).
+   */
+  idempotencyKey?: string;
 }
 
 function buildUrl(path: string, params?: QueryParams): string {
@@ -88,14 +93,18 @@ function parseErrorEnvelope(payload: unknown): ApiError['error'] | undefined {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', params, body, signal } = options;
+  const { method = 'GET', params, body, signal, idempotencyKey } = options;
+
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
 
   let response: Response;
   try {
     response = await fetch(buildUrl(path, params), {
       method,
       credentials: 'include',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal,
     });
@@ -225,6 +234,49 @@ export async function downloadFile(
   return { blob: await response.blob(), filename };
 }
 
+/**
+ * Authenticated binary GET returning the blob and its content type — used for
+ * label rendering where the response may be PNG, SVG, PDF, or ZPL text.
+ */
+export async function fetchBinary(
+  path: string,
+  params?: QueryParams,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; contentType: string }> {
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, params), { credentials: 'include', signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new ApiClientError(
+      0,
+      'NETWORK_ERROR',
+      'Could not reach the server. Check your connection and try again.',
+    );
+  }
+
+  if (!response.ok) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await response.text());
+    } catch {
+      payload = undefined;
+    }
+    const envelope = parseErrorEnvelope(payload);
+    if (envelope) {
+      throw new ApiClientError(response.status, envelope.code, envelope.message, envelope.details);
+    }
+    throw new ApiClientError(
+      response.status,
+      'INTERNAL_ERROR',
+      `Request failed with status ${response.status}.`,
+    );
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? 'application/octet-stream';
+  return { blob: await response.blob(), contentType };
+}
+
 /** Trigger a browser download of a fetched blob. */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -242,8 +294,8 @@ export const api = {
   get<T>(path: string, params?: QueryParams, signal?: AbortSignal): Promise<T> {
     return request<T>(path, { method: 'GET', params, signal });
   },
-  post<T>(path: string, body?: unknown): Promise<T> {
-    return request<T>(path, { method: 'POST', body });
+  post<T>(path: string, body?: unknown, options?: { idempotencyKey?: string }): Promise<T> {
+    return request<T>(path, { method: 'POST', body, idempotencyKey: options?.idempotencyKey });
   },
   postForm<T>(path: string, form: FormData): Promise<T> {
     return postFormData<T>(path, form);
