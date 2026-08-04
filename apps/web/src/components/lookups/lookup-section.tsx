@@ -247,9 +247,11 @@ export function LookupSection<T extends LookupRowBase, B extends object, E = und
   const saveMutation = useMutation({
     mutationFn: async (values: LookupFormValues) => {
       const raw: Record<string, unknown> = {
-        code: values.code.toUpperCase(),
         name: values.name,
       };
+      // Codes are immutable once created (embedded in SKUs/asset tags) —
+      // the API rejects `code` on update.
+      if (!editTarget) raw.code = values.code.toUpperCase();
       if (withDescription) raw.description = values.description || null;
       if (withSortOrder && values.sortOrder !== '') raw.sortOrder = Number(values.sortOrder);
       if (dialogExtra && extraValue !== undefined) {
@@ -446,9 +448,11 @@ export function LookupSection<T extends LookupRowBase, B extends object, E = und
               <FormField label="Code" htmlFor={`lookup-code-${label}`} error={errors.code?.message} required>
                 <Input
                   id={`lookup-code-${label}`}
-                  className="font-mono uppercase"
+                  className="font-mono uppercase read-only:opacity-60 read-only:cursor-not-allowed"
                   aria-invalid={!!errors.code}
                   data-autofocus
+                  readOnly={!!editTarget}
+                  title={editTarget ? 'Codes are permanent once created.' : undefined}
                   {...form.register('code')}
                 />
               </FormField>

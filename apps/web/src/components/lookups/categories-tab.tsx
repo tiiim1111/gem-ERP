@@ -111,22 +111,24 @@ export function CategoriesTab({ canManage }: { canManage: boolean }) {
 
   const saveMutation = useMutation({
     mutationFn: async (values: CategoryFormValues) => {
-      const body = {
-        code: values.code.toUpperCase(),
+      if (!dialog) throw new Error('No dialog state');
+      // Codes are immutable once created (embedded in SKUs/asset tags) —
+      // the API rejects `code` on update, so edits never send it.
+      const base = {
         name: values.name,
         description: values.description || null,
         ...(values.sortOrder !== '' ? { sortOrder: Number(values.sortOrder) } : {}),
       };
-      if (!dialog) throw new Error('No dialog state');
+      const createBody = { code: values.code.toUpperCase(), ...base };
       switch (dialog.mode) {
         case 'create-category':
-          return createItemCategory(body);
+          return createItemCategory(createBody);
         case 'edit-category':
-          return updateItemCategory(dialog.category!.id, body);
+          return updateItemCategory(dialog.category!.id, base);
         case 'create-subcategory':
-          return createItemSubcategory(dialog.category!.id, body);
+          return createItemSubcategory(dialog.category!.id, createBody);
         case 'edit-subcategory':
-          return updateItemSubcategory(dialog.subcategory!.id, body);
+          return updateItemSubcategory(dialog.subcategory!.id, base);
       }
     },
     onSuccess: () => {
@@ -338,9 +340,11 @@ export function CategoriesTab({ canManage }: { canManage: boolean }) {
               <FormField label="Code" htmlFor="cat-code" error={errors.code?.message} required>
                 <Input
                   id="cat-code"
-                  className="font-mono uppercase"
+                  className="font-mono uppercase read-only:opacity-60 read-only:cursor-not-allowed"
                   aria-invalid={!!errors.code}
                   data-autofocus
+                  readOnly={dialog?.mode.startsWith('edit') ?? false}
+                  title={dialog?.mode.startsWith('edit') ? 'Codes are permanent once created.' : undefined}
                   {...form.register('code')}
                 />
               </FormField>

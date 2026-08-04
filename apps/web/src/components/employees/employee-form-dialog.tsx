@@ -154,7 +154,8 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
   const mutation = useMutation({
     mutationFn: async (values: EmployeeFormValues) => {
       const body: EmployeeWriteBody = {
-        employeeNumber: values.employeeNumber || undefined,
+        // Employee numbers are immutable once created — rejected on update.
+        ...(isEdit ? {} : { employeeNumber: values.employeeNumber || undefined }),
         firstName: values.firstName,
         middleName: values.middleName || null,
         lastName: values.lastName,

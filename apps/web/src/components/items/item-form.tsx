@@ -268,7 +268,8 @@ export function ItemForm({ itemId }: { itemId?: string }) {
   const saveMutation = useMutation({
     mutationFn: async (values: ItemFormValues) => {
       const body: ItemWriteBody = {
-        sku: values.sku || undefined,
+        // SKU is immutable once created — the API rejects it on update.
+        ...(isEdit ? {} : { sku: values.sku || undefined }),
         name: values.name,
         description: values.description || null,
         businessCategory: values.businessCategory,
