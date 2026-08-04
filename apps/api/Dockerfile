@@ -4,7 +4,8 @@
 
 # ---------- Build stage ----------
 FROM node:22-slim AS build
-RUN corepack enable
+# openssl: Prisma engine-target detection needs it at generate time.
+RUN corepack enable && apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
 
 # Install with the full workspace graph (cache-friendly layering).
@@ -35,6 +36,7 @@ WORKDIR /repo
 
 # Workspace with production node_modules + built output + prisma schema/migrations.
 COPY --from=build /repo /repo
+EXPOSE 3001
 
 # Apply pending migrations, then boot. Seeding is a manual one-time step:
 #   pnpm --filter @gemerp/database seed

@@ -109,14 +109,23 @@ export class HealthService {
         }
       };
       socket.on('connect', () => {
-        socket.write('PING\r\n');
-      });
-      socket.on('data', (buffer) => {
-        finish(
-          buffer.toString().startsWith('+PONG')
-            ? { status: 'up' }
-            : { status: 'down', message: 'unexpected response' },
+        // Managed Redis (e.g. Railway) requires AUTH before PING; local dev
+        // Redis has no password and takes the bare PING.
+        const password = decodeURIComponent(url.password ?? '');
+        const username = decodeURIComponent(url.username ?? '') || 'default';
+        socket.write(
+          password ? `AUTH ${username} ${password}\r\nPING\r\n` : 'PING\r\n',
         );
+      });
+      let received = '';
+      socket.on('data', (buffer) => {
+        received += buffer.toString();
+        if (received.includes('+PONG')) {
+          finish({ status: 'up' });
+        } else if (/-(NOAUTH|WRONGPASS|ERR)/.test(received)) {
+          finish({ status: 'down', message: 'auth failed' });
+        }
+        // Otherwise keep accumulating until the socket timeout fires.
       });
       socket.on('timeout', () => finish({ status: 'down', message: 'timed out' }));
       socket.on('error', () => finish({ status: 'down', message: 'unreachable' }));

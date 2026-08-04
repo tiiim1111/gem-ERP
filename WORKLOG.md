@@ -17,6 +17,25 @@ Entry format:
 
 ---
 
+## 2026-08-04 (later) — 🚀 DEPLOYED TO PRODUCTION: gem-erp.vercel.app
+
+Tim upgraded Railway to Hobby (free plan can no longer provision). Deployment executed end-to-end via CLIs (railway + vercel, device-flow logins by Tim):
+
+- **Railway** (`gem-erp` project): `api` service (Dockerfile deploy), Postgres, Redis. Vars: DATABASE_URL/REDIS_URL references, NODE_ENV=production, API_PORT+PORT=3001, SESSION_COOKIE_SECURE=true, S3_ENABLED=false, WEB_ORIGIN=https://gem-erp.vercel.app. Domain: api-production-2935.up.railway.app (port 3001). Healthcheck /api/v1/health/ready.
+- **Vercel** (`gem-erp` project, created via API with rootDirectory=apps/web): API_PROXY_TARGET=<railway domain>; deployment protection (ssoProtection) DISABLED — it blocks public access by default on team projects. Production: **https://gem-erp.vercel.app**.
+- **Deploy debugging trail (4 failed healthchecks → root causes):**
+  1. Prisma engine mismatch (generated debian-openssl-1.1.x, runtime needs 3.0.x) → `binaryTargets = ["native", "debian-openssl-3.0.x"]` + openssl installed in the Docker BUILD stage (detection needs it).
+  2. `EXPOSE 3001` + `PORT=3001` var for Railway routing/probes.
+  3. API now binds dual-stack (`app.listen(port, '::')`) — Railway probes over IPv6.
+  4. **The actual killer:** health check's raw-socket Redis PING never authenticated; Railway Redis requires AUTH → "unexpected response" → readiness 503 (redis fatal in production) → healthcheck fail. checkRedis now sends `AUTH <user> <pass>` from REDIS_URL before PING.
+- **Prod DB migrated + seeded** via `railway ssh` into the api container (Postgres has no public endpoint; SSH key registered). Full dataset live.
+- **Production smoke test (all pass):** login page 200; login via Vercel proxy→Railway 200; session (142 perms); items 12 / assets 8 / low-stock 2; rogue origin 403.
+- Note: both platforms deploy via CLI for now (`railway up`, `vercel deploy --prod`) — projects are not git-connected; can wire auto-deploy-on-push later from the dashboards.
+
+**Next:** rotate the seed passwords with Tim (public internet!), then share the URL + accounts with the team. Local dev unchanged.
+
+---
+
 ## 2026-08-04 — Item-create root cause; same-origin proxy; hosting decision: Vercel + Railway
 
 **Item create "Validation failed" — the REAL root cause (3rd round):** the new 4xx-details logging pinpointed it instantly: the form sent `uomConversions` in the item body, which the create/update DTOs reject (whitelist) — so **every** UI item-create failed regardless of input. (Earlier suspects — empty-string Ids, standardCost format — were real hardening but not the culprit; their error bodies were coincidentally the same size. Lesson logged: observability beats byte-archaeology.) Fix: form no longer sends `uomConversions`; conversions sync via the dedicated `/uom-conversions` endpoints (create/update/delete diff) after item save, non-fatal on partial failure. Verified E2E via proxy: item + conversion + detail all OK.

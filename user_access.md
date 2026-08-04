@@ -7,7 +7,8 @@
 
 | What | URL |
 | --- | --- |
-| **Web app** | <http://localhost:3000> |
+| **🌐 LIVE (production)** | <https://gem-erp.vercel.app> ← **ito ang i-share sa users** |
+| Web app (local dev) | <http://localhost:3000> |
 | API base | <http://localhost:3001/api/v1> |
 | Swagger (API docs) | <http://localhost:3001/api/docs> |
 | MinIO console | <http://localhost:9001> (user `gemerp` / `gemerp_dev_password`) |

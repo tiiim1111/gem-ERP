@@ -88,7 +88,9 @@ async function bootstrap(): Promise<void> {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  await app.listen(config.apiPort);
+  // '::' = dual-stack bind (IPv4 + IPv6). Railway probes health over its
+  // IPv6 private network; an IPv4-only bind fails those probes.
+  await app.listen(config.apiPort, '::');
   logger.log(
     `GEM ERP API listening on port ${config.apiPort} ` +
       `(prefix /api/v1, docs at /api/docs, env ${config.nodeEnv})`,
