@@ -1,4 +1,4 @@
-# GEM ERP — Dev Accounts & Access Cheat Sheet
+# GEM-ENI — Dev Accounts & Access Cheat Sheet
 
 > ⚠️ **DEV ONLY.** These accounts exist only in the local development database
 > (created by `pnpm db:seed`). Never use them in staging or production.

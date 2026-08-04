@@ -152,12 +152,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center gap-2 px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-          G
-        </div>
+        <img src="/gem-logo.png" alt="GEM-ENI logo" className="h-8 w-auto" />
         <div className="leading-tight">
-          <p className="text-sm font-semibold text-white">GEM ERP</p>
-          <p className="text-[11px] text-sidebar-foreground">Asset &amp; Inventory</p>
+          <p className="text-sm font-semibold text-white">GEM-ENI</p>
+          <p className="text-[11px] text-sidebar-foreground">ERP &amp; Inventory</p>
         </div>
       </div>
       <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-label="Main navigation">
@@ -285,7 +283,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu aria-hidden />
             </Button>
-            <span className="text-sm font-semibold lg:hidden">GEM ERP</span>
+            <span className="text-sm font-semibold lg:hidden">GEM-ENI</span>
           </div>
           <UserMenu onChangePassword={() => setChangePasswordOpen(true)} />
         </header>

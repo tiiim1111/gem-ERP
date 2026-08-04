@@ -511,7 +511,7 @@ export function DashboardPage() {
     <>
       <PageHeader
         title={`Welcome, ${user.displayName}`}
-        description="Overview of your GEM ERP workspace."
+        description="Overview of your GEM-ENI workspace."
       />
 
       {/* Phase 3 operations tiles */}

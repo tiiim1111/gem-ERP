@@ -438,7 +438,7 @@ export function LookupSection<T extends LookupRowBase, B extends object, E = und
           <DialogDescription>
             {editTarget
               ? 'Values already referenced by records cannot be removed — deactivate instead.'
-              : `Add a ${label.toLowerCase()} for use across GEM ERP.`}
+              : `Add a ${label.toLowerCase()} for use across GEM-ENI.`}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} noValidate className="contents">

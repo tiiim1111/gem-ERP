@@ -137,7 +137,7 @@ export function LookupsPage() {
     <>
       <PageHeader
         title="Lookups"
-        description="Business-managed configuration lists used across GEM ERP."
+        description="Business-managed configuration lists used across GEM-ENI."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList aria-label="Lookup categories">

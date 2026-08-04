@@ -4,8 +4,8 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'GEM ERP',
-    template: '%s · GEM ERP',
+    default: 'GEM-ENI',
+    template: '%s · GEM-ENI',
   },
   description: 'Asset & Inventory Management for GemCor',
 };

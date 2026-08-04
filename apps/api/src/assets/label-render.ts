@@ -139,7 +139,7 @@ export function renderBatchHtml(labels: string[], size: LabelSize): string {
   return [
     '<!doctype html>',
     '<html lang="en"><head><meta charset="utf-8"/>',
-    '<title>GEM ERP asset labels</title>',
+    '<title>GEM-ENI asset labels</title>',
     '<style>',
     'body{margin:0;padding:8px;background:#f2f2f2;font-family:sans-serif;}',
     `.label{width:${spec.width / 2}px;height:${spec.height / 2}px;background:#fff;` +

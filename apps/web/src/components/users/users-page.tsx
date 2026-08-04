@@ -111,7 +111,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        description="Accounts, roles, and branch access for GEM ERP."
+        description="Accounts, roles, and branch access for GEM-ENI."
         actions={
           canCreate ? (
             <Button onClick={() => setCreateOpen(true)}>

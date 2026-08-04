@@ -17,6 +17,16 @@ Entry format:
 
 ---
 
+## 2026-08-04 (rebrand) — GEM-ENI branding + logo
+
+Tim uploaded `gem_logo.png` (green infinity + leaf) and renamed the app **GEM-ENI** (GEM ERP and Inventory):
+- Logo at `apps/web/public/gem-logo.png`; shown in the sidebar header and login page; favicon generated (256×256 square, via the hoisted `sharp`) replacing the old icon.svg.
+- "GEM ERP" → "GEM-ENI" across web UI strings, page metadata, Swagger title, asset-label sheet title; README/user_access titles. Company name GemCor and package names (@gemerp/*) unchanged.
+- Post-edit fixes rode along earlier this session: immutable-code edit bug fixed across lookup/category/item/employee forms (code/sku/employeeNumber omitted on update, inputs read-only in edit mode).
+- Deployed to BOTH platforms; verified live: GEM-ENI on the login page, logo asset 200, API readiness ok.
+
+---
+
 ## 2026-08-04 (later) — 🚀 DEPLOYED TO PRODUCTION: gem-erp.vercel.app
 
 Tim upgraded Railway to Hobby (free plan can no longer provision). Deployment executed end-to-end via CLIs (railway + vercel, device-flow logins by Tim):

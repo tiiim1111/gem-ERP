@@ -1,4 +1,4 @@
-# GEM ERP
+# GEM-ENI — GEM ERP and Inventory
 
 Asset & Inventory Management system for **GemCor** — a single-company, multi-branch platform
 covering serialized assets, consumable inventory, procurement, employee custodianship,

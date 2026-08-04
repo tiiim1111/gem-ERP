@@ -73,7 +73,7 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('GEM ERP API')
+    .setTitle('GEM-ENI API')
     .setDescription(
       'Asset & Inventory Management for GEM Cor — Phase 1: authentication, ' +
         'users, roles & permissions, organization structure, audit trail, health. ' +
@@ -92,7 +92,7 @@ async function bootstrap(): Promise<void> {
   // IPv6 private network; an IPv4-only bind fails those probes.
   await app.listen(config.apiPort, '::');
   logger.log(
-    `GEM ERP API listening on port ${config.apiPort} ` +
+    `GEM-ENI API listening on port ${config.apiPort} ` +
       `(prefix /api/v1, docs at /api/docs, env ${config.nodeEnv})`,
     'Bootstrap',
   );
