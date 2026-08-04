@@ -484,23 +484,33 @@ export function TransactionDetail({ transactionId }: { transactionId: string }) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(txn.ledgerEntries ?? []).map((entry, index) => (
-                  <TableRow key={entry.id ?? index}>
-                    <TableCell className="text-sm">{itemRefLabel(entry.item ?? null)}</TableCell>
-                    <TableCell className="text-right">
-                      <SignedQuantity value={ledgerQuantity(entry)} />
-                    </TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      {entry.lot ? lotNumber(entry.lot) : '—'}
-                    </TableCell>
-                    <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      {entry.location ? refLabel(entry.location) : '—'}
-                    </TableCell>
-                    <TableCell className="hidden text-sm tabular-nums text-muted-foreground sm:table-cell">
-                      {formatDateTime(ledgerTimestamp(entry))}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {(txn.ledgerEntries ?? []).map((entry, index) => {
+                  // Detail-endpoint entries carry scalar ids only — enrich
+                  // item/lot/location from the document line they came from.
+                  const line = entry.transactionLineId
+                    ? (txn.lines ?? []).find((l) => l.id === entry.transactionLineId)
+                    : undefined;
+                  const item = entry.item ?? line?.item ?? null;
+                  const lot = entry.lot ?? line?.lot ?? null;
+                  const location = entry.location ?? line?.location ?? null;
+                  return (
+                    <TableRow key={entry.id ?? index}>
+                      <TableCell className="text-sm">{itemRefLabel(item)}</TableCell>
+                      <TableCell className="text-right">
+                        <SignedQuantity value={ledgerQuantity(entry)} />
+                      </TableCell>
+                      <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
+                        {lot ? lotNumber(lot) : '—'}
+                      </TableCell>
+                      <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
+                        {location ? refLabel(location) : '—'}
+                      </TableCell>
+                      <TableCell className="hidden text-sm tabular-nums text-muted-foreground sm:table-cell">
+                        {formatDateTime(ledgerTimestamp(entry))}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

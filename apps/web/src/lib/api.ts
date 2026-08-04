@@ -67,7 +67,11 @@ interface RequestOptions {
 }
 
 function buildUrl(path: string, params?: QueryParams): string {
-  const url = new URL(`${API_BASE_URL}${path}`);
+  // API_BASE_URL may be relative ("/api/v1") — resolve against the page
+  // origin so the request stays same-origin and rides the Next proxy.
+  const base =
+    typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  const url = new URL(`${API_BASE_URL}${path}`, base);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value === null || value === undefined || value === '') continue;
@@ -92,6 +96,25 @@ function parseErrorEnvelope(payload: unknown): ApiError['error'] | undefined {
   return undefined;
 }
 
+/**
+ * Form selects submit "" when an optional reference is left blank, but the
+ * API's UUID validators reject empty strings. Recursively convert ""
+ * to null on keys ending in "Id" (null passes @IsOptional and means "clear"
+ * on PATCH). Other empty strings (descriptions, notes) pass through.
+ */
+function sanitizeBody(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeBody);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        key.endsWith('Id') && entry === '' ? null : sanitizeBody(entry),
+      ]),
+    );
+  }
+  return value;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', params, body, signal, idempotencyKey } = options;
 
@@ -105,7 +128,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       method,
       credentials: 'include',
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body !== undefined ? JSON.stringify(sanitizeBody(body)) : undefined,
       signal,
     });
   } catch (error) {

@@ -4,7 +4,7 @@ import { AppConfigService } from '../config/app-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface DependencyCheck {
-  status: 'up' | 'down';
+  status: 'up' | 'down' | 'disabled';
   latencyMs?: number;
   message?: string;
 }
@@ -37,7 +37,9 @@ export class HealthService {
     const [postgres, redis, minio] = await Promise.all([
       this.checkPostgres(),
       this.checkRedis(),
-      this.checkMinio(),
+      this.config.s3Enabled
+        ? this.checkMinio()
+        : Promise.resolve({ status: 'disabled' } as DependencyCheck),
     ]);
 
     const optionalDown = redis.status === 'down' || minio.status === 'down';

@@ -730,6 +730,14 @@ export interface StockLedgerEntry {
   transactionNumber?: string | null;
   transactionType?: StockTransactionType | string | null;
   type?: string | null;
+  /** The list endpoint nests the source document here. */
+  transaction?: {
+    id: string;
+    transactionNumber?: string | null;
+    type?: StockTransactionType | string | null;
+  } | null;
+  /** Detail-endpoint entries reference their document line. */
+  transactionLineId?: string | null;
   itemId?: string;
   item?: ItemRef | null;
   warehouseId?: string;
@@ -738,8 +746,9 @@ export interface StockLedgerEntry {
   location?: LocationRef | null;
   lotId?: string | null;
   lot?: Lot | null;
-  /** Signed base-unit quantity (+ in, − out). */
-  quantity: DecimalString;
+  /** Signed base-unit quantity (+ in, − out) — the API serializes this as `quantityDelta`. */
+  quantityDelta?: DecimalString;
+  quantity?: DecimalString;
   baseQuantity?: DecimalString;
   uomId?: string;
   uom?: Uom | null;
@@ -755,7 +764,7 @@ export function ledgerTimestamp(entry: StockLedgerEntry): string | undefined {
 }
 
 export function ledgerQuantity(entry: StockLedgerEntry): number {
-  return decimalValue(entry.baseQuantity ?? entry.quantity);
+  return decimalValue(entry.quantityDelta ?? entry.baseQuantity ?? entry.quantity);
 }
 
 export interface StockTransaction {

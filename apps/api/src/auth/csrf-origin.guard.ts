@@ -28,11 +28,16 @@ export class CsrfOriginGuard implements CanActivate {
     }
 
     const allowed = new Set(
-      [this.config.webOrigin, this.selfOrigin(request)]
+      [...this.config.webOrigins, this.selfOrigin(request), this.forwardedOrigin(request)]
         .filter((origin): origin is string => Boolean(origin))
         .map((origin) => this.normalize(origin)),
     );
     if (allowed.has(this.normalize(sourceOrigin))) {
+      return true;
+    }
+    // Same-origin requests riding the web server's /api/v1 proxy: the browser
+    // attests same-origin-ness itself (Sec-Fetch-Site, all evergreen browsers).
+    if (request.headers['sec-fetch-site'] === 'same-origin') {
       return true;
     }
     throw AppException.forbidden('Cross-origin request rejected.');
@@ -60,6 +65,25 @@ export class CsrfOriginGuard implements CanActivate {
       return null;
     }
     return `${request.protocol}://${host}`;
+  }
+
+  /**
+   * Origin the browser actually addressed when the request rides a reverse
+   * proxy (the Next.js /api/v1 rewrite sets x-forwarded-host/proto). Lets the
+   * same-origin check hold under any hostname without listing it in
+   * WEB_ORIGIN.
+   */
+  private forwardedOrigin(request: Request): string | null {
+    const forwardedHost = request.headers['x-forwarded-host'];
+    if (typeof forwardedHost !== 'string' || forwardedHost === '') {
+      return null;
+    }
+    const forwardedProto = request.headers['x-forwarded-proto'];
+    const scheme =
+      typeof forwardedProto === 'string' && forwardedProto !== ''
+        ? forwardedProto.split(',')[0].trim()
+        : request.protocol;
+    return `${scheme}://${forwardedHost.split(',')[0].trim()}`;
   }
 
   private normalize(origin: string): string {

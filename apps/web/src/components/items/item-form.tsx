@@ -12,6 +12,8 @@ import { ItemBusinessCategory, PERMISSIONS, TrackingMethod } from '@gemerp/share
 import { getErrorMessage, isApiClientError, isVersionConflict } from '@/lib/api';
 import {
   createItem,
+  createUomConversion,
+  deleteUomConversion,
   getItem,
   listBrands,
   listItemCategories,
@@ -19,6 +21,7 @@ import {
   listManufacturers,
   listUoms,
   updateItem,
+  updateUomConversion,
   activateItem,
   deactivateItem,
   type ItemWriteBody,
@@ -57,11 +60,19 @@ const DEFAULT_TRACKING: Record<ItemBusinessCategory, TrackingMethod> = {
   [ItemBusinessCategory.BULK_NON_CONSUMABLE]: TrackingMethod.QUANTITY,
 };
 
-const MONEY_PATTERN = /^\d+(\.\d{1,2})?$/;
+const MONEY_PATTERN = /^\d{1,12}(\.\d{1,2})?$/;
 const FACTOR_PATTERN = /^\d+(\.\d{1,4})?$/;
 
+const SKU_PATTERN = /^[A-Z0-9][A-Z0-9_-]{0,63}$/;
+
 const itemSchema = z.object({
-  sku: z.string().max(60),
+  sku: z
+    .string()
+    .max(64)
+    .refine(
+      (value) => value === '' || SKU_PATTERN.test(value),
+      'Uppercase letters, digits, "-" or "_" only — or leave blank to auto-generate',
+    ),
   name: z.string().min(1, 'Name is required').max(200),
   description: z.string().max(2000),
   businessCategory: z.enum([
@@ -78,18 +89,23 @@ const itemSchema = z.object({
   baseUomId: z.string().min(1, 'Base unit is required'),
   purchaseUomId: z.string(),
   issueUomId: z.string(),
-  standardCost: z
-    .string()
-    .refine((value) => value === '' || MONEY_PATTERN.test(value), 'Amount like 1250.00'),
-  lastPurchaseCost: z
-    .string()
-    .refine((value) => value === '' || MONEY_PATTERN.test(value), 'Amount like 1250.00'),
+  // Tolerate pasted "1,500.00" / stray spaces; cap matches the API (12 digits).
+  standardCost: z.preprocess(
+    (value) => String(value ?? '').replace(/[,\s]/g, ''),
+    z.string().refine((value) => value === '' || MONEY_PATTERN.test(value), 'Amount like 1250.00'),
+  ),
+  lastPurchaseCost: z.preprocess(
+    (value) => String(value ?? '').replace(/[,\s]/g, ''),
+    z.string().refine((value) => value === '' || MONEY_PATTERN.test(value), 'Amount like 1250.00'),
+  ),
   isLotTracked: z.boolean(),
   isExpiryTracked: z.boolean(),
   requiresSerialNumber: z.boolean(),
   isMaintainable: z.boolean(),
   conversions: z.array(
     z.object({
+      /** Present when the row already exists server-side (edit mode). */
+      id: z.string().optional(),
       fromUomId: z.string().min(1, 'Required'),
       toUomId: z.string().min(1, 'Required'),
       factor: z
@@ -99,6 +115,15 @@ const itemSchema = z.object({
         .refine((value) => Number(value) > 0, 'Must be > 0'),
     }),
   ),
+}).superRefine((values, ctx) => {
+  // Auto-generated SKUs are derived from the category code.
+  if (!values.sku && !values.categoryId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sku'],
+      message: 'Enter a SKU, or pick a Category so one can be auto-generated',
+    });
+  }
 });
 
 type ItemFormValues = z.infer<typeof itemSchema>;
@@ -125,6 +150,7 @@ function itemToFormValues(item: Item | null): ItemFormValues {
     requiresSerialNumber: item?.requiresSerialNumber ?? false,
     isMaintainable: item?.isMaintainable ?? false,
     conversions: (item?.uomConversions ?? []).map((conversion) => ({
+      id: conversion.id,
       fromUomId: conversion.fromUomId,
       toUomId: conversion.toUomId,
       factor: formatFactor(conversion.factor),
@@ -259,20 +285,66 @@ export function ItemForm({ itemId }: { itemId?: string }) {
         isExpiryTracked: values.isExpiryTracked,
         requiresSerialNumber: values.requiresSerialNumber,
         isMaintainable: values.isMaintainable,
-        uomConversions: values.conversions.map((conversion) => ({
-          fromUomId: conversion.fromUomId,
-          toUomId: conversion.toUomId,
-          factor: conversion.factor,
-        })),
       };
       if (canViewCost) {
         body.standardCost = values.standardCost || null;
         body.lastPurchaseCost = values.lastPurchaseCost || null;
       }
-      if (isEdit && item) {
-        return updateItem(item.id, { ...body, version: item.version });
+      const saved =
+        isEdit && item
+          ? await updateItem(item.id, { ...body, version: item.version })
+          : await createItem(body);
+
+      // Item-specific UOM conversions live behind their own endpoints
+      // (POST/PATCH/DELETE /uom-conversions) — the item body does not accept
+      // them. Sync the editor rows against what the server has.
+      const existing = item?.uomConversions ?? [];
+      const desired = values.conversions;
+      const conversionErrors: string[] = [];
+      const keptIds = new Set(desired.map((row) => row.id).filter(Boolean));
+      for (const row of existing) {
+        if (row.id && !keptIds.has(row.id)) {
+          await deleteUomConversion(row.id).catch((error) =>
+            conversionErrors.push(getErrorMessage(error, 'Failed to remove a conversion.')),
+          );
+        }
       }
-      return createItem(body);
+      for (const row of desired) {
+        if (!row.id) {
+          await createUomConversion({
+            itemId: saved.id,
+            fromUomId: row.fromUomId,
+            toUomId: row.toUomId,
+            factor: row.factor,
+          }).catch((error) =>
+            conversionErrors.push(getErrorMessage(error, 'Failed to add a conversion.')),
+          );
+          continue;
+        }
+        const before = existing.find((conversion) => conversion.id === row.id);
+        const changed =
+          before &&
+          (before.fromUomId !== row.fromUomId ||
+            before.toUomId !== row.toUomId ||
+            formatFactor(before.factor) !== row.factor);
+        if (changed) {
+          await updateUomConversion(row.id, {
+            fromUomId: row.fromUomId,
+            toUomId: row.toUomId,
+            factor: row.factor,
+          }).catch((error) =>
+            conversionErrors.push(getErrorMessage(error, 'Failed to update a conversion.')),
+          );
+        }
+      }
+      if (conversionErrors.length > 0) {
+        toast({
+          title: 'Item saved, but some UOM conversions failed',
+          description: conversionErrors[0],
+          variant: 'destructive',
+        });
+      }
+      return saved;
     },
     onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ['items'] });
@@ -419,7 +491,19 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                   error={errors.sku?.message}
                   hint={isEdit ? undefined : 'Leave blank to auto-generate (SKU-{CAT}-{SEQ}).'}
                 >
-                  <Input id="item-sku" className="font-mono" {...form.register('sku')} />
+                  <Input
+                    id="item-sku"
+                    className="font-mono"
+                    {...form.register('sku', {
+                      onChange: (event) => {
+                        const input = event.target as HTMLInputElement;
+                        const normalized = input.value.toUpperCase().replace(/\s+/g, '-');
+                        if (normalized !== input.value) {
+                          form.setValue('sku', normalized, { shouldValidate: true });
+                        }
+                      },
+                    })}
+                  />
                 </FormField>
                 <FormField
                   label="Name"

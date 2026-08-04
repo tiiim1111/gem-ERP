@@ -516,8 +516,14 @@ export function createUomConversion(body: {
   fromUomId: string;
   toUomId: string;
   factor: string | number;
+  /** Omit for a global conversion; set for an item-specific override. */
+  itemId?: string;
 }): Promise<UomConversion> {
   return api.post<UomConversion>('/uom-conversions', body);
+}
+
+export function deleteUomConversion(id: string): Promise<void> {
+  return api.delete<void>(`/uom-conversions/${id}`);
 }
 
 export function updateUomConversion(

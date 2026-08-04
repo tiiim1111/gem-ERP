@@ -12,6 +12,7 @@ import {
   type TransferLineInput,
 } from '@/lib/endpoints';
 import { transferNumber, type Item } from '@/lib/types';
+import { itemUomChoices, useUomData } from '@/lib/uom';
 import { useSession } from '@/components/auth/session-provider';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
@@ -51,20 +52,6 @@ function emptyTransferLine(): TransferLineDraft {
   };
 }
 
-function itemUomChoices(item: Item): Array<{ id: string; code: string }> {
-  const seen = new Map<string, string>();
-  const add = (id: string | null | undefined, code: string | null | undefined) => {
-    if (id && !seen.has(id)) seen.set(id, code ?? id);
-  };
-  add(item.baseUomId, item.baseUom?.code);
-  add(item.purchaseUomId, item.purchaseUom?.code);
-  add(item.issueUomId, item.issueUom?.code);
-  for (const conversion of item.uomConversions ?? []) {
-    add(conversion.fromUomId, conversion.fromUom?.code);
-    add(conversion.toUomId, conversion.toUom?.code);
-  }
-  return Array.from(seen, ([id, code]) => ({ id, code }));
-}
 
 function StockLineFields({
   line,
@@ -81,6 +68,7 @@ function StockLineFields({
     lotTracked ? (line.item?.id ?? null) : null,
     sourceWarehouseId,
   );
+  const uomData = useUomData();
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -89,7 +77,7 @@ function StockLineFields({
           id={`${line.key}-item`}
           value={line.item?.id ?? null}
           selectedLabel={line.item?.name}
-          onSelect={(item) => onChange({ ...line, item, uomId: item?.baseUomId ?? '', lotId: '' })}
+          onSelect={(item) => onChange({ ...line, item, uomId: item?.baseUom?.id ?? item?.baseUomId ?? '', lotId: '' })}
         />
       </FormField>
       <div className="grid grid-cols-2 gap-3">
@@ -101,7 +89,7 @@ function StockLineFields({
             disabled={!line.item}
           >
             <option value="">Select…</option>
-            {(line.item ? itemUomChoices(line.item) : []).map((uom) => (
+            {(line.item ? itemUomChoices(line.item, uomData) : []).map((uom) => (
               <option key={uom.id} value={uom.id}>
                 {uom.code}
               </option>

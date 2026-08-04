@@ -12,6 +12,7 @@ import {
   type StockTransactionLineInput,
 } from '@/lib/endpoints';
 import { stockTransactionNumber, type Item } from '@/lib/types';
+import { convertToBase, itemUomChoices, useUomData } from '@/lib/uom';
 import {
   CREATABLE_TRANSACTION_TYPES,
   STOCK_TRANSACTION_TYPE_PERMISSION,
@@ -75,38 +76,9 @@ function emptyLine(): LineDraft {
   };
 }
 
-/** UOMs selectable for an item: base + purchase + issue + conversion units. */
-function itemUomOptions(item: Item): Array<{ id: string; code: string }> {
-  const seen = new Map<string, string>();
-  const add = (id: string | null | undefined, code: string | null | undefined) => {
-    if (id && !seen.has(id)) seen.set(id, code ?? id);
-  };
-  add(item.baseUomId, item.baseUom?.code);
-  add(item.purchaseUomId, item.purchaseUom?.code);
-  add(item.issueUomId, item.issueUom?.code);
-  for (const conversion of item.uomConversions ?? []) {
-    add(conversion.fromUomId, conversion.fromUom?.code);
-    add(conversion.toUomId, conversion.toUom?.code);
-  }
-  return Array.from(seen, ([id, code]) => ({ id, code }));
-}
-
-/** Live entered-UOM → base-UOM conversion preview (null = unknown factor). */
-function convertToBase(item: Item, uomId: string, quantity: number): number | null {
-  if (!item.baseUomId || !uomId) return null;
-  if (uomId === item.baseUomId) return quantity;
-  for (const conversion of item.uomConversions ?? []) {
-    const factor = Number(conversion.factor);
-    if (!Number.isFinite(factor) || factor <= 0) continue;
-    if (conversion.fromUomId === uomId && conversion.toUomId === item.baseUomId) {
-      return quantity * factor;
-    }
-    if (conversion.fromUomId === item.baseUomId && conversion.toUomId === uomId) {
-      return quantity / factor;
-    }
-  }
-  return null;
-}
+// UOM choices + conversion preview live in lib/uom.ts — the item list payload
+// has no scalar UOM ids or global conversions, so the helpers combine the
+// nested UOM objects with the global catalog/conversion graph.
 
 function isLotTrackedItem(item: Item | null): boolean {
   return !!item && (item.trackingMethod === TrackingMethod.LOT || item.isLotTracked);
@@ -138,13 +110,14 @@ function LineEditor({
     lotTracked ? (line.item?.id ?? null) : null,
     warehouseId,
   );
+  const uomData = useUomData();
 
   const quantityNumber = Number(line.quantity);
   const basePreview =
     line.item && line.uomId && Number.isFinite(quantityNumber) && quantityNumber > 0
-      ? convertToBase(line.item, line.uomId, quantityNumber)
+      ? convertToBase(line.item, line.uomId, quantityNumber, uomData)
       : null;
-  const uomOptions = line.item ? itemUomOptions(line.item) : [];
+  const uomOptions = line.item ? itemUomChoices(line.item, uomData) : [];
   const baseCode = line.item?.baseUom?.code ?? 'base units';
 
   return (
@@ -170,7 +143,7 @@ function LineEditor({
               onChange({
                 ...line,
                 item,
-                uomId: item?.baseUomId ?? '',
+                uomId: item?.baseUom?.id ?? item?.baseUomId ?? '',
                 lotId: '',
                 lotMode: 'existing',
                 newLotNumber: '',
@@ -205,7 +178,7 @@ function LineEditor({
             htmlFor={`${line.key}-qty`}
             required
             hint={
-              basePreview !== null && line.uomId !== line.item?.baseUomId
+              basePreview !== null && line.uomId !== (line.item?.baseUom?.id ?? line.item?.baseUomId)
                 ? `≈ ${Number(basePreview.toFixed(4))} ${baseCode}`
                 : undefined
             }

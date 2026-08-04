@@ -20,7 +20,16 @@ const envSchema = z.object({
     .default('development'),
 
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
-  WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
+  /**
+   * One or more allowed web origins, comma-separated. The FIRST entry is the
+   * primary origin used for links the API generates (e.g. QR scan URLs).
+   * Example: "http://192.168.0.109:3000,http://localhost:3000"
+   */
+  WEB_ORIGIN: z
+    .string()
+    .default('http://localhost:3000')
+    .transform((value) => value.split(',').map((origin) => origin.trim()).filter(Boolean))
+    .pipe(z.array(z.string().url()).min(1)),
 
   DATABASE_URL: z
     .string()
@@ -36,6 +45,11 @@ const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
   SESSION_COOKIE_SECURE: booleanString.default('false'),
 
+  /**
+   * Object storage toggle. Attachments land in Phase 3.5 — deployments
+   * without a MinIO/S3 service set this to false so readiness skips it.
+   */
+  S3_ENABLED: booleanString.default('true'),
   S3_ENDPOINT: z.string().url().default('http://localhost:9000'),
   S3_REGION: z.string().min(1).default('us-east-1'),
   S3_ACCESS_KEY: z.string().min(1).default('gemerp'),

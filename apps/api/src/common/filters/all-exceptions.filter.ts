@@ -85,6 +85,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     }
 
+    // Field-level detail for 4xx envelopes (validation, conflicts) — without
+    // this, client bug reports are just an opaque status code in the log.
+    // Details carry field names + machine codes only, never submitted values.
+    if (status >= 400 && status < 500 && body.error.details?.length) {
+      this.logger.warn(
+        `${status} ${body.error.code} on ${request?.method ?? '?'} ${request?.url ?? '?'} ` +
+          `[${request?.correlationId ?? '-'}]: ` +
+          body.error.details
+            .map((detail) => `${detail.field ?? '?'}: ${detail.message ?? detail.code ?? '?'}`)
+            .join('; '),
+      );
+    }
+
     response.status(status).json(body);
   }
 

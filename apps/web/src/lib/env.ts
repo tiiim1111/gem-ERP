@@ -9,13 +9,15 @@ import { z } from 'zod';
  * already carries the /api/v1 prefix — the base URL is normalized to always
  * end with /api/v1.
  */
-const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
-const parsed = z.string().url().safeParse(RAW_API_URL);
-if (!parsed.success) {
-  throw new Error(
-    `Invalid NEXT_PUBLIC_API_URL: ${JSON.stringify(RAW_API_URL)} — must be an absolute URL such as http://localhost:3001`,
-  );
+if (RAW_API_URL !== '') {
+  const parsed = z.string().url().safeParse(RAW_API_URL);
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid NEXT_PUBLIC_API_URL: ${JSON.stringify(RAW_API_URL)} — must be an absolute URL such as http://localhost:3001`,
+    );
+  }
 }
 
 function normalizeApiBaseUrl(raw: string): string {
@@ -23,5 +25,10 @@ function normalizeApiBaseUrl(raw: string): string {
   return /\/api\/v1$/.test(trimmed) ? trimmed : `${trimmed}/api/v1`;
 }
 
-/** Fully-qualified API base URL including the /api/v1 prefix (no trailing slash). */
-export const API_BASE_URL = normalizeApiBaseUrl(parsed.data);
+/**
+ * API base URL including the /api/v1 prefix (no trailing slash).
+ * Empty NEXT_PUBLIC_API_URL (the default) yields the RELATIVE base "/api/v1":
+ * requests go to the web server's own origin and Next proxies them to the API
+ * — same-origin from the browser's point of view under any hostname.
+ */
+export const API_BASE_URL = normalizeApiBaseUrl(RAW_API_URL);

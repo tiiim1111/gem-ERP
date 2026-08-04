@@ -25,8 +25,14 @@ export class AppConfigService {
     return this.env.API_PORT;
   }
 
-  get webOrigin(): string {
+  /** All origins allowed for CORS/CSRF. */
+  get webOrigins(): string[] {
     return this.env.WEB_ORIGIN;
+  }
+
+  /** Primary origin — used for links the API generates (QR scan URLs). */
+  get webOrigin(): string {
+    return this.env.WEB_ORIGIN[0];
   }
 
   get sessionCookieName(): string {
@@ -45,6 +51,10 @@ export class AppConfigService {
 
   get redisUrl(): string {
     return this.env.REDIS_URL;
+  }
+
+  get s3Enabled(): boolean {
+    return this.env.S3_ENABLED;
   }
 
   get s3Endpoint(): string {

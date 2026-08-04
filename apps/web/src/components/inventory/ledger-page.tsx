@@ -54,7 +54,7 @@ export function LedgerPage({
     type: type || undefined,
     from: from || undefined,
     to: to || undefined,
-    sort: 'occurredAt:desc',
+    sort: 'postedAt:desc',
   };
 
   const ledgerQuery = useQuery({
@@ -64,7 +64,12 @@ export function LedgerPage({
   });
 
   const data = ledgerQuery.data;
-  const allTypes = [...CREATABLE_TRANSACTION_TYPES, StockTransactionType.INTER_BRANCH_TRANSFER, StockTransactionType.REVERSAL];
+  const allTypes = [
+    ...CREATABLE_TRANSACTION_TYPES,
+    StockTransactionType.INTER_BRANCH_TRANSFER_OUT,
+    StockTransactionType.INTER_BRANCH_TRANSFER_IN,
+    StockTransactionType.REVERSAL,
+  ];
 
   return (
     <>
@@ -159,8 +164,10 @@ export function LedgerPage({
                       <SignedQuantity value={ledgerQuantity(entry)} />
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground md:table-cell">
-                      {entry.transactionType || entry.type
-                        ? stockTransactionTypeLabel(entry.transactionType ?? entry.type ?? '')
+                      {entry.transaction?.type || entry.transactionType || entry.type
+                        ? stockTransactionTypeLabel(
+                            entry.transaction?.type ?? entry.transactionType ?? entry.type ?? '',
+                          )
                         : '—'}
                     </TableCell>
                     <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">
@@ -170,18 +177,23 @@ export function LedgerPage({
                       {entry.lot ? lotNumber(entry.lot) : '—'}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
-                      {entry.transactionId ? (
-                        <Link
-                          href={`/inventory/transactions/${entry.transactionId}`}
-                          className="font-mono text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {entry.transactionNumber ?? 'View'}
-                        </Link>
-                      ) : (
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {entry.transactionNumber ?? '—'}
-                        </span>
-                      )}
+                      {(() => {
+                        const txnId = entry.transaction?.id ?? entry.transactionId;
+                        const txnNumber =
+                          entry.transaction?.transactionNumber ?? entry.transactionNumber;
+                        return txnId ? (
+                          <Link
+                            href={`/inventory/transactions/${txnId}`}
+                            className="font-mono text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {txnNumber ?? 'View'}
+                          </Link>
+                        ) : (
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {txnNumber ?? '—'}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}

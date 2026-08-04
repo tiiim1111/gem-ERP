@@ -17,6 +17,59 @@ Entry format:
 
 ---
 
+## 2026-08-04 — Item-create root cause; same-origin proxy; hosting decision: Vercel + Railway
+
+**Item create "Validation failed" — the REAL root cause (3rd round):** the new 4xx-details logging pinpointed it instantly: the form sent `uomConversions` in the item body, which the create/update DTOs reject (whitelist) — so **every** UI item-create failed regardless of input. (Earlier suspects — empty-string Ids, standardCost format — were real hardening but not the culprit; their error bodies were coincidentally the same size. Lesson logged: observability beats byte-archaeology.) Fix: form no longer sends `uomConversions`; conversions sync via the dedicated `/uom-conversions` endpoints (create/update/delete diff) after item save, non-fatal on partial failure. Verified E2E via proxy: item + conversion + detail all OK.
+
+**Same-origin proxy architecture** (fixes Tim's localhost-vs-intranet cookie issue permanently): web now defaults to a RELATIVE API base (`/api/v1`) with a Next rewrite proxying to the API (`API_PROXY_TARGET`, default localhost:3001). Middleware excludes `/api` from the auth redirect. CSRF guard additionally accepts proxied same-origin requests (x-forwarded-host match or `Sec-Fetch-Site: same-origin`). Any hostname now works with zero rebuilds; cookies always first-party.
+
+**Intranet setup removed** (Tim's call): PS scripts deleted, WEB_ORIGIN back to localhost, a one-click removal .bat left on the Desktop for the old portproxy/firewall entries.
+
+**Hosting exploration → decision:**
+- Cloudflare quick tunnel worked (verified live end-to-end over HTTPS) **but** both the Starlink and Tenda/ISP DNS resolvers refuse to resolve `*.trycloudflare.com` (1.1.1.1/8.8.8.8 resolve fine — ISP-level filtering). Router DNS override didn't stick. Named-tunnel-with-own-domain would fix it, but Tim chose managed hosting instead.
+- **Decision: Vercel (web) + Railway (API + Postgres + Redis).** The proxy architecture makes this clean (single origin via Vercel rewrite). Prepared: `apps/api/Dockerfile` (multi-stage, runs `migrate deploy` on boot), `.dockerignore`, `apps/web/vercel.json` (workspace-aware build), `S3_ENABLED=false` toggle so production readiness doesn't demand MinIO before Phase 3.5 attachments, and `docs/deploy-vercel-railway.md` (click-by-click + env tables + security notes: rotate seed passwords once public).
+
+Verified: 185/185 tests, api/web builds, typecheck/lint green. Pushing everything (deployment platforms pull from GitHub).
+
+---
+
+## 2026-07-30 (evening) — Office-testing bug: "Validation failed" on item create (NOT yet pushed)
+
+Reported from live office testing (Mac + Android users on the LAN):
+1. **Blank optional dropdowns → 400.** Forms submit `""` for unselected optional references; API `@IsUUID` rejects empty strings. Fixed centrally in `apps/web/src/lib/api.ts`: request bodies are sanitized — keys ending in `Id` with `""` become `null` (passes `@IsOptional`, preserves clear-on-PATCH semantics). Covers all forms.
+2. **`standardCost` rejections** (matched the exact 189-byte error body from the logs). Form money pattern was laxer than the API's (`\d+` vs `\d{1,12}`) and didn't tolerate pasted `1,500.00`/spaces. Item form now: zod `preprocess` strips commas/whitespace on both cost fields, pattern aligned to the API's 12-digit cap.
+3. Hardening while in there: SKU input auto-normalizes as you type (uppercase, spaces→`-`), zod enforces the API's SKU pattern with a friendly message, and blank SKU + blank category (auto-gen impossible) is caught inline.
+4. **Observability:** exception filter now logs every 4xx envelope's field-level details (field + message only — never submitted values). Diagnosing this class of report is now one grep instead of byte-size archaeology.
+
+Verified: 185/185 tests, builds green, live check confirms the new log line fires with exact field names. Debug artifacts removed from dev DB.
+
+---
+
+## 2026-07-30 (later still) — Intranet access for office testing (NOT yet pushed)
+
+Tim wants officemates to test over the office LAN:
+- `WEB_ORIGIN` now accepts a comma-separated list (zod transform); first entry is the primary origin used for generated links (QR scan URLs). CORS + CSRF guard accept all listed origins. `.env` set to `http://192.168.0.109:3000,http://localhost:3000` (192.168.0.109 = office Wi-Fi IP; the machine's many ZeroTier adapters were ignored).
+- Web rebuilt with `NEXT_PUBLIC_API_URL=http://192.168.0.109:3001` via `apps/web/.env.local` (gitignored). Everyone — Tim included — should browse via `http://192.168.0.109:3000` (localhost page + IP API would be cross-site → Lax cookie not sent).
+- `scripts/intranet-setup.ps1` (committed): Windows-admin script — netsh portproxy on the Wi-Fi IP only (3000/3001 → WSL via loopback) + private-profile firewall rules; `-Remove` undoes everything. Tim must run it as admin (cannot elevate from WSL).
+- Verified: 185/185 tests, builds green; CORS allow-origin echoes LAN origin; CSRF accepts LAN + localhost, rejects others (403). QR labels now encode the LAN scan URL → phone-scannable in the office.
+- Caveats noted to Tim: dev-only exposure (seed creds), machine must stay on with Docker Desktop running, DHCP may change the IP (script has a note), remove the forwarding after testing.
+
+---
+
+## 2026-07-30 (later) — Bug fixes from Tim's testing (NOT yet pushed)
+
+Tim reported two bugs; both fixed and verified locally, **held from push at Tim's request** pending his browser re-test:
+1. **Stock ledger "Validation failed"** — page sent `sort=occurredAt:desc`; API accepts `postedAt|createdAt`. Fixed to `postedAt:desc`. Related: removed phantom `INTER_BRANCH_TRANSFER` enum value from `@gemerp/shared` (Prisma truth: `_OUT`/`_IN`), fixed ledger type filter + labels.
+2. **Transfer line UOM dropdown empty** — line editors read scalar `item.baseUomId`/`item.uomConversions` which the items list payload doesn't carry (nested `baseUom` objects only; conversions are global). New shared helper `apps/web/src/lib/uom.ts`: choices from nested UOM objects + global catalog, multi-hop (BOX→PACK→PC) conversion preview via graph walk. Both transaction wizard and transfer editor rewired (wizard had the same latent bug).
+
+Verified: build/typecheck/lint green, 185/185 tests, ledger query 200 with the page's exact params, UOM sources live (6 UOMs, 3 global conversions). Web restarted on the fixed build.
+
+Round 2 (same session, from Tim's live testing — still unpushed):
+3. **"Insufficient stock" on issue despite 45 on hand** — seed typo: MKT opening balances pointed at `MKT-WH1:S-01` which doesn't exist (S-01 is a SUB-SR1 location) → 40 reams landed in a NULL-location bucket; Tim's issue line pointed at ISS (empty). Engine behaved correctly. Fixed the seed (`S-01`→`A-01`), repaired the dev DB (moved seed txn lines + ledger rows + buckets to MKT-WH1:A-01 — seed rows only), and enriched the INSUFFICIENT_STOCK detail to hint that stock may sit in a different location. Backlog (Phase 3.5): show per-location availability in the location picker.
+4. **Ledger page quantities all 0 + Type/Transaction columns empty** — field drift: API sends `quantityDelta` and a nested `transaction` object; page read flat `baseQuantity`/`transactionType`/`transactionNumber`. Also the transaction-detail ledger table expected nested item/lot/location but detail entries carry scalar ids — now joined to their document line via `transactionLineId`. Tim's transactions were correct all along (receipt +5, issue −3, balances right) — display only.
+
+---
+
 ## 2026-07-30 — Phase 3 delivered: stock ledger, transfers, serialized assets, scanning
 
 **Done:**

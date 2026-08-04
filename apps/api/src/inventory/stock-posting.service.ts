@@ -400,6 +400,10 @@ export class StockPostingService {
           field: `lines[${failure.lineNumber}]`,
           message: `${failure.itemSku}: requested ${failure.requested} (base units), available ${failure.available}${
             failure.bucket.lotId ? ' in the selected lot' : ''
+          }${
+            failure.bucket.storageLocationId
+              ? ' at the line’s storage location — stock may sit in a different location of this warehouse (check Balances)'
+              : ''
           }.`,
         })),
       );

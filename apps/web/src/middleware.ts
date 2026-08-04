@@ -31,6 +31,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except Next internals and static files with an extension.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
+  // Everything except Next internals, static files with an extension, and
+  // /api (the same-origin proxy to the backend — the API does its own auth;
+  // a redirect here would break XHR calls riding the rewrite).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/|.*\\..*).*)'],
 };

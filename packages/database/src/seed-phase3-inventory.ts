@@ -423,8 +423,8 @@ async function seedOpeningBalances(
     daysAgo: 14,
     notes: "Opening balances — Makati warehouse",
     lines: [
-      { sku: "SKU-OFC-00001", quantity: "40", uomCode: "REAM", locationId: loc("MKT-WH1:S-01") },
-      { sku: "SKU-OFC-00003", quantity: "10", uomCode: "PC", locationId: loc("MKT-WH1:S-01") },
+      { sku: "SKU-OFC-00001", quantity: "40", uomCode: "REAM", locationId: loc("MKT-WH1:A-01") },
+      { sku: "SKU-OFC-00003", quantity: "10", uomCode: "PC", locationId: loc("MKT-WH1:A-01") },
     ],
   });
   return 2;
