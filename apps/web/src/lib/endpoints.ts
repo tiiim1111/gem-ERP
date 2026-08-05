@@ -7,6 +7,7 @@ import type {
   EmployeeStatus,
   ItemBusinessCategory,
   Paginated,
+  PurchaseOrderStatus,
   SessionUser,
   StockTransactionStatus,
   StockTransactionType,
@@ -41,6 +42,9 @@ import type {
   OutstandingAsset,
   PermissionCatalogGroup,
   Position,
+  GoodsReceipt,
+  PurchaseHistoryRow,
+  PurchaseOrder,
   ResolvedBarcode,
   Role,
   ScanResolution,
@@ -49,6 +53,9 @@ import type {
   StockLedgerEntry,
   StockTransaction,
   StorageLocation,
+  Supplier,
+  SupplierContact,
+  SupplierHistoryRollup,
   Transfer,
   Uom,
   UomConversion,
@@ -1283,4 +1290,300 @@ export function receiveTransfer(
 
 export function cancelTransfer(id: string, reason: string): Promise<Transfer> {
   return api.post<Transfer>(`/transfers/${id}/cancel`, { reason });
+}
+
+/* ========================================================================== */
+/* Phase 4 — Procurement (docs/api-outline.md §5)                             */
+/* ========================================================================== */
+
+/* ------------------------- Suppliers (contract §5.1) ---------------------- */
+
+export interface SupplierListParams extends ListParams {
+  q?: string;
+  categoryId?: string;
+  isActive?: boolean;
+}
+
+export interface SupplierWriteBody {
+  code?: string;
+  legalName?: string;
+  tradeName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  taxId?: string | null;
+  paymentTerms?: string | null;
+  categoryId?: string | null;
+  notes?: string | null;
+}
+
+export function listSuppliers(
+  params: SupplierListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<Supplier>> {
+  return api.get<Paginated<Supplier>>('/suppliers', params, signal);
+}
+
+export function getSupplier(id: string, signal?: AbortSignal): Promise<Supplier> {
+  return api.get<Supplier>(`/suppliers/${id}`, undefined, signal);
+}
+
+export function createSupplier(body: SupplierWriteBody): Promise<Supplier> {
+  return api.post<Supplier>('/suppliers', body);
+}
+
+/** Supplier codes are permanent — never send `code` on PATCH. */
+export function updateSupplier(id: string, body: Omit<SupplierWriteBody, 'code'>): Promise<Supplier> {
+  return api.patch<Supplier>(`/suppliers/${id}`, body);
+}
+
+export function activateSupplier(id: string): Promise<Supplier> {
+  return api.post<Supplier>(`/suppliers/${id}/activate`);
+}
+
+export function deactivateSupplier(id: string): Promise<Supplier> {
+  return api.post<Supplier>(`/suppliers/${id}/deactivate`);
+}
+
+export function archiveSupplier(id: string): Promise<Supplier> {
+  return api.post<Supplier>(`/suppliers/${id}/archive`);
+}
+
+export interface SupplierContactWriteBody {
+  name?: string;
+  position?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  isPrimary?: boolean;
+}
+
+export function listSupplierContacts(
+  supplierId: string,
+  signal?: AbortSignal,
+): Promise<Paginated<SupplierContact> | SupplierContact[]> {
+  return api.get<Paginated<SupplierContact> | SupplierContact[]>(
+    `/suppliers/${supplierId}/contacts`,
+    undefined,
+    signal,
+  );
+}
+
+export function createSupplierContact(
+  supplierId: string,
+  body: SupplierContactWriteBody,
+): Promise<SupplierContact> {
+  return api.post<SupplierContact>(`/suppliers/${supplierId}/contacts`, body);
+}
+
+export function updateSupplierContact(
+  supplierId: string,
+  contactId: string,
+  body: SupplierContactWriteBody,
+): Promise<SupplierContact> {
+  return api.patch<SupplierContact>(`/suppliers/${supplierId}/contacts/${contactId}`, body);
+}
+
+export function deleteSupplierContact(supplierId: string, contactId: string): Promise<void> {
+  return api.delete<void>(`/suppliers/${supplierId}/contacts/${contactId}`);
+}
+
+/** Purchase & delivery history rollup (requires procurement.po.view). */
+export function getSupplierHistory(
+  supplierId: string,
+  signal?: AbortSignal,
+): Promise<SupplierHistoryRollup> {
+  return api.get<SupplierHistoryRollup>(`/suppliers/${supplierId}/history`, undefined, signal);
+}
+
+/* ---------------------- Purchase orders (contract §5.2) ------------------- */
+
+export interface PurchaseOrderListParams extends ListParams {
+  status?: PurchaseOrderStatus | string;
+  supplierId?: string;
+  branchId?: string;
+  warehouseId?: string;
+  number?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface PurchaseOrderLineInput {
+  itemId: string;
+  uomId: string;
+  quantity: string | number;
+  /** Money fields — only sent when the caller holds the cost permission. */
+  unitPrice?: string | number;
+  discount?: string | number;
+  tax?: string | number;
+  notes?: string;
+}
+
+export interface PurchaseOrderCreateBody {
+  supplierId: string;
+  branchId: string;
+  destinationWarehouseId: string;
+  orderDate: string;
+  expectedDate?: string;
+  currency?: string;
+  lines: PurchaseOrderLineInput[];
+  terms?: string;
+  notes?: string;
+}
+
+export function listPurchaseOrders(
+  params: PurchaseOrderListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<PurchaseOrder>> {
+  return api.get<Paginated<PurchaseOrder>>('/purchase-orders', params, signal);
+}
+
+export function getPurchaseOrder(id: string, signal?: AbortSignal): Promise<PurchaseOrder> {
+  return api.get<PurchaseOrder>(`/purchase-orders/${id}`, undefined, signal);
+}
+
+export function createPurchaseOrder(body: PurchaseOrderCreateBody): Promise<PurchaseOrder> {
+  return api.post<PurchaseOrder>('/purchase-orders', body);
+}
+
+/** Draft-only edit; requires the current `version` (409 VERSION_CONFLICT when stale). */
+export function updatePurchaseOrder(
+  id: string,
+  body: Partial<PurchaseOrderCreateBody> & { version?: number },
+): Promise<PurchaseOrder> {
+  return api.patch<PurchaseOrder>(`/purchase-orders/${id}`, body);
+}
+
+export function submitPurchaseOrder(id: string): Promise<PurchaseOrder> {
+  return api.post<PurchaseOrder>(`/purchase-orders/${id}/submit`);
+}
+
+export function approvePurchaseOrder(id: string): Promise<PurchaseOrder> {
+  return api.post<PurchaseOrder>(`/purchase-orders/${id}/approve`);
+}
+
+export function rejectPurchaseOrder(id: string, comment: string): Promise<PurchaseOrder> {
+  return api.post<PurchaseOrder>(`/purchase-orders/${id}/reject`, { comment });
+}
+
+export function cancelPurchaseOrder(id: string, reason: string): Promise<PurchaseOrder> {
+  return api.post<PurchaseOrder>(`/purchase-orders/${id}/cancel`, { reason });
+}
+
+/** Close (close-short needs a reason; a fully-received close may omit it). */
+export function closePurchaseOrder(id: string, reason?: string): Promise<PurchaseOrder> {
+  return api.post<PurchaseOrder>(`/purchase-orders/${id}/close`, reason ? { reason } : {});
+}
+
+export function listPurchaseOrderReceipts(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Paginated<GoodsReceipt> | GoodsReceipt[]> {
+  return api.get<Paginated<GoodsReceipt> | GoodsReceipt[]>(
+    `/purchase-orders/${id}/receipts`,
+    undefined,
+    signal,
+  );
+}
+
+/* ----------------------- Goods receipts (contract §5.3) ------------------- */
+
+export interface GoodsReceiptListParams extends ListParams {
+  status?: string;
+  purchaseOrderId?: string;
+  supplierId?: string;
+  branchId?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface GoodsReceiptLotInput {
+  lotNo?: string;
+  mfgDate?: string;
+  expiryDate?: string;
+  qty: string | number;
+}
+
+export interface GoodsReceiptLineInput {
+  poLineId: string;
+  quantity: string | number;
+  uomId: string;
+  /** SERIAL items: one serial per received unit. */
+  serials?: string[];
+  /** LOT items: lot allocations summing to the received quantity. */
+  lots?: GoodsReceiptLotInput[];
+  locationId?: string;
+  notes?: string;
+}
+
+export interface GoodsReceiptCreateBody {
+  purchaseOrderId: string;
+  deliveryRefNo?: string;
+  invoiceRefNo?: string;
+  receivedDate: string;
+  lines: GoodsReceiptLineInput[];
+  notes?: string;
+}
+
+export function listGoodsReceipts(
+  params: GoodsReceiptListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<GoodsReceipt>> {
+  return api.get<Paginated<GoodsReceipt>>('/goods-receipts', params, signal);
+}
+
+export function getGoodsReceipt(id: string, signal?: AbortSignal): Promise<GoodsReceipt> {
+  return api.get<GoodsReceipt>(`/goods-receipts/${id}`, undefined, signal);
+}
+
+export function createGoodsReceipt(body: GoodsReceiptCreateBody): Promise<GoodsReceipt> {
+  return api.post<GoodsReceipt>('/goods-receipts', body);
+}
+
+/** Draft-only edit; requires the current `version`. */
+export function updateGoodsReceipt(
+  id: string,
+  body: Partial<GoodsReceiptCreateBody> & { version?: number },
+): Promise<GoodsReceipt> {
+  return api.patch<GoodsReceipt>(`/goods-receipts/${id}`, body);
+}
+
+/** Posting requires an Idempotency-Key (contract §1.5). */
+export function postGoodsReceipt(id: string, idempotencyKey: string): Promise<GoodsReceipt> {
+  return api.post<GoodsReceipt>(`/goods-receipts/${id}/post`, undefined, { idempotencyKey });
+}
+
+export function cancelGoodsReceipt(id: string, reason: string): Promise<GoodsReceipt> {
+  return api.post<GoodsReceipt>(`/goods-receipts/${id}/cancel`, { reason });
+}
+
+/** Reversal requires a reason and an Idempotency-Key (contract §1.5). */
+export function reverseGoodsReceipt(
+  id: string,
+  reason: string,
+  idempotencyKey: string,
+): Promise<GoodsReceipt> {
+  return api.post<GoodsReceipt>(`/goods-receipts/${id}/reverse`, { reason }, { idempotencyKey });
+}
+
+/* ------------------- Purchase history (contract §5.4) --------------------- */
+
+export interface PurchaseHistoryParams extends ListParams {
+  supplierId?: string;
+  itemId?: string;
+  branchId?: string;
+  warehouseId?: string;
+  purchaseOrderId?: string;
+  receiptId?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+}
+
+export function listPurchaseHistory(
+  params: PurchaseHistoryParams,
+  signal?: AbortSignal,
+): Promise<Paginated<PurchaseHistoryRow>> {
+  return api.get<Paginated<PurchaseHistoryRow>>('/purchase-history', params, signal);
 }

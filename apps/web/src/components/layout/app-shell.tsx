@@ -9,7 +9,9 @@ import {
   Building2,
   ChevronDown,
   ClipboardList,
+  Factory,
   FileUp,
+  History,
   IdCard,
   KeyRound,
   Layers,
@@ -21,6 +23,7 @@ import {
   ScanLine,
   ScrollText,
   ShieldCheck,
+  ShoppingCart,
   SlidersHorizontal,
   TriangleAlert,
   Users,
@@ -105,10 +108,28 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    label: 'Procurement',
+    items: [
+      {
+        href: '/procurement/purchase-orders',
+        label: 'Purchase Orders',
+        icon: ShoppingCart,
+        permission: PERMISSIONS.procurementPo.view,
+      },
+      {
+        href: '/procurement/history',
+        label: 'Purchase History',
+        icon: History,
+        permission: PERMISSIONS.procurementPo.view,
+      },
+    ],
+  },
+  {
     label: 'Catalog & people',
     items: [
       { href: '/employees', label: 'Employees', icon: IdCard, permission: PERMISSIONS.employee.view },
       { href: '/items', label: 'Items', icon: Package, permission: PERMISSIONS.item.view },
+      { href: '/suppliers', label: 'Suppliers', icon: Factory, permission: PERMISSIONS.supplier.view },
       {
         href: '/imports',
         label: 'Imports',

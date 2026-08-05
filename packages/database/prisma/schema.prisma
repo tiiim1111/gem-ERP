@@ -558,6 +558,7 @@ model StorageLocation {
   assetMovementsTo    AssetMovement[]        @relation("AssetMovementToLocation")
   assetAssignments    AssetAssignment[]      @relation("AssetAssignmentLocation")
   goodsReceiptLines   GoodsReceiptLine[]     @relation("GoodsReceiptLineLocation")
+  supplierReturnLines SupplierReturnLine[]   @relation("SupplierReturnLineLocation")
   transfersOut        Transfer[]             @relation("TransferSourceLocation")
   transfersIn         Transfer[]             @relation("TransferDestinationLocation")
   countSessions       InventoryCountSession[] @relation("InventoryCountSessionLocation")
@@ -948,6 +949,7 @@ model StockTransaction {
   supplierId             String?              @map("supplier_id") @db.Uuid
   purchaseOrderId        String?              @map("purchase_order_id") @db.Uuid
   goodsReceiptId         String?              @map("goods_receipt_id") @db.Uuid
+  supplierReturnId       String?              @map("supplier_return_id") @db.Uuid
   transferId             String?              @map("transfer_id") @db.Uuid
   workOrderId            String?              @map("maintenance_work_order_id") @db.Uuid
   countSessionId         String?              @map("count_session_id") @db.Uuid
@@ -985,6 +987,7 @@ model StockTransaction {
   supplier             Supplier?              @relation("StockTransactionSupplier", fields: [supplierId], references: [id], onDelete: Restrict)
   purchaseOrder        PurchaseOrder?         @relation("StockTransactionPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Restrict)
   goodsReceipt         GoodsReceipt?          @relation("StockTransactionGoodsReceipt", fields: [goodsReceiptId], references: [id], onDelete: Restrict)
+  supplierReturn       SupplierReturn?        @relation("StockTransactionSupplierReturn", fields: [supplierReturnId], references: [id], onDelete: Restrict)
   transfer             Transfer?              @relation("StockTransactionTransfer", fields: [transferId], references: [id], onDelete: Restrict)
   workOrder            MaintenanceWorkOrder?  @relation("StockTransactionWorkOrder", fields: [workOrderId], references: [id], onDelete: Restrict)
   countSession         InventoryCountSession? @relation("StockTransactionCountSession", fields: [countSessionId], references: [id], onDelete: Restrict)
@@ -1009,6 +1012,7 @@ model StockTransaction {
   @@index([supplierId])
   @@index([purchaseOrderId])
   @@index([goodsReceiptId])
+  @@index([supplierReturnId])
   @@index([transferId])
   @@index([workOrderId])
   @@index([countSessionId])
@@ -1465,6 +1469,8 @@ model PurchaseOrder {
   grandTotal             Decimal             @default(0) @map("grand_total") @db.Decimal(14, 2)
   terms                  String?
   notes                  String?
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version                Int                 @default(1)
   createdById            String              @map("created_by_id") @db.Uuid
   submittedAt            DateTime?           @map("submitted_at")
   approvedById           String?             @map("approved_by_id") @db.Uuid
@@ -1535,6 +1541,12 @@ model GoodsReceipt {
   receiptDate       DateTime           @map("receipt_date") @db.Date
   supplierReference String?            @map("supplier_reference")
   notes             String?
+  /// Idempotency-Key of the post request that moved this receipt's stock
+  /// (api-outline 1.5). Unique: replaying the key returns the original
+  /// result, never a duplicate movement.
+  idempotencyKey    String?            @unique @map("idempotency_key")
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version           Int                @default(1)
   createdById       String             @map("created_by_id") @db.Uuid
   postedById        String?            @map("posted_by_id") @db.Uuid
   postedAt          DateTime?          @map("posted_at")
@@ -1571,6 +1583,9 @@ model GoodsReceiptLine {
   receivedQuantity    Decimal  @map("received_quantity") @db.Decimal(14, 4)
   baseQuantity        Decimal  @map("base_quantity") @db.Decimal(14, 4)
   unitCost            Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  /// Serials captured on the draft line for SERIAL items — one per received
+  /// unit; posting turns each into an Asset instance linked back here.
+  serialNumbers       String[] @default([]) @map("serial_numbers")
   lotId               String?  @map("lot_id") @db.Uuid
   storageLocationId   String?  @map("storage_location_id") @db.Uuid
   notes               String?
@@ -1603,6 +1618,8 @@ model SupplierReturn {
   returnDate     DateTime            @map("return_date") @db.Date
   reasonId       String?             @map("reason_id") @db.Uuid
   notes          String?
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version        Int                 @default(1)
   createdById    String              @map("created_by_id") @db.Uuid
   approvedById   String?             @map("approved_by_id") @db.Uuid
   approvedAt     DateTime?           @map("approved_at")
@@ -1620,7 +1637,8 @@ model SupplierReturn {
   approvedBy   User?         @relation("SupplierReturnApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
   postedBy     User?         @relation("SupplierReturnPostedBy", fields: [postedById], references: [id], onDelete: Restrict)
 
-  lines SupplierReturnLine[] @relation("SupplierReturnLines")
+  lines             SupplierReturnLine[] @relation("SupplierReturnLines")
+  stockTransactions StockTransaction[]   @relation("StockTransactionSupplierReturn")
 
   @@index([supplierId])
   @@index([branchId])
@@ -1629,23 +1647,27 @@ model SupplierReturn {
 }
 
 model SupplierReturnLine {
-  id               String   @id @default(uuid()) @db.Uuid
-  supplierReturnId String   @map("supplier_return_id") @db.Uuid
-  lineNumber       Int      @map("line_number")
-  itemId           String   @map("item_id") @db.Uuid
-  lotId            String?  @map("lot_id") @db.Uuid
-  uomId            String   @map("uom_id") @db.Uuid
-  quantity         Decimal  @db.Decimal(14, 4)
-  baseQuantity     Decimal  @map("base_quantity") @db.Decimal(14, 4)
-  unitCost         Decimal? @map("unit_cost") @db.Decimal(14, 2)
-  notes            String?
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(uuid()) @db.Uuid
+  supplierReturnId  String   @map("supplier_return_id") @db.Uuid
+  lineNumber        Int      @map("line_number")
+  itemId            String   @map("item_id") @db.Uuid
+  lotId             String?  @map("lot_id") @db.Uuid
+  uomId             String   @map("uom_id") @db.Uuid
+  quantity          Decimal  @db.Decimal(14, 4)
+  baseQuantity      Decimal  @map("base_quantity") @db.Decimal(14, 4)
+  unitCost          Decimal? @map("unit_cost") @db.Decimal(14, 2)
+  /// Storage location the returned stock leaves from (source bucket of the
+  /// posted RETURN_TO_SUPPLIER movement).
+  storageLocationId String?  @map("storage_location_id") @db.Uuid
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  supplierReturn SupplierReturn @relation("SupplierReturnLines", fields: [supplierReturnId], references: [id], onDelete: Cascade)
-  item           Item           @relation("SupplierReturnLineItem", fields: [itemId], references: [id], onDelete: Restrict)
-  lot            InventoryLot?  @relation("SupplierReturnLineLot", fields: [lotId], references: [id], onDelete: Restrict)
-  uom            UnitOfMeasure  @relation("SupplierReturnLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+  supplierReturn  SupplierReturn   @relation("SupplierReturnLines", fields: [supplierReturnId], references: [id], onDelete: Cascade)
+  item            Item             @relation("SupplierReturnLineItem", fields: [itemId], references: [id], onDelete: Restrict)
+  lot             InventoryLot?    @relation("SupplierReturnLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  uom             UnitOfMeasure    @relation("SupplierReturnLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation? @relation("SupplierReturnLineLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
 
   @@unique([supplierReturnId, lineNumber])
   @@index([itemId])

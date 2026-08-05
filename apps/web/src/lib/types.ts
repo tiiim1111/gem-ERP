@@ -8,6 +8,7 @@ import type {
   AssetStatus,
   EmployeeStatus,
   ItemBusinessCategory,
+  PurchaseOrderStatus,
   SessionUser,
   StockTransactionStatus,
   StockTransactionType,
@@ -1194,6 +1195,427 @@ export function transferDestination(transfer: Transfer): TransferEndpoint {
 
 export function transferApprovals(transfer: Transfer): ApprovalTrailEntry[] {
   return transfer.approvals ?? transfer.approvalTrail ?? [];
+}
+
+/* ========================================================================== */
+/* Phase 4 — Procurement (docs/api-outline.md §5)                             */
+/* ========================================================================== */
+
+/* ------------------------- Suppliers (contract §5.1) ---------------------- */
+
+export interface SupplierContact {
+  id: string;
+  supplierId?: string;
+  name: string;
+  position?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  isPrimary?: boolean;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Supplier {
+  id: string;
+  code: string;
+  legalName?: string;
+  tradeName?: string | null;
+  /** Some payloads may flatten to a single name field. */
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  taxId?: string | null;
+  paymentTerms?: string | null;
+  categoryId?: string | null;
+  category?: LookupValue | null;
+  /** Tolerated plural shape should the API expose multiple categories. */
+  categories?: LookupValue[] | null;
+  notes?: string | null;
+  isActive: boolean;
+  archivedAt?: string | null;
+  contacts?: SupplierContact[];
+  contactsCount?: number;
+  _count?: { contacts?: number; purchaseOrders?: number };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Preferred display name: trade name, then legal name. */
+export function supplierName(supplier: Supplier): string {
+  return supplier.tradeName ?? supplier.legalName ?? supplier.name ?? supplier.code;
+}
+
+export function supplierLegalName(supplier: Supplier): string | null {
+  return supplier.legalName ?? supplier.name ?? null;
+}
+
+export function supplierCategories(supplier: Supplier): LookupValue[] {
+  if (supplier.categories && supplier.categories.length > 0) return supplier.categories;
+  return supplier.category ? [supplier.category] : [];
+}
+
+export function supplierContactsCount(supplier: Supplier): number | null {
+  return supplier.contactsCount ?? supplier._count?.contacts ?? supplier.contacts?.length ?? null;
+}
+
+/** GET /suppliers/:id/history — rollup; every field optional/tolerated. */
+export interface SupplierHistoryRollup {
+  totalPurchaseOrders?: number;
+  poCount?: number;
+  openPurchaseOrders?: number;
+  openPoCount?: number;
+  totalReceipts?: number;
+  receiptCount?: number;
+  lastOrderDate?: string | null;
+  lastDeliveryDate?: string | null;
+  lastReceiptDate?: string | null;
+  /** Money — present only with cost permission. */
+  totalSpend?: DecimalString | null;
+  totalPurchased?: DecimalString | null;
+}
+
+export function supplierHistoryPoCount(rollup: SupplierHistoryRollup): number | null {
+  return rollup.totalPurchaseOrders ?? rollup.poCount ?? null;
+}
+
+export function supplierHistoryOpenPoCount(rollup: SupplierHistoryRollup): number | null {
+  return rollup.openPurchaseOrders ?? rollup.openPoCount ?? null;
+}
+
+export function supplierHistoryReceiptCount(rollup: SupplierHistoryRollup): number | null {
+  return rollup.totalReceipts ?? rollup.receiptCount ?? null;
+}
+
+export function supplierHistoryLastDelivery(rollup: SupplierHistoryRollup): string | null {
+  return rollup.lastDeliveryDate ?? rollup.lastReceiptDate ?? null;
+}
+
+export function supplierHistorySpend(rollup: SupplierHistoryRollup): DecimalString | null {
+  return rollup.totalSpend ?? rollup.totalPurchased ?? null;
+}
+
+export interface SupplierRef {
+  id: string;
+  code?: string;
+  legalName?: string;
+  tradeName?: string | null;
+  name?: string | null;
+}
+
+export function supplierRefLabel(supplier: SupplierRef | null | undefined): string {
+  if (!supplier) return '—';
+  return supplier.tradeName ?? supplier.legalName ?? supplier.name ?? supplier.code ?? supplier.id;
+}
+
+/* ---------------------- Purchase orders (contract §5.2) ------------------- */
+
+export interface PurchaseOrderLine {
+  id?: string;
+  purchaseOrderId?: string;
+  lineNumber?: number;
+  itemId: string;
+  item?: ItemRef | null;
+  description?: string | null;
+  uomId?: string;
+  uom?: Uom | null;
+  quantity: DecimalString;
+  /** Money fields — present only with procurement cost permission. */
+  unitPrice?: DecimalString | null;
+  discountAmount?: DecimalString | null;
+  discount?: DecimalString | null;
+  taxAmount?: DecimalString | null;
+  tax?: DecimalString | null;
+  lineTotal?: DecimalString | null;
+  total?: DecimalString | null;
+  receivedQuantity?: DecimalString | null;
+  canceledQuantity?: DecimalString | null;
+  outstandingQuantity?: DecimalString | null;
+  notes?: string | null;
+}
+
+export function poLineDiscount(line: PurchaseOrderLine): DecimalString | null {
+  return line.discountAmount ?? line.discount ?? null;
+}
+
+export function poLineTax(line: PurchaseOrderLine): DecimalString | null {
+  return line.taxAmount ?? line.tax ?? null;
+}
+
+export function poLineTotal(line: PurchaseOrderLine): DecimalString | null {
+  return line.lineTotal ?? line.total ?? null;
+}
+
+/** Outstanding = ordered − received − canceled (server value wins when sent). */
+export function poLineOutstanding(line: PurchaseOrderLine): number {
+  if (line.outstandingQuantity !== undefined && line.outstandingQuantity !== null) {
+    return decimalValue(line.outstandingQuantity);
+  }
+  return Math.max(
+    decimalValue(line.quantity) -
+      decimalValue(line.receivedQuantity) -
+      decimalValue(line.canceledQuantity),
+    0,
+  );
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber?: string;
+  number?: string;
+  status: PurchaseOrderStatus | string;
+  supplierId?: string;
+  supplier?: SupplierRef | null;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  destinationWarehouseId?: string;
+  destinationWarehouse?: WarehouseRef | null;
+  warehouse?: WarehouseRef | null;
+  orderDate?: string | null;
+  expectedDeliveryDate?: string | null;
+  expectedDate?: string | null;
+  currency?: string | null;
+  currencyCode?: string | null;
+  /** Money totals — present only with procurement cost permission. */
+  subtotal?: DecimalString | null;
+  discountTotal?: DecimalString | null;
+  taxTotal?: DecimalString | null;
+  grandTotal?: DecimalString | null;
+  total?: DecimalString | null;
+  terms?: string | null;
+  notes?: string | null;
+  lines?: PurchaseOrderLine[];
+  receipts?: GoodsReceipt[];
+  goodsReceipts?: GoodsReceipt[];
+  approvals?: ApprovalTrailEntry[];
+  approvalTrail?: ApprovalTrailEntry[];
+  createdBy?: UserRef | null;
+  createdById?: string | null;
+  submittedAt?: string | null;
+  approvedBy?: UserRef | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
+  canceledBy?: UserRef | null;
+  canceledAt?: string | null;
+  closedAt?: string | null;
+  cancelReason?: string | null;
+  closeReason?: string | null;
+  /** Optimistic-concurrency version; must be echoed on PATCH. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function purchaseOrderNumber(po: PurchaseOrder): string {
+  return po.poNumber ?? po.number ?? po.id.slice(0, 8);
+}
+
+export function poExpectedDate(po: PurchaseOrder): string | null {
+  return po.expectedDeliveryDate ?? po.expectedDate ?? null;
+}
+
+export function poCurrency(po: PurchaseOrder): string {
+  return po.currency ?? po.currencyCode ?? 'PHP';
+}
+
+export function poGrandTotal(po: PurchaseOrder): DecimalString | null {
+  return po.grandTotal ?? po.total ?? null;
+}
+
+export function poDestinationWarehouse(po: PurchaseOrder): WarehouseRef | null {
+  return po.destinationWarehouse ?? po.warehouse ?? null;
+}
+
+export function purchaseOrderApprovals(po: PurchaseOrder): ApprovalTrailEntry[] {
+  return po.approvals ?? po.approvalTrail ?? [];
+}
+
+export function poReceipts(po: PurchaseOrder): GoodsReceipt[] | null {
+  return po.receipts ?? po.goodsReceipts ?? null;
+}
+
+/* ----------------------- Goods receipts (contract §5.3) ------------------- */
+
+export interface GoodsReceiptLineLot {
+  id?: string;
+  lotNo?: string | null;
+  lotNumber?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  qty?: DecimalString | null;
+  quantity?: DecimalString | null;
+}
+
+export interface GoodsReceiptLine {
+  id?: string;
+  goodsReceiptId?: string;
+  purchaseOrderLineId?: string;
+  poLineId?: string;
+  lineNumber?: number;
+  itemId?: string;
+  item?: ItemRef | null;
+  uomId?: string;
+  uom?: Uom | null;
+  quantity?: DecimalString;
+  receivedQuantity?: DecimalString;
+  baseQuantity?: DecimalString | null;
+  /** Money — present only with cost permission. */
+  unitCost?: DecimalString | null;
+  serials?: string[] | null;
+  serialNumbers?: string[] | null;
+  lots?: GoodsReceiptLineLot[] | null;
+  lotId?: string | null;
+  lot?: Lot | null;
+  locationId?: string | null;
+  storageLocationId?: string | null;
+  location?: LocationRef | null;
+  storageLocation?: LocationRef | null;
+  notes?: string | null;
+}
+
+export function grLineQuantity(line: GoodsReceiptLine): DecimalString | null {
+  return line.receivedQuantity ?? line.quantity ?? null;
+}
+
+export function grLinePoLineId(line: GoodsReceiptLine): string | null {
+  return line.purchaseOrderLineId ?? line.poLineId ?? null;
+}
+
+export function grLineSerials(line: GoodsReceiptLine): string[] {
+  return line.serials ?? line.serialNumbers ?? [];
+}
+
+export function grLineLocation(line: GoodsReceiptLine): LocationRef | null {
+  return line.location ?? line.storageLocation ?? null;
+}
+
+export interface GoodsReceipt {
+  id: string;
+  receiptNumber?: string;
+  number?: string;
+  purchaseOrderId?: string;
+  purchaseOrder?: PurchaseOrder | null;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  warehouseId?: string;
+  warehouse?: WarehouseRef | null;
+  supplierId?: string;
+  supplier?: SupplierRef | null;
+  /** DRAFT | POSTED | CANCELED | REVERSED. */
+  status: string;
+  receiptDate?: string | null;
+  receivedDate?: string | null;
+  supplierReference?: string | null;
+  deliveryRefNo?: string | null;
+  invoiceRefNo?: string | null;
+  notes?: string | null;
+  lines?: GoodsReceiptLine[];
+  createdBy?: UserRef | null;
+  postedBy?: UserRef | null;
+  postedAt?: string | null;
+  canceledAt?: string | null;
+  reversedAt?: string | null;
+  cancelReason?: string | null;
+  reverseReason?: string | null;
+  /** Optimistic-concurrency version; must be echoed on PATCH. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function goodsReceiptNumber(receipt: GoodsReceipt): string {
+  return receipt.receiptNumber ?? receipt.number ?? receipt.id.slice(0, 8);
+}
+
+export function goodsReceiptDate(receipt: GoodsReceipt): string | null {
+  return receipt.receiptDate ?? receipt.receivedDate ?? null;
+}
+
+export function goodsReceiptSupplierRef(receipt: GoodsReceipt): string | null {
+  return receipt.supplierReference ?? receipt.deliveryRefNo ?? receipt.invoiceRefNo ?? null;
+}
+
+/* ------------------ Purchase history (contract §5.4) ---------------------- */
+
+/** One row of GET /purchase-history; field names tolerated defensively. */
+export interface PurchaseHistoryRow {
+  id?: string;
+  purchaseOrderId?: string | null;
+  poNumber?: string | null;
+  purchaseOrder?: PurchaseOrder | null;
+  receiptId?: string | null;
+  receiptNumber?: string | null;
+  supplierId?: string | null;
+  supplier?: SupplierRef | null;
+  itemId?: string | null;
+  item?: ItemRef | null;
+  branchId?: string | null;
+  branch?: BranchSummary | null;
+  warehouseId?: string | null;
+  warehouse?: WarehouseRef | null;
+  status?: string | null;
+  orderDate?: string | null;
+  uom?: Uom | null;
+  orderedQuantity?: DecimalString | null;
+  ordered?: DecimalString | null;
+  receivedQuantity?: DecimalString | null;
+  received?: DecimalString | null;
+  outstandingQuantity?: DecimalString | null;
+  outstanding?: DecimalString | null;
+  canceledQuantity?: DecimalString | null;
+  canceled?: DecimalString | null;
+  returnedQuantity?: DecimalString | null;
+  returned?: DecimalString | null;
+  /** Money — present only with procurement cost permission. */
+  orderedCost?: DecimalString | null;
+  totalCost?: DecimalString | null;
+  amount?: DecimalString | null;
+}
+
+export function historyOrdered(row: PurchaseHistoryRow): DecimalString | null {
+  return row.orderedQuantity ?? row.ordered ?? null;
+}
+
+export function historyReceived(row: PurchaseHistoryRow): DecimalString | null {
+  return row.receivedQuantity ?? row.received ?? null;
+}
+
+export function historyOutstanding(row: PurchaseHistoryRow): DecimalString | null {
+  if (row.outstandingQuantity !== undefined && row.outstandingQuantity !== null) {
+    return row.outstandingQuantity;
+  }
+  if (row.outstanding !== undefined && row.outstanding !== null) return row.outstanding;
+  const ordered = historyOrdered(row);
+  if (ordered === null) return null;
+  return Math.max(
+    decimalValue(ordered) -
+      decimalValue(historyReceived(row)) -
+      decimalValue(row.canceledQuantity ?? row.canceled),
+    0,
+  );
+}
+
+export function historyCanceled(row: PurchaseHistoryRow): DecimalString | null {
+  return row.canceledQuantity ?? row.canceled ?? null;
+}
+
+export function historyReturned(row: PurchaseHistoryRow): DecimalString | null {
+  return row.returnedQuantity ?? row.returned ?? null;
+}
+
+export function historyCost(row: PurchaseHistoryRow): DecimalString | null {
+  return row.totalCost ?? row.orderedCost ?? row.amount ?? null;
+}
+
+export function historyPoNumber(row: PurchaseHistoryRow): string | null {
+  return row.poNumber ?? row.purchaseOrder?.poNumber ?? row.purchaseOrder?.number ?? null;
+}
+
+export function historyPoId(row: PurchaseHistoryRow): string | null {
+  return row.purchaseOrderId ?? row.purchaseOrder?.id ?? null;
 }
 
 /* ------------------------- Scanning (contract §4.4) ----------------------- */

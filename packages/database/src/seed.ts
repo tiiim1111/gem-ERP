@@ -30,6 +30,7 @@ import * as argon2 from "argon2";
 import { ALL_PERMISSIONS, ROLE_DEFINITIONS } from "@gemerp/shared";
 import { seedPhase3Inventory } from "./seed-phase3-inventory";
 import { seedPhase3Assets } from "./seed-phase3-assets";
+import { seedPhase4Procurement } from "./seed-phase4-procurement";
 
 const prisma = new PrismaClient();
 
@@ -969,6 +970,10 @@ async function main(): Promise<void> {
   console.log("  Phase 3 inventory: opening balances, lots, low-stock examples, in-transit transfer");
   await seedPhase3Assets(prisma);
   console.log("  Phase 3 assets: serialized instances with custody + history");
+
+  // Phase 4: suppliers, purchase orders, goods receipts (posted + partial + pending).
+  await seedPhase4Procurement(prisma);
+  console.log("  Phase 4 procurement: suppliers, POs (received/partial/pending), goods receipts");
 
   await prisma.auditLog.create({
     data: {

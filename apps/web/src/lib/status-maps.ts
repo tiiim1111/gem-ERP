@@ -11,6 +11,7 @@
 import {
   AssetStatus,
   PERMISSIONS,
+  PurchaseOrderStatus,
   StockTransactionStatus,
   StockTransactionType,
   TransferStatus,
@@ -314,3 +315,109 @@ export function assetActionPermissions(action: AssetAction): string[] {
 
 /** Label print permission tolerates both catalog spellings. */
 export const ASSET_LABEL_PERMISSIONS = [PERMISSIONS.asset.print, 'asset.print_label'];
+
+/* --------------------------- Purchase orders ------------------------------- */
+
+/**
+ * Cost/price visibility on procurement documents. The shared catalog spells it
+ * `procurement.po.view_cost`; the API outline sometimes shortens it to
+ * `procurement.view_cost` — tolerate both.
+ */
+export const PROCUREMENT_COST_PERMISSIONS = [
+  PERMISSIONS.procurementPo.viewCost,
+  'procurement.view_cost',
+];
+
+export type PurchaseOrderAction =
+  | 'edit'
+  | 'submit'
+  | 'approve'
+  | 'reject'
+  | 'receive'
+  | 'cancel'
+  | 'close';
+
+/**
+ * Legal actions per PO status (docs/status-transitions.md §3). `receive` is
+ * the entry point into the goods-receipt flow, not a PO transition itself.
+ * Receipt posting drives PARTIALLY/FULLY_RECEIVED as system events.
+ */
+const PURCHASE_ORDER_ACTIONS: Record<string, PurchaseOrderAction[]> = {
+  [PurchaseOrderStatus.DRAFT]: ['edit', 'submit', 'cancel'],
+  [PurchaseOrderStatus.PENDING_APPROVAL]: ['approve', 'reject', 'cancel'],
+  [PurchaseOrderStatus.APPROVED]: ['receive', 'cancel'],
+  [PurchaseOrderStatus.PARTIALLY_RECEIVED]: ['receive', 'close'],
+  [PurchaseOrderStatus.FULLY_RECEIVED]: ['close'],
+  [PurchaseOrderStatus.CANCELED]: [],
+  [PurchaseOrderStatus.CLOSED]: [],
+  // Prisma also knows a REJECTED status; the contract folds rejection back to
+  // Draft, but tolerate the value should the API ever surface it.
+  REJECTED: ['edit', 'submit', 'cancel'],
+};
+
+export function purchaseOrderActionsFor(status: string): PurchaseOrderAction[] {
+  return PURCHASE_ORDER_ACTIONS[status] ?? [];
+}
+
+/** Permission "any of" list per PO action (contract §5.2 bindings). */
+export function purchaseOrderActionPermissions(action: PurchaseOrderAction): string[] {
+  switch (action) {
+    case 'edit':
+      return [PERMISSIONS.procurementPo.update];
+    case 'submit':
+      return [PERMISSIONS.procurementPo.create, PERMISSIONS.procurementPo.submit];
+    case 'approve':
+      return [PERMISSIONS.procurementPo.approve];
+    case 'reject':
+      return [PERMISSIONS.procurementPo.approve, PERMISSIONS.procurementPo.reject];
+    case 'receive':
+      return [PERMISSIONS.procurementReceipt.create];
+    case 'cancel':
+      return [PERMISSIONS.procurementPo.cancel];
+    case 'close':
+      return [PERMISSIONS.procurementPo.close];
+  }
+}
+
+/** Ordered steps for the PO status stepper (terminal bad states excluded). */
+export const PURCHASE_ORDER_STEPS: Array<{ status: string; label: string }> = [
+  { status: PurchaseOrderStatus.DRAFT, label: 'Draft' },
+  { status: PurchaseOrderStatus.PENDING_APPROVAL, label: 'Pending approval' },
+  { status: PurchaseOrderStatus.APPROVED, label: 'Approved' },
+  { status: PurchaseOrderStatus.PARTIALLY_RECEIVED, label: 'Partially received' },
+  { status: PurchaseOrderStatus.FULLY_RECEIVED, label: 'Fully received' },
+  { status: PurchaseOrderStatus.CLOSED, label: 'Closed' },
+];
+
+/** PO statuses a goods receipt can be recorded against. */
+export const RECEIVABLE_PO_STATUSES: string[] = [
+  PurchaseOrderStatus.APPROVED,
+  PurchaseOrderStatus.PARTIALLY_RECEIVED,
+];
+
+/* ----------------------------- Goods receipts ------------------------------ */
+
+export type GoodsReceiptAction = 'post' | 'cancel' | 'reverse';
+
+/** GoodsReceiptStatus: DRAFT | POSTED | CANCELED | REVERSED. */
+const GOODS_RECEIPT_ACTIONS: Record<string, GoodsReceiptAction[]> = {
+  DRAFT: ['post', 'cancel'],
+  POSTED: ['reverse'],
+  CANCELED: [],
+  REVERSED: [],
+};
+
+export function goodsReceiptActionsFor(status: string): GoodsReceiptAction[] {
+  return GOODS_RECEIPT_ACTIONS[status] ?? [];
+}
+
+export function goodsReceiptActionPermissions(action: GoodsReceiptAction): string[] {
+  switch (action) {
+    case 'post':
+      return [PERMISSIONS.procurementReceipt.post];
+    case 'cancel':
+      return [PERMISSIONS.procurementReceipt.create, PERMISSIONS.procurementReceipt.cancel];
+    case 'reverse':
+      return [PERMISSIONS.procurementReceipt.reverse];
+  }
+}

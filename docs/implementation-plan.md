@@ -309,29 +309,39 @@ Manual/scripted checks against the running stack:
 
 ---
 
-## Phase 4 — Procurement — 📋 Planned
+## Phase 4 — Procurement — ✅ Done (2026-08-05)
 
 ### Deliverables
 
-- [ ] Migrations: `suppliers`, `supplier_contacts`, `purchase_orders`,
+- [x] Migrations: `suppliers`, `supplier_contacts`, `purchase_orders`,
       `purchase_order_lines`, `goods_receipts`, `goods_receipt_lines`,
-      `supplier_returns`.
-- [ ] Suppliers (spec section 14): CRUD, contacts, categories, documents,
-      activate/deactivate, purchase and delivery history.
-- [ ] Purchase orders: auto-numbered from `sequence_counters`; lines with UOM,
+      `supplier_returns` (tables existed since Phase 1; Phase 4 migration added
+      `version` columns, `goods_receipts.idempotency_key`,
+      `goods_receipt_lines.serial_numbers`, supplier-return location/stock links).
+- [x] Suppliers (spec section 14): CRUD, contacts, categories,
+      activate/deactivate/archive, purchase and delivery history.
+      (Documents deferred to the Phase 3.5 attachments module §4.6.)
+- [x] Purchase orders: auto-numbered `PO-{YYYY}-{SEQ5}`; lines with UOM,
       quantity, unit price, discount, tax, total (PHP default currency);
       states Draft → Pending Approval → Approved → Partially Received →
-      Fully Received / Canceled / Closed; requester cannot self-approve.
-- [ ] Receiving against approved POs: partial and multiple receipts; over-receipt
-      blocked unless authorized tolerance; serialized lines generate asset
-      instances, lot-controlled lines generate lots; stock affected only when the
-      receipt posts; all records linked back to PO + receipt.
-- [ ] Purchase history search and outstanding-quantity reporting; costs visible
+      Fully Received / Canceled / Closed; requester cannot self-approve
+      (409 SELF_APPROVAL_FORBIDDEN); reject returns to Draft.
+- [x] Receiving against approved POs: partial and multiple receipts; over-receipt
+      hard-blocked (tolerance % documented as future extension); serialized lines
+      generate asset instances, lot-controlled lines generate lots; stock affected
+      only when the receipt posts (Idempotency-Key required, replay-safe);
+      all records linked back to PO + receipt.
+- [x] Purchase history search and outstanding-quantity reporting; costs visible
       only with cost-view permission. No AP/GL/payments (out of scope).
-- [ ] Permissions: `supplier.*`, `procurement.po.*`, `procurement.receipt.*`.
-- [ ] Web: supplier admin, PO builder, approval queue, receiving screen
-      (scan-assisted), purchase-history views.
-- [ ] Seed extension: suppliers, an approved PO with a partial receipt.
+- [x] Permissions: `supplier.*`, `procurement.po.*`, `procurement.receipt.*`
+      (supplier-return routes reuse `inventory.*` + `approval.act` — no
+      `procurement.return.*` strings in the shared catalog yet).
+- [x] Web: supplier admin, PO builder, receiving screen (serial paste-multiple,
+      lot capture, draft-reuse idempotent posting), purchase-history views,
+      dashboard tiles, nav. (Approval queue arrives with the Phase 6 engine;
+      supplier-returns UI deferred — endpoints exist server-side.)
+- [x] Seed extension: 3 suppliers, POs fully received / partially received /
+      pending approval, posted receipts with serialized assets + lot.
 
 ### Verification criteria
 

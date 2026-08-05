@@ -24,6 +24,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { AssetsModule } from './assets/assets.module';
 import { ScanModule } from './scan/scan.module';
+import { ProcurementModule } from './procurement/procurement.module';
 
 const env = loadEnv();
 
@@ -82,6 +83,8 @@ const env = loadEnv();
     TransfersModule,
     AssetsModule,
     ScanModule,
+    // Phase 4: suppliers, purchase orders, goods receipts, supplier returns.
+    ProcurementModule,
     HealthModule,
   ],
   providers: [

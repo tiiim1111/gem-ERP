@@ -10,13 +10,15 @@ import {
   IdCard,
   MonitorSmartphone,
   Package,
+  PackageCheck,
   ScrollText,
   ShieldCheck,
+  ShoppingCart,
   TriangleAlert,
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { AssetStatus, PERMISSIONS, TransferStatus } from '@gemerp/shared';
+import { AssetStatus, PERMISSIONS, PurchaseOrderStatus, TransferStatus } from '@gemerp/shared';
 import { getErrorMessage } from '@/lib/api';
 import {
   listAssets,
@@ -27,6 +29,7 @@ import {
   listItems,
   listLowStock,
   listMySessions,
+  listPurchaseOrders,
   listRoles,
   listTotal,
   listTransfers,
@@ -358,6 +361,67 @@ function AssetStatusCard() {
   );
 }
 
+/**
+ * "Open POs" + "Awaiting receipt" tiles — real counts from list meta.total,
+ * one page-size-1 query per status (the list endpoint has no multi-status
+ * filter in the contract).
+ */
+function ProcurementTiles() {
+  const openStatuses = [
+    PurchaseOrderStatus.DRAFT,
+    PurchaseOrderStatus.PENDING_APPROVAL,
+    PurchaseOrderStatus.APPROVED,
+    PurchaseOrderStatus.PARTIALLY_RECEIVED,
+  ] as const;
+
+  const queries = useQueries({
+    queries: openStatuses.map((status) => ({
+      queryKey: ['purchase-orders', 'count', status],
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        listPurchaseOrders({ page: 1, pageSize: 1, status }, signal),
+    })),
+  });
+
+  const sum = (statuses: readonly string[]): number | undefined => {
+    let total = 0;
+    for (const [index, status] of openStatuses.entries()) {
+      if (!statuses.includes(status)) continue;
+      const query = queries[index]!;
+      if (!query.data) return undefined;
+      total += query.data.meta.total;
+    }
+    return total;
+  };
+
+  const anyLoading = queries.some((query) => query.isPending);
+  const anyError = queries.find((query) => query.error)?.error;
+  const awaitingStatuses = [
+    PurchaseOrderStatus.APPROVED,
+    PurchaseOrderStatus.PARTIALLY_RECEIVED,
+  ] as const;
+
+  return (
+    <>
+      <StatCard
+        title="Open POs"
+        icon={ShoppingCart}
+        value={sum(openStatuses)}
+        loading={anyLoading}
+        error={anyError}
+        href="/procurement/purchase-orders"
+      />
+      <StatCard
+        title="Awaiting receipt"
+        icon={PackageCheck}
+        value={sum(awaitingStatuses)}
+        loading={queries[2]!.isPending || queries[3]!.isPending}
+        error={queries[2]!.error ?? queries[3]!.error}
+        href="/procurement/purchase-orders"
+      />
+    </>
+  );
+}
+
 /** Outstanding acknowledgments for the session user's employee record. */
 function MyAcknowledgmentsCard({ employeeId }: { employeeId: string }) {
   const acknowledgmentsQuery = useQuery({
@@ -444,6 +508,7 @@ export function DashboardPage() {
   const canViewInventory = can(PERMISSIONS.inventory.view);
   const canViewAssets = can(PERMISSIONS.asset.view);
   const canViewTransfers = can(PERMISSIONS.transfer.view);
+  const canViewPos = can(PERMISSIONS.procurementPo.view);
   const myEmployeeId = meEmployeeId(user);
 
   const usersCount = useQuery({
@@ -514,7 +579,7 @@ export function DashboardPage() {
         description="Overview of your GEM-ENI workspace."
       />
 
-      {/* Phase 3 operations tiles */}
+      {/* Phase 3 + 4 operations tiles */}
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {canViewInventory ? <LowStockTile /> : null}
         {canViewAssets ? <AssetStatusCard /> : null}
@@ -528,6 +593,7 @@ export function DashboardPage() {
             href="/inventory/transfers"
           />
         ) : null}
+        {canViewPos ? <ProcurementTiles /> : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -17,6 +17,32 @@ Entry format:
 
 ---
 
+## 2026-08-05 — ✅ Phase 4 Procurement complete (suppliers, POs, receiving, history)
+
+Two parallel builder agents (strict file ownership) + orchestrator integration. **No pushes/deploys this phase per Tim — local commit only.**
+
+**Done (backend — verified: api build ✅, 21 suites / 236 tests ✅, root typecheck+lint ✅):**
+- **Suppliers §5.1**: CRUD + contacts (single-primary enforced), activate/deactivate/archive (archive blocked by open POs → 409 IN_USE), `/suppliers/:id/history` rollup, codes `SUP-{SEQ5}`, categories from `SUPPLIER_CATEGORY` lookups.
+- **Purchase orders §5.2**: `PO-{YYYY}-{SEQ5}`; draft PATCH requires `version` (409 VERSION_CONFLICT); submit auto-approves when no PURCHASE_ORDER workflow exists (Phase 6 replaces); approve/reject (self-approval → 409 SELF_APPROVAL_FORBIDDEN; reject → back to DRAFT, no resting REJECTED); cancel blocked once receipts exist; close-short writes `canceledQuantity`. All money math in `Prisma.Decimal`; costs gated by `procurement.po.view_cost`.
+- **Goods receipts §5.3**: drafts against APPROVED/PARTIALLY_RECEIVED POs (`GR-{YYYY}-{SEQ5}`); `POST :id/post` requires Idempotency-Key, ONE transaction: PO row lock → outstanding check (409 OVER_RECEIPT hard block) → SERIAL lines become Assets (real tag sequences, register→activate history, acquisitionCost from PO line) → non-serial lines post PURCHASE_RECEIPT via existing `StockPostingService.postWithinTx` (zero duplicated ledger logic) → PO receivedQuantity + status + `item.lastPurchaseCost`. Replay returns original result. Reverse: stock reversed via engine, assets voided if untouched, PO outstanding restored.
+- **Supplier returns §5.4** (API only): CRUD + submit/approve/post (RETURN_TO_SUPPLIER stock txn, INSUFFICIENT_STOCK guarded). **Purchase history §5.4**: PO-line-grained, ordered/received/outstanding/canceled/returned, costs gated.
+- Migration `20260805003652_…` additive: `version` cols, `goods_receipts.idempotency_key` (unique), `goods_receipt_lines.serial_numbers`, supplier-return location/stock-txn links. Seed `seed-phase4-procurement.ts`: 3 suppliers, 3 POs (received/partial/pending-approval), posted GR + 2 serialized laptops, partial lot receipt; idempotent (verified 2×).
+
+**Done (frontend — verified green: web build 29/29 pages, lint 0, web typecheck clean):**
+- **Suppliers**: `/suppliers` list (+ filters) and detail under `apps/web/src/components/suppliers/` — form dialog (code immutable, never sent on PATCH), contacts CRUD, activate/deactivate/archive, purchase summary from `/suppliers/:id/history`.
+- **Purchase Orders**: `/procurement/purchase-orders` list/new/detail/edit — supplier picker, branch-scoped destination warehouse, UOM via `lib/uom.ts`, cost columns permission-gated, PATCH with `version` (VERSION_CONFLICT toast + rehydrate), status stepper + actions per `docs/status-transitions.md` §3 (submit/approve/reject/cancel/close vs close-short; SELF_APPROVAL_FORBIDDEN banner).
+- **Receiving**: `[id]/receive` — per-line outstanding defaults, SERIAL count-matched inputs with paste-multiple, LOT multi-row allocations (sum + expiry validation), per-line destination location, save-draft-then-post reusing ONE draft + stable Idempotency-Key (no duplicate stock), over-receipt/409 details inline. Receipt detail at `/procurement/receipts/[id]` with post/cancel/reverse.
+- **Purchase History** `/procurement/history` (filters; no CSV — exports are Phase 7 by contract), **dashboard ProcurementTiles** (Open POs / Awaiting receipt), **nav**: Procurement section + Suppliers entry.
+- Lib: `endpoints.ts` full §5.1–5.4 surface; `types.ts` supplier/PO/GR/history types; `status-maps.ts` PO+GR action/permission maps; `badges.tsx`, `supplier-picker.tsx`.
+
+**Integration (orchestrator):** wired `ProcurementModule` into `app.module.ts` + `seedPhase4Procurement` into `seed.ts`; full chain green (build 4/4, typecheck 5/5, lint 3/3, api tests 236, `prisma migrate status` clean, full seed idempotent). **Live smoke through the proxy (12 steps, all passed):** login → suppliers list → PO create (10 REAM paper + 2 SERIAL drills, ₱17,350 totals correct) → submit auto-APPROVED → GR draft → post POSTED → **idempotent replay confirmed live** (RCV bucket exactly 30 = 20 seed + 10 smoke, no double-post) → PO FULLY_RECEIVED (10/10, 2/2) → 2 assets created (AST-SUB-TLS-2026-000002/3, AVAILABLE) → purchase-history rows correct.
+
+**Decisions:** GR numbers `GR-` per api-outline §1.9; over-receipt hard block (tolerance % = future); reject returns PO to DRAFT (per status-transitions §3); supplier-returns UI + supplier documents deferred (endpoints/attachments-module respectively); no purchase-history export until Phase 7; supplier-return routes reuse `inventory.*` permissions (no `procurement.return.*` in shared catalog); single-resource POST/GET responses are bare objects (lists use `{data, meta}`) — matches existing convention.
+
+**Pending / Next:** Phase 5 (Maintenance) next, then 3.5 → 6 → 7. Known gap noted by builder: reversing a GR-linked stock txn directly via `/stock-transactions/:id/reverse` bypasses GR/PO bookkeeping (needs inventory-dir change; queued for a later phase). **HOLD until Tim's go: git push, Vercel/Railway deploys, seed-password rotation (ChangeMe!123 live publicly — rotate at next deploy).**
+
+---
+
 ## 2026-08-04 (rebrand) — GEM-ENI branding + logo
 
 Tim uploaded `gem_logo.png` (green infinity + leaf) and renamed the app **GEM-ENI** (GEM ERP and Inventory):
