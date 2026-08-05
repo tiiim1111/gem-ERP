@@ -15,6 +15,7 @@ import {
   StockTransactionStatus,
   StockTransactionType,
   TransferStatus,
+  WorkOrderStatus,
 } from '@gemerp/shared';
 
 /* ---------------------- Stock transaction types --------------------------- */
@@ -421,3 +422,211 @@ export function goodsReceiptActionPermissions(action: GoodsReceiptAction): strin
       return [PERMISSIONS.procurementReceipt.reverse];
   }
 }
+
+/* ===================== Phase 5 — Maintenance (contract §6) ================= */
+
+/**
+ * Cost visibility on work orders / plans. The shared catalog spells it
+ * `maintenance.work_order.view_cost`; api-outline Appendix A shortens it to
+ * `maintenance.view_cost` — tolerate both.
+ */
+export const MAINTENANCE_COST_PERMISSIONS = [
+  PERMISSIONS.maintenanceWorkOrder.viewCost,
+  'maintenance.view_cost',
+];
+
+/**
+ * Plan administration. The contract binds writes to `maintenance.plan.manage`;
+ * the shared catalog splits create/update/archive — any of them unlocks the UI.
+ */
+export const MAINTENANCE_PLAN_MANAGE_PERMISSIONS = [
+  'maintenance.plan.manage',
+  PERMISSIONS.maintenancePlan.create,
+  PERMISSIONS.maintenancePlan.update,
+];
+
+/** Create a work order (contract §6.2 binds POST to manage). */
+export const WORK_ORDER_CREATE_PERMISSIONS = [
+  PERMISSIONS.maintenanceWorkOrder.create,
+  PERMISSIONS.maintenanceWorkOrder.manage,
+];
+
+/* ------------------------ Work-order lifecycle ----------------------------- */
+
+export const WORK_ORDER_STATUS_LABELS: Record<string, string> = {
+  [WorkOrderStatus.DRAFT]: 'Draft',
+  [WorkOrderStatus.OPEN]: 'Open',
+  [WorkOrderStatus.ASSIGNED]: 'Assigned',
+  [WorkOrderStatus.SCHEDULED]: 'Scheduled',
+  [WorkOrderStatus.IN_PROGRESS]: 'In progress',
+  [WorkOrderStatus.ON_HOLD]: 'On hold',
+  [WorkOrderStatus.AWAITING_PARTS]: 'Awaiting parts',
+  [WorkOrderStatus.AWAITING_VENDOR]: 'Awaiting vendor',
+  [WorkOrderStatus.COMPLETED]: 'Completed',
+  [WorkOrderStatus.VERIFIED]: 'Verified',
+  [WorkOrderStatus.CANCELED]: 'Canceled',
+};
+
+export function workOrderStatusLabel(status: string): string {
+  return WORK_ORDER_STATUS_LABELS[status] ?? status;
+}
+
+/** Statuses that count as "open" (not yet completed/verified/canceled). */
+export const OPEN_WORK_ORDER_STATUSES: string[] = [
+  WorkOrderStatus.OPEN,
+  WorkOrderStatus.ASSIGNED,
+  WorkOrderStatus.SCHEDULED,
+  WorkOrderStatus.IN_PROGRESS,
+  WorkOrderStatus.ON_HOLD,
+  WorkOrderStatus.AWAITING_PARTS,
+  WorkOrderStatus.AWAITING_VENDOR,
+];
+
+/** Waiting side-states that render at the In Progress stepper position. */
+export const WORK_ORDER_WAITING_STATUSES: string[] = [
+  WorkOrderStatus.ON_HOLD,
+  WorkOrderStatus.AWAITING_PARTS,
+  WorkOrderStatus.AWAITING_VENDOR,
+];
+
+export type WorkOrderAction =
+  | 'edit'
+  | 'assign'
+  | 'schedule'
+  | 'start'
+  | 'hold'
+  | 'resume'
+  | 'complete'
+  | 'verify'
+  | 'cancel';
+
+/**
+ * Legal actions per WO status (docs/status-transitions.md §5, mirrored by the
+ * API's work-order-rules). Creation requires the Draft→Open guard fields, so
+ * API-created WOs land directly on OPEN (no separate `open` action).
+ * `await-parts` / `await-vendor` are the hold endpoint with the matching
+ * reason; `parts-received` / `vendor-done` are resume.
+ */
+const WORK_ORDER_ACTIONS: Record<string, WorkOrderAction[]> = {
+  [WorkOrderStatus.DRAFT]: ['edit', 'assign', 'schedule', 'cancel'],
+  [WorkOrderStatus.OPEN]: ['edit', 'assign', 'schedule', 'cancel'],
+  [WorkOrderStatus.ASSIGNED]: ['edit', 'assign', 'schedule', 'start', 'cancel'],
+  [WorkOrderStatus.SCHEDULED]: ['edit', 'assign', 'schedule', 'start', 'cancel'],
+  [WorkOrderStatus.IN_PROGRESS]: ['edit', 'hold', 'complete', 'cancel'],
+  [WorkOrderStatus.ON_HOLD]: ['edit', 'resume', 'cancel'],
+  [WorkOrderStatus.AWAITING_PARTS]: ['edit', 'resume', 'cancel'],
+  [WorkOrderStatus.AWAITING_VENDOR]: ['edit', 'resume', 'cancel'],
+  [WorkOrderStatus.COMPLETED]: ['verify'],
+  [WorkOrderStatus.VERIFIED]: [],
+  [WorkOrderStatus.CANCELED]: [],
+};
+
+export function workOrderActionsFor(status: string): WorkOrderAction[] {
+  return WORK_ORDER_ACTIONS[status] ?? [];
+}
+
+/**
+ * Actions the assigned technician may fire without the manage permission
+ * (status-transitions §5: "technician or manager"). Callers OR this with the
+ * permission check when the session user is the WO's assignee.
+ */
+export const TECHNICIAN_WORK_ORDER_ACTIONS: ReadonlySet<WorkOrderAction> = new Set([
+  'start',
+  'hold',
+  'resume',
+  'complete',
+]);
+
+/** Permission "any of" list per WO action (contract §6.2 bindings). */
+export function workOrderActionPermissions(action: WorkOrderAction): string[] {
+  switch (action) {
+    case 'edit':
+      return [PERMISSIONS.maintenanceWorkOrder.update, PERMISSIONS.maintenanceWorkOrder.manage];
+    case 'schedule':
+      return [PERMISSIONS.maintenanceWorkOrder.manage];
+    case 'assign':
+      return [PERMISSIONS.maintenanceWorkOrder.assign, PERMISSIONS.maintenanceWorkOrder.manage];
+    case 'start':
+    case 'hold':
+    case 'resume':
+      return [PERMISSIONS.maintenanceWorkOrder.manage];
+    case 'complete':
+      return [PERMISSIONS.maintenanceWorkOrder.complete, PERMISSIONS.maintenanceWorkOrder.manage];
+    case 'verify':
+      return [PERMISSIONS.maintenanceWorkOrder.verify];
+    case 'cancel':
+      return [PERMISSIONS.maintenanceWorkOrder.cancel, PERMISSIONS.maintenanceWorkOrder.manage];
+  }
+}
+
+/**
+ * Ordered steps for the WO status stepper (waiting states pin to In Progress).
+ * Draft is omitted — API-created WOs land directly on Open.
+ */
+export const WORK_ORDER_STEPS: Array<{ status: string; label: string }> = [
+  { status: WorkOrderStatus.OPEN, label: 'Open' },
+  { status: WorkOrderStatus.ASSIGNED, label: 'Assigned' },
+  { status: WorkOrderStatus.SCHEDULED, label: 'Scheduled' },
+  { status: WorkOrderStatus.IN_PROGRESS, label: 'In progress' },
+  { status: WorkOrderStatus.COMPLETED, label: 'Completed' },
+  { status: WorkOrderStatus.VERIFIED, label: 'Verified' },
+];
+
+/** Contract §6.2 hold-reason strings and the status each one produces. */
+export const WORK_ORDER_HOLD_REASONS: Array<{
+  reason: 'On Hold' | 'Awaiting Parts' | 'Awaiting Vendor';
+  status: string;
+  label: string;
+  hint: string;
+}> = [
+  {
+    reason: 'On Hold',
+    status: WorkOrderStatus.ON_HOLD,
+    label: 'On hold',
+    hint: 'Work paused for another reason (access, safety, prioritization).',
+  },
+  {
+    reason: 'Awaiting Parts',
+    status: WorkOrderStatus.AWAITING_PARTS,
+    label: 'Awaiting parts',
+    hint: 'Waiting for spare parts — draft the parts issue before or after holding.',
+  },
+  {
+    reason: 'Awaiting Vendor',
+    status: WorkOrderStatus.AWAITING_VENDOR,
+    label: 'Awaiting vendor',
+    hint: 'External vendor engaged; waiting on their service.',
+  },
+];
+
+/**
+ * Legal completion outcomes (spec §18): the asset's next lifecycle status must
+ * be chosen explicitly. Assigned is only valid while the pre-maintenance
+ * assignment is still active; Retired routes through retirement approval.
+ */
+export const WORK_ORDER_COMPLETION_OUTCOMES: Array<{
+  value: string;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: AssetStatus.AVAILABLE,
+    label: 'Available',
+    hint: 'Asset returns to stock, ready for use or assignment.',
+  },
+  {
+    value: AssetStatus.ASSIGNED,
+    label: 'Assigned (back to custodian)',
+    hint: 'Only valid when the pre-maintenance assignment is still active.',
+  },
+  {
+    value: AssetStatus.DAMAGED,
+    label: 'Damaged',
+    hint: 'Repair unsuccessful — asset stays out of service as damaged.',
+  },
+  {
+    value: AssetStatus.RETIRED,
+    label: 'Retired',
+    hint: 'Beyond economic repair — routes through the retirement approval.',
+  },
+];

@@ -25,6 +25,7 @@ import { TransfersModule } from './transfers/transfers.module';
 import { AssetsModule } from './assets/assets.module';
 import { ScanModule } from './scan/scan.module';
 import { ProcurementModule } from './procurement/procurement.module';
+import { MaintenanceModule } from './maintenance/maintenance.module';
 
 const env = loadEnv();
 
@@ -85,6 +86,8 @@ const env = loadEnv();
     ScanModule,
     // Phase 4: suppliers, purchase orders, goods receipts, supplier returns.
     ProcurementModule,
+    // Phase 5: maintenance plans, work orders, parts issues, meter readings.
+    MaintenanceModule,
     HealthModule,
   ],
   providers: [

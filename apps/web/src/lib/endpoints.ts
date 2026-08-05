@@ -19,6 +19,7 @@ import type {
   Asset,
   AssetAssignment,
   AssetHistoryEntry,
+  AssetMeterReading,
   AuditLogEntry,
   CustodyAssignment,
   EmployeeAcknowledgmentsView,
@@ -37,6 +38,7 @@ import type {
   LookupValue,
   Lot,
   LowStockRow,
+  MaintenancePlan,
   Manufacturer,
   Me,
   OutstandingAsset,
@@ -61,6 +63,8 @@ import type {
   UomConversion,
   UserRecord,
   Warehouse,
+  WorkOrder,
+  WorkOrderPart,
 } from './types';
 
 /* ------------------------------- Pagination ------------------------------ */
@@ -1586,4 +1590,301 @@ export function listPurchaseHistory(
   signal?: AbortSignal,
 ): Promise<Paginated<PurchaseHistoryRow>> {
   return api.get<Paginated<PurchaseHistoryRow>>('/purchase-history', params, signal);
+}
+
+/* ========================================================================== */
+/* Phase 5 — Maintenance (docs/api-outline.md §6)                             */
+/* ========================================================================== */
+
+/* ------------------- Maintenance plans (contract §6.1) -------------------- */
+
+export interface MaintenancePlanListParams extends ListParams {
+  q?: string;
+  isActive?: boolean;
+  /** Plans covering this asset. */
+  assetId?: string;
+  /** nextDueAt on or before (inclusive). */
+  dueBefore?: string;
+}
+
+/** Checklist task — order comes from array position (no sequence field). */
+export interface MaintenancePlanTaskInput {
+  name: string;
+  description?: string;
+  isRequired?: boolean;
+}
+
+export interface MaintenancePlanWriteBody {
+  /** Create only — business codes are immutable (auto-generated when omitted). */
+  code?: string;
+  name?: string;
+  description?: string | null;
+  maintenanceTypeId?: string;
+  /** Frequency — exactly one of intervalDays / meterInterval / scheduleCron. */
+  intervalDays?: number | null;
+  meterInterval?: string | number | null;
+  meterType?: string | null;
+  scheduleCron?: string | null;
+  assignedTeam?: string | null;
+  vendorId?: string | null;
+  estimatedDurationHours?: string | number | null;
+  /** Only sent when the caller holds the maintenance cost permission. */
+  estimatedCost?: string | number | null;
+  reminderLeadDays?: number | null;
+  /** Explicit first due date — required for cron-schedule plans. */
+  nextDueAt?: string | null;
+  /** Create only — covered assets (afterwards replaced via PUT :id/assets). */
+  assetIds?: string[];
+  tasks?: MaintenancePlanTaskInput[];
+}
+
+export function listMaintenancePlans(
+  params: MaintenancePlanListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<MaintenancePlan>> {
+  return api.get<Paginated<MaintenancePlan>>('/maintenance-plans', params, signal);
+}
+
+export function getMaintenancePlan(id: string, signal?: AbortSignal): Promise<MaintenancePlan> {
+  return api.get<MaintenancePlan>(`/maintenance-plans/${id}`, undefined, signal);
+}
+
+export function createMaintenancePlan(body: MaintenancePlanWriteBody): Promise<MaintenancePlan> {
+  return api.post<MaintenancePlan>('/maintenance-plans', body);
+}
+
+/** PATCH requires the current `version` (409 VERSION_CONFLICT when stale). */
+export function updateMaintenancePlan(
+  id: string,
+  body: MaintenancePlanWriteBody & { version?: number },
+): Promise<MaintenancePlan> {
+  return api.patch<MaintenancePlan>(`/maintenance-plans/${id}`, body);
+}
+
+export function activateMaintenancePlan(id: string): Promise<MaintenancePlan> {
+  return api.post<MaintenancePlan>(`/maintenance-plans/${id}/activate`);
+}
+
+export function deactivateMaintenancePlan(id: string): Promise<MaintenancePlan> {
+  return api.post<MaintenancePlan>(`/maintenance-plans/${id}/deactivate`);
+}
+
+/** Replaces the covered-asset set (contract §6.1 PUT :id/assets). */
+export function setMaintenancePlanAssets(
+  id: string,
+  assetIds: string[],
+): Promise<MaintenancePlan> {
+  return api.put<MaintenancePlan>(`/maintenance-plans/${id}/assets`, { assetIds });
+}
+
+/* --------------------- Work orders (contract §6.2) ------------------------- */
+
+export interface WorkOrderListParams extends ListParams {
+  status?: string;
+  /** MAINTENANCE_TYPE lookup id. */
+  typeId?: string;
+  /** MAINTENANCE_PRIORITY lookup id. */
+  priorityId?: string;
+  assetId?: string;
+  branchId?: string;
+  assignedToMe?: boolean;
+  /** Open WOs whose planned window ends on or before this date. */
+  dueBefore?: string;
+  from?: string;
+  to?: string;
+  /** WO number contains (case-insensitive). */
+  number?: string;
+}
+
+/** Creation requires the Draft→Open guard fields, so new WOs land on OPEN. */
+export interface WorkOrderCreateBody {
+  assetId: string;
+  /** MAINTENANCE_TYPE lookup id. */
+  typeId: string;
+  /** MAINTENANCE_PRIORITY lookup id. */
+  priorityId?: string;
+  problem: string;
+  reportedById?: string;
+  planId?: string;
+}
+
+/** Open-editable fields (PATCH; requires the current `version`). */
+export interface WorkOrderUpdateBody {
+  typeId?: string;
+  priorityId?: string | null;
+  problem?: string;
+  diagnosis?: string | null;
+  actionTaken?: string | null;
+  resolution?: string | null;
+}
+
+export function listWorkOrders(
+  params: WorkOrderListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<WorkOrder>> {
+  return api.get<Paginated<WorkOrder>>('/maintenance-work-orders', params, signal);
+}
+
+export function getWorkOrder(id: string, signal?: AbortSignal): Promise<WorkOrder> {
+  return api.get<WorkOrder>(`/maintenance-work-orders/${id}`, undefined, signal);
+}
+
+export function createWorkOrder(body: WorkOrderCreateBody): Promise<WorkOrder> {
+  return api.post<WorkOrder>('/maintenance-work-orders', body);
+}
+
+/** PATCH requires the current `version` (409 VERSION_CONFLICT when stale). */
+export function updateWorkOrder(
+  id: string,
+  body: WorkOrderUpdateBody & { version?: number },
+): Promise<WorkOrder> {
+  return api.patch<WorkOrder>(`/maintenance-work-orders/${id}`, body);
+}
+
+export interface WorkOrderAssignBody {
+  /** Technician by user account (server resolves the linked employee). */
+  technicianUserId?: string;
+  /** Technician directly by employee record. */
+  technicianEmployeeId?: string;
+  team?: string;
+  vendorId?: string;
+}
+
+export function assignWorkOrder(id: string, body: WorkOrderAssignBody): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/assign`, body);
+}
+
+export function scheduleWorkOrder(
+  id: string,
+  body: { plannedStart: string; plannedEnd: string },
+): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/schedule`, body);
+}
+
+/** → In Progress; the asset moves to Under Maintenance. */
+export function startWorkOrder(id: string): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/start`);
+}
+
+/** Contract §6.2 hold reasons (drive On Hold / Awaiting Parts / Awaiting Vendor). */
+export type WorkOrderHoldReason = 'On Hold' | 'Awaiting Parts' | 'Awaiting Vendor';
+
+export function holdWorkOrder(id: string, reason: WorkOrderHoldReason): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/hold`, { reason });
+}
+
+export function resumeWorkOrder(id: string): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/resume`);
+}
+
+export interface WorkOrderCompleteBody {
+  resolution: string;
+  actionTaken: string;
+  diagnosis?: string;
+  /** ASSET_CONDITION lookup id recorded as the final condition. */
+  finalConditionId: string;
+  /** Explicit outcome — AVAILABLE | ASSIGNED | DAMAGED | RETIRED. */
+  assetNextStatus: string;
+  /** Mandatory when the outcome is DAMAGED or RETIRED. */
+  reason?: string;
+  /** Money fields — only sent when the caller holds the cost permission. */
+  laborCost?: string | number;
+  externalCost?: string | number;
+  /** Omitted → the server derives it from the actual start→completion span. */
+  downtimeMinutes?: number;
+  nextMaintenanceDate?: string;
+}
+
+export function completeWorkOrder(id: string, body: WorkOrderCompleteBody): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/complete`, body);
+}
+
+/** Supervisor sign-off (verifier must differ from the completing technician). */
+export function verifyWorkOrder(id: string): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/verify`);
+}
+
+export function cancelWorkOrder(id: string, reason: string): Promise<WorkOrder> {
+  return api.post<WorkOrder>(`/maintenance-work-orders/${id}/cancel`, { reason });
+}
+
+/** Checklist task — order comes from array position (no sequence field). */
+export interface WorkOrderTaskInput {
+  name: string;
+  isRequired?: boolean;
+  notes?: string;
+}
+
+/** Replace the checklist (PUT :id/tasks). */
+export function setWorkOrderTasks(id: string, tasks: WorkOrderTaskInput[]): Promise<WorkOrder> {
+  return api.put<WorkOrder>(`/maintenance-work-orders/${id}/tasks`, { tasks });
+}
+
+export function completeWorkOrderTask(
+  id: string,
+  taskId: string,
+  notes?: string,
+): Promise<unknown> {
+  return api.post<unknown>(
+    `/maintenance-work-orders/${id}/tasks/${taskId}/complete`,
+    notes ? { notes } : {},
+  );
+}
+
+/** Parts consumed by the WO (posted maintenance-issue stock transactions). */
+export function listWorkOrderParts(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Paginated<WorkOrderPart> | WorkOrderPart[]> {
+  return api.get<Paginated<WorkOrderPart> | WorkOrderPart[]>(
+    `/maintenance-work-orders/${id}/parts-issues`,
+    undefined,
+    signal,
+  );
+}
+
+export interface WorkOrderPartsIssueLineInput {
+  itemId: string;
+  uomId: string;
+  quantity: string | number;
+  lotId?: string;
+  sourceLocationId?: string;
+  /** Unit-cost override (defaults to the item's last purchase cost). */
+  unitCost?: string | number;
+  notes?: string;
+}
+
+export interface WorkOrderPartsIssueBody {
+  warehouseId: string;
+  lines: WorkOrderPartsIssueLineInput[];
+  notes?: string;
+}
+
+/** Creates a linked MAINTENANCE_ISSUE stock draft (posts via inventory §4.1). */
+export function createWorkOrderPartsIssue(
+  id: string,
+  body: WorkOrderPartsIssueBody,
+): Promise<StockTransaction> {
+  return api.post<StockTransaction>(`/maintenance-work-orders/${id}/parts-issues`, body);
+}
+
+/* ------------------ Asset meter readings (contract §6.2) ------------------- */
+
+export function listAssetMeterReadings(
+  assetId: string,
+  params: ListParams = {},
+  signal?: AbortSignal,
+): Promise<Paginated<AssetMeterReading> | AssetMeterReading[]> {
+  return api.get<Paginated<AssetMeterReading> | AssetMeterReading[]>(
+    `/assets/${assetId}/meter-readings`,
+    params,
+    signal,
+  );
+}
+
+export function recordAssetMeterReading(
+  assetId: string,
+  body: { readingValue: string | number; meterType?: string; readingAt?: string; notes?: string },
+): Promise<AssetMeterReading> {
+  return api.post<AssetMeterReading>(`/assets/${assetId}/meter-readings`, body);
 }

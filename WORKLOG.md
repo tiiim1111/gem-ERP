@@ -17,6 +17,34 @@ Entry format:
 
 ---
 
+## 2026-08-05 (later) — ✅ Phase 5 Maintenance complete (plans, work orders, parts, worker job)
+
+Both agents died early on session limits, resumed via SendMessage (context intact). **Local commit only — no push/deploy per Tim.**
+
+**Done (backend — verified: api build ✅, 27 suites / 366 tests ✅ (+130), root typecheck+lint ✅, migration `20260805063000_…` clean, seed idempotent 2×):**
+- **Plans §6.1**: CRUD (`MPL-{SEQ5}`, version-guarded PATCH), activate/deactivate, `PUT :id/assets` covered-set replace (branch-scope + not-RETIRED/DISPOSED/LOST guards); frequency interval/meter/cron with pure next-due math in `maintenance-schedule.ts`.
+- **Work orders §6.2**: `WO-{YYYY}-{SEQ5}`, created on OPEN; assign (user/employee/team/vendor), schedule, start (asset → UNDER_MAINTENANCE via assets `assertTransition`, pre-WO status snapshotted), hold/resume (typed reasons), complete (explicit outcome AVAILABLE|ASSIGNED|DAMAGED|RETIRED, required-checklist + reason + `asset.retire` guards, labor/external cost, downtime default = actual span, plan nextDueAt re-anchor, meter baseline), verify (verifier ≠ completer → 409 SELF_APPROVAL_FORBIDDEN), cancel (reverts asset to pre-WO status; blocked by posted un-reversed parts). **Technician scoping**: view-only callers hard-filtered to own assignments (list + detail 404 no-leak).
+- **Parts issues**: `POST :id/parts-issues` creates AND posts a MAINTENANCE_ISSUE stock txn through `StockPostingService.postWithinTx` in ONE transaction, optional Idempotency-Key with replay; serialized items rejected; costs roll into WO. **Meter readings**: `GET/POST /assets/:id/meter-readings` (monotonic per meter type).
+- **Worker** (`apps/worker`): hourly `generate-due-work-orders` — calendar + meter due plans, per-(plan,asset) advisory lock ⇒ exactly one open WO, re-run safe; DATABASE_URL optional (warn+skip keeps deployed worker alive). Maintenance-due notifications deferred to Phase 6.
+
+**Done (frontend — verified green: web typecheck, lint 0, build all routes):**
+
+**Done (frontend — verified green: web typecheck, lint 0, build all routes):**
+- Routes: `/maintenance/plans` (list/new/detail/edit), `/maintenance/work-orders` (list + board views, detail). `components/maintenance/`: badges, plans-page, plan-editor (interval/meter/cron frequency, checklist editor, version-guarded PATCH), plan-detail (activate/deactivate, covered-assets via `PUT :id/assets`), work-orders-page (**"Assigned to me" defaults ON for technicians**), WO create dialog, WO detail (stepper, per-status×permission×assignee actions, checklist tick-off, parts with stock-issue links, gated costs, downtime), dialogs (assign/schedule/hold-with-reason/complete-with-outcome+final-condition, AddParts with UOM/lot + INSUFFICIENT_STOCK inline).
+- Integrations: asset detail "Maintenance" tab (WO history, downtime/cost totals, meter readings + record dialog), dashboard MaintenanceTiles, app-shell Maintenance nav section.
+- Lib: endpoints (+~300: plans/WOs full action surface + meter readings), types (+~340 with tolerant read helpers), status-maps (WO machine mirror, hold reasons, completion outcomes, permission any-of lists).
+- Aligned byte-for-byte with backend DTOs mid-flight (forbidNonWhitelisted); error mapping per house pattern (VERSION_CONFLICT/INVALID_STATE_TRANSITION → toast+refetch).
+
+**Integration (orchestrator):** wired `MaintenanceModule` into `app.module.ts` + `seedPhase5Maintenance` into `seed.ts`; full chain green (build 4/4, typecheck 5/5, lint 3/3, api tests 366, migrate status clean, full seed idempotent). **Live smoke through the proxy (all passed):** login → plans/WOs listed → WO create OPEN → assign ASSIGNED → start IN_PROGRESS + asset UNDER_MAINTENANCE → parts issue posted (paper 172→171, **idempotent replay: still 171**) → complete COMPLETED + asset back AVAILABLE (partsCost ₱235 auto from Phase 4 lastPurchaseCost, labor ₱350, total ₱585, downtime captured) → self-verify blocked 409 SELF_APPROVAL_FORBIDDEN → cancel path reverts asset (validated on cleanup WOs). Smoke artifacts left in dev data: WO-2026-00004..7 (3 canceled + 1 completed on the monitor/laptop).
+
+**Decisions:** WOs create directly on OPEN (no draft step; DRAFT stays unused enum like PO REJECTED); plan coverage = asset set only; cron plans need explicit nextDueAt (no cron parser dep); worker mirrors status consts (apps can't import apps/api); asset side-effects via exported pure `assertTransition` in the WO transaction (lifecycle service opens own txns, can't compose); parts POST gated by `inventory.issue` (system-mediated posting like GR); plans list has no type filter; plan WO history client-filtered from most-recent-100; overdue tile sums per-status dueBefore counts.
+
+**Environment note:** another project (v-hive) now occupies port 3000 locally, so the GEM-ENI web dev server runs on **http://localhost:3002** (API unchanged on 3001). Left both running.
+
+**Pending / Next:** Phase 3.5 next (attachments §4.6, global search §4.7, assets.version, inventory.approve permission, XLSX, batch labels UI), then 6 → 7. Known gaps queued: GR-linked stock-txn direct reverse bypasses GR/PO bookkeeping; maintenance-due notifications await Phase 6. **HOLD until Tim's go: git push, Vercel/Railway deploys, seed-password rotation (ChangeMe!123 live publicly).**
+
+---
+
 ## 2026-08-05 — ✅ Phase 4 Procurement complete (suppliers, POs, receiving, history)
 
 Two parallel builder agents (strict file ownership) + orchestrator integration. **No pushes/deploys this phase per Tim — local commit only.**

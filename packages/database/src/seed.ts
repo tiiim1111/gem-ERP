@@ -31,6 +31,7 @@ import { ALL_PERMISSIONS, ROLE_DEFINITIONS } from "@gemerp/shared";
 import { seedPhase3Inventory } from "./seed-phase3-inventory";
 import { seedPhase3Assets } from "./seed-phase3-assets";
 import { seedPhase4Procurement } from "./seed-phase4-procurement";
+import { seedPhase5Maintenance } from "./seed-phase5-maintenance";
 
 const prisma = new PrismaClient();
 
@@ -974,6 +975,10 @@ async function main(): Promise<void> {
   // Phase 4: suppliers, purchase orders, goods receipts (posted + partial + pending).
   await seedPhase4Procurement(prisma);
   console.log("  Phase 4 procurement: suppliers, POs (received/partial/pending), goods receipts");
+
+  // Phase 5: maintenance plans, meter readings, work orders (completed/overdue/in-progress).
+  await seedPhase5Maintenance(prisma);
+  console.log("  Phase 5 maintenance: plans, meter readings, work orders with parts + history");
 
   await prisma.auditLog.create({
     data: {

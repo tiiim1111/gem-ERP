@@ -24,6 +24,13 @@ export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 export const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
+ * Due-plan scan cadence (Phase 5). Hourly is plenty: plan dueness has day
+ * granularity, and the generation job is idempotent so the interval only
+ * bounds detection latency.
+ */
+export const MAINTENANCE_GENERATION_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
  * Retry/backoff defaults applied to every business queue. Individual jobs can
  * override these when enqueued. Failed jobs are retried 3 times with
  * exponential backoff (5s, 10s, 20s); completed jobs are kept for a day (max

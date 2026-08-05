@@ -10,13 +10,16 @@
  */
 import { Queue, Worker, type Job, type JobsOptions, type Processor } from "bullmq";
 import { Redis } from "ioredis";
+import { PrismaClient } from "@prisma/client";
 
 import { env } from "./env";
+import { generateWorkOrdersFromDuePlans } from "./jobs/maintenance-work-orders";
 import { logger } from "./logger";
 import {
   DEFAULT_JOB_OPTIONS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_JOB_OPTIONS,
+  MAINTENANCE_GENERATION_INTERVAL_MS,
   QUEUE_NAMES,
 } from "./queues";
 
@@ -85,13 +88,40 @@ async function acknowledgeStub(job: Job, filledInBy: string): Promise<void> {
 // Queue + worker registration
 // ---------------------------------------------------------------------------
 
-// "maintenance-reminders" — STUB until Phase 5 (Maintenance): the real
-// processor will scan maintenance plans for due/overdue schedules and fan out
-// reminders. Until then it only logs receipt and completes.
-registerQueue(QUEUE_NAMES.MAINTENANCE_REMINDERS);
-registerWorker(QUEUE_NAMES.MAINTENANCE_REMINDERS, (job) =>
-  acknowledgeStub(job, "Phase 5 (Maintenance)"),
-);
+// "maintenance-reminders" — Phase 5 (Maintenance): scans due maintenance
+// plans and generates work orders (idempotent — exactly one open WO per due
+// plan+asset; see jobs/maintenance-work-orders.ts). Reminder NOTIFICATION
+// fan-out is deferred to Phase 6 (notifications module); reminder-window
+// hits are logged in the meantime. Requires DATABASE_URL — without it the
+// processor warns and skips instead of crashing the worker.
+let prismaClient: PrismaClient | undefined;
+function getPrisma(): PrismaClient | null {
+  if (!env.DATABASE_URL) {
+    return null;
+  }
+  prismaClient ??= new PrismaClient({
+    datasources: { db: { url: env.DATABASE_URL } },
+  });
+  return prismaClient;
+}
+
+const maintenanceQueue = registerQueue(QUEUE_NAMES.MAINTENANCE_REMINDERS);
+registerWorker(QUEUE_NAMES.MAINTENANCE_REMINDERS, async (job) => {
+  if (job.name !== "generate-due-work-orders") {
+    await acknowledgeStub(job, "Phase 6 (Notifications)");
+    return;
+  }
+  const prisma = getPrisma();
+  if (!prisma) {
+    logger.warn(
+      { queue: job.queueName, jobId: job.id },
+      "DATABASE_URL is not configured — skipping maintenance work-order generation",
+    );
+    return;
+  }
+  const summary = await generateWorkOrdersFromDuePlans(prisma, logger);
+  logger.info({ jobId: job.id, ...summary }, "maintenance work-order generation done");
+});
 
 // "notifications" — STUB until Phase 6 (Counts, approvals, and notifications):
 // the real processor will deliver in-app notifications (low stock, warranty
@@ -149,6 +179,9 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     // Workers first: stop taking new jobs and wait for in-flight jobs to end.
     await Promise.allSettled(workers.map((worker) => worker.close()));
     await Promise.allSettled(queues.map((queue) => queue.close()));
+    if (prismaClient) {
+      await prismaClient.$disconnect().catch(() => undefined);
+    }
     await connection.quit().catch(() => {
       connection.disconnect();
     });
@@ -184,6 +217,14 @@ async function main(): Promise<void> {
     "worker-heartbeat-every-5m",
     { every: HEARTBEAT_INTERVAL_MS },
     { name: "heartbeat" },
+  );
+
+  // Phase 5: hourly due-plan scan. The processor is idempotent, so the
+  // cadence only bounds detection latency — re-runs never duplicate WOs.
+  await maintenanceQueue.upsertJobScheduler(
+    "maintenance-generate-hourly",
+    { every: MAINTENANCE_GENERATION_INTERVAL_MS },
+    { name: "generate-due-work-orders" },
   );
 
   const redisTarget = new URL(env.REDIS_URL);

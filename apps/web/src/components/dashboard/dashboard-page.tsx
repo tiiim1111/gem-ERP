@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   Building2,
+  CalendarClock,
   IdCard,
   MonitorSmartphone,
   Package,
@@ -16,6 +17,7 @@ import {
   ShoppingCart,
   TriangleAlert,
   Users,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import { AssetStatus, PERMISSIONS, PurchaseOrderStatus, TransferStatus } from '@gemerp/shared';
@@ -34,8 +36,10 @@ import {
   listTotal,
   listTransfers,
   listUsers,
+  listWorkOrders,
   revokeMySession,
 } from '@/lib/endpoints';
+import { OPEN_WORK_ORDER_STATUSES } from '@/lib/status-maps';
 import {
   assetTag,
   auditTimestamp,
@@ -422,6 +426,61 @@ function ProcurementTiles() {
   );
 }
 
+/**
+ * "Open work orders" + "Overdue maintenance" tiles — real counts from list
+ * meta.total, one page-size-1 query per open status (the list endpoint has no
+ * multi-status filter in the contract); overdue repeats them with dueBefore.
+ */
+function MaintenanceTiles() {
+  // Stable per mount so the query keys don't churn every render.
+  const [now] = React.useState(() => new Date().toISOString());
+
+  const openQueries = useQueries({
+    queries: OPEN_WORK_ORDER_STATUSES.map((status) => ({
+      queryKey: ['maintenance-work-orders', 'count', status],
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        listWorkOrders({ page: 1, pageSize: 1, status }, signal),
+    })),
+  });
+  const overdueQueries = useQueries({
+    queries: OPEN_WORK_ORDER_STATUSES.map((status) => ({
+      queryKey: ['maintenance-work-orders', 'count-overdue', status, now],
+      queryFn: ({ signal }: { signal?: AbortSignal }) =>
+        listWorkOrders({ page: 1, pageSize: 1, status, dueBefore: now }, signal),
+    })),
+  });
+
+  const sum = (queries: typeof openQueries): number | undefined => {
+    let total = 0;
+    for (const query of queries) {
+      if (!query.data) return undefined;
+      total += query.data.meta.total;
+    }
+    return total;
+  };
+
+  return (
+    <>
+      <StatCard
+        title="Open work orders"
+        icon={Wrench}
+        value={sum(openQueries)}
+        loading={openQueries.some((query) => query.isPending)}
+        error={openQueries.find((query) => query.error)?.error}
+        href="/maintenance/work-orders"
+      />
+      <StatCard
+        title="Overdue maintenance"
+        icon={CalendarClock}
+        value={sum(overdueQueries)}
+        loading={overdueQueries.some((query) => query.isPending)}
+        error={overdueQueries.find((query) => query.error)?.error}
+        href="/maintenance/work-orders"
+      />
+    </>
+  );
+}
+
 /** Outstanding acknowledgments for the session user's employee record. */
 function MyAcknowledgmentsCard({ employeeId }: { employeeId: string }) {
   const acknowledgmentsQuery = useQuery({
@@ -509,6 +568,7 @@ export function DashboardPage() {
   const canViewAssets = can(PERMISSIONS.asset.view);
   const canViewTransfers = can(PERMISSIONS.transfer.view);
   const canViewPos = can(PERMISSIONS.procurementPo.view);
+  const canViewWorkOrders = can(PERMISSIONS.maintenanceWorkOrder.view);
   const myEmployeeId = meEmployeeId(user);
 
   const usersCount = useQuery({
@@ -594,6 +654,7 @@ export function DashboardPage() {
           />
         ) : null}
         {canViewPos ? <ProcurementTiles /> : null}
+        {canViewWorkOrders ? <MaintenanceTiles /> : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

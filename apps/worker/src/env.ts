@@ -20,6 +20,19 @@ const envSchema = z.object({
       (value) => value.startsWith("redis://") || value.startsWith("rediss://"),
       { message: "REDIS_URL must be a redis:// or rediss:// URL" },
     ),
+  /**
+   * Phase 5: the maintenance-reminders processor generates work orders from
+   * due plans and needs database access. Optional so a worker deployed
+   * without it keeps draining its other queues — the maintenance job then
+   * logs a warning and skips instead of crashing the process.
+   */
+  DATABASE_URL: z
+    .string()
+    .url()
+    .refine((value) => value.startsWith("postgresql://") || value.startsWith("postgres://"), {
+      message: "DATABASE_URL must be a postgresql:// URL",
+    })
+    .optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -295,7 +295,10 @@ model User {
   workOrdersCreated          MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderCreatedBy")
   workOrdersReported         MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderReportedBy")
   workOrdersVerified         MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderVerifiedBy")
+  workOrdersCompleted        MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderCompletedBy")
+  workOrdersCanceled         MaintenanceWorkOrder[]     @relation("MaintenanceWorkOrderCanceledBy")
   workOrderTasksCompleted    MaintenanceWorkOrderTask[] @relation("MaintenanceWorkOrderTaskCompletedBy")
+  maintenancePlansCreated    MaintenancePlan[]          @relation("MaintenancePlanCreatedBy")
   meterReadingsRecorded      AssetMeterReading[]        @relation("AssetMeterReadingRecordedBy")
   approvalStepsAsApprover    ApprovalStep[]             @relation("ApprovalStepApproverUser")
   approvalRequestsMade       ApprovalRequest[]          @relation("ApprovalRequestRequestedBy")
@@ -1216,6 +1219,7 @@ model Asset {
   countLines            InventoryCountLine[]    @relation("InventoryCountLineAsset")
   workOrders            MaintenanceWorkOrder[]  @relation("MaintenanceWorkOrderAsset")
   maintenancePlans      MaintenancePlan[]       @relation("MaintenancePlanAsset")
+  maintenancePlanLinks  MaintenancePlanAsset[]  @relation("MaintenancePlanAssetAsset")
   meterReadings         AssetMeterReading[]     @relation("AssetMeterReadingAsset")
 
   @@unique([itemId, serialNumber])
@@ -1906,6 +1910,9 @@ model MaintenancePlan {
   reminderLeadDays       Int?      @map("reminder_lead_days")
   nextDueAt              DateTime? @map("next_due_at")
   isActive               Boolean   @default(true) @map("is_active")
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version                Int       @default(1)
+  createdById            String?   @map("created_by_id") @db.Uuid
   archivedAt             DateTime? @map("archived_at")
   createdAt              DateTime  @default(now()) @map("created_at")
   updatedAt              DateTime  @updatedAt @map("updated_at")
@@ -1914,15 +1921,35 @@ model MaintenancePlan {
   item            Item?        @relation("MaintenancePlanItem", fields: [itemId], references: [id], onDelete: Restrict)
   maintenanceType LookupValue  @relation("LookupMaintenancePlanType", fields: [maintenanceTypeId], references: [id], onDelete: Restrict)
   vendor          Supplier?    @relation("MaintenancePlanVendor", fields: [vendorId], references: [id], onDelete: Restrict)
+  createdBy       User?        @relation("MaintenancePlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   tasks      MaintenancePlanTask[]  @relation("MaintenancePlanTasks")
   workOrders MaintenanceWorkOrder[] @relation("MaintenanceWorkOrderPlan")
+  assetLinks MaintenancePlanAsset[] @relation("MaintenancePlanAssetPlan")
 
   @@index([assetId])
   @@index([itemId])
   @@index([isActive])
   @@index([nextDueAt])
   @@map("maintenance_plans")
+}
+
+/// The set of assets a preventive plan covers (api-outline 6.1:
+/// PUT /maintenance-plans/:id/assets replaces this set wholesale). The legacy
+/// single-asset column on maintenance_plans stays for compatibility; this
+/// join table is the source of truth from Phase 5 on.
+model MaintenancePlanAsset {
+  id        String   @id @default(uuid()) @db.Uuid
+  planId    String   @map("plan_id") @db.Uuid
+  assetId   String   @map("asset_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  plan  MaintenancePlan @relation("MaintenancePlanAssetPlan", fields: [planId], references: [id], onDelete: Cascade)
+  asset Asset           @relation("MaintenancePlanAssetAsset", fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([planId, assetId])
+  @@index([assetId])
+  @@map("maintenance_plan_assets")
 }
 
 model MaintenancePlanTask {
@@ -1971,11 +1998,29 @@ model MaintenanceWorkOrder {
   externalCost          Decimal?                   @map("external_cost") @db.Decimal(14, 2)
   totalCost             Decimal?                   @map("total_cost") @db.Decimal(14, 2)
   downtimeHours         Decimal?                   @map("downtime_hours") @db.Decimal(14, 2)
+  /// Downtime in minutes (api-outline 6.2 complete payload). downtime_hours
+  /// keeps a 2dp mirror for reporting compatibility.
+  downtimeMinutes       Int?                       @map("downtime_minutes")
   completionConditionId String?                    @map("completion_condition_id") @db.Uuid
   nextMaintenanceAt     DateTime?                  @map("next_maintenance_at")
+  /// Asset lifecycle status when the WO entered In Progress — cancellation
+  /// reverts the asset to exactly this status (status-transitions §1.1
+  /// work-order-canceled).
+  assetStatusBeforeWo   AssetLifecycleStatus?      @map("asset_status_before_wo")
+  /// Outcome chosen at completion (Available | Assigned | Damaged | Retired).
+  outcomeStatus         AssetLifecycleStatus?      @map("outcome_status")
+  /// Reason for the current On Hold / Awaiting Parts / Awaiting Vendor state.
+  holdReason            String?                    @map("hold_reason")
+  cancelReason          String?                    @map("cancel_reason")
+  /// Meter value snapshot at completion — baseline for meter-interval plans.
+  completionMeterReading Decimal?                  @map("completion_meter_reading") @db.Decimal(14, 4)
+  completedById         String?                    @map("completed_by_id") @db.Uuid
   verifiedById          String?                    @map("verified_by_id") @db.Uuid
   verifiedAt            DateTime?                  @map("verified_at")
+  canceledById          String?                    @map("canceled_by_id") @db.Uuid
   canceledAt            DateTime?                  @map("canceled_at")
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version               Int                        @default(1)
   createdById           String                     @map("created_by_id") @db.Uuid
   createdAt             DateTime                   @default(now()) @map("created_at")
   updatedAt             DateTime                   @updatedAt @map("updated_at")
@@ -1989,7 +2034,9 @@ model MaintenanceWorkOrder {
   reportedBy          User?            @relation("MaintenanceWorkOrderReportedBy", fields: [reportedById], references: [id], onDelete: Restrict)
   assignedToEmployee  Employee?        @relation("MaintenanceWorkOrderAssignedEmployee", fields: [assignedToEmployeeId], references: [id], onDelete: Restrict)
   assignedVendor      Supplier?        @relation("MaintenanceWorkOrderVendor", fields: [assignedVendorId], references: [id], onDelete: Restrict)
+  completedBy         User?            @relation("MaintenanceWorkOrderCompletedBy", fields: [completedById], references: [id], onDelete: Restrict)
   verifiedBy          User?            @relation("MaintenanceWorkOrderVerifiedBy", fields: [verifiedById], references: [id], onDelete: Restrict)
+  canceledBy          User?            @relation("MaintenanceWorkOrderCanceledBy", fields: [canceledById], references: [id], onDelete: Restrict)
   createdBy           User             @relation("MaintenanceWorkOrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   tasks             MaintenanceWorkOrderTask[] @relation("MaintenanceWorkOrderTasks")

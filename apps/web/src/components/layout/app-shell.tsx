@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   Boxes,
   Building2,
+  CalendarClock,
   ChevronDown,
   ClipboardList,
   Factory,
@@ -27,6 +28,7 @@ import {
   SlidersHorizontal,
   TriangleAlert,
   Users,
+  Wrench,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -121,6 +123,23 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Purchase History',
         icon: History,
         permission: PERMISSIONS.procurementPo.view,
+      },
+    ],
+  },
+  {
+    label: 'Maintenance',
+    items: [
+      {
+        href: '/maintenance/work-orders',
+        label: 'Work Orders',
+        icon: Wrench,
+        permission: PERMISSIONS.maintenanceWorkOrder.view,
+      },
+      {
+        href: '/maintenance/plans',
+        label: 'Plans',
+        icon: CalendarClock,
+        permission: PERMISSIONS.maintenancePlan.view,
       },
     ],
   },

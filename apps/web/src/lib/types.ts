@@ -1618,6 +1618,339 @@ export function historyPoId(row: PurchaseHistoryRow): string | null {
   return row.purchaseOrderId ?? row.purchaseOrder?.id ?? null;
 }
 
+/* ========================================================================== */
+/* Phase 5 — Maintenance (docs/api-outline.md §6)                             */
+/* ========================================================================== */
+
+/* ------------------- Maintenance plans (contract §6.1) -------------------- */
+
+export interface MaintenancePlanTask {
+  id?: string;
+  planId?: string;
+  sequence?: number;
+  name: string;
+  description?: string | null;
+  isRequired?: boolean;
+  required?: boolean;
+}
+
+export function planTaskIsRequired(task: MaintenancePlanTask): boolean {
+  return task.isRequired ?? task.required ?? true;
+}
+
+export interface MaintenancePlan {
+  id: string;
+  code?: string | null;
+  name: string;
+  description?: string | null;
+  /** Single covered asset and/or every maintainable asset of an item. */
+  assetId?: string | null;
+  asset?: Asset | null;
+  itemId?: string | null;
+  item?: ItemRef | null;
+  maintenanceTypeId?: string | null;
+  maintenanceType?: LookupValue | null;
+  type?: LookupValue | null;
+  /** Frequency — exactly one of interval / meter / cron schedule. */
+  intervalDays?: number | null;
+  meterInterval?: DecimalString | null;
+  meterType?: string | null;
+  scheduleCron?: string | null;
+  assignedTeam?: string | null;
+  vendorId?: string | null;
+  vendor?: SupplierRef | null;
+  estimatedDurationHours?: DecimalString | null;
+  /** Present only with maintenance cost permission. */
+  estimatedCost?: DecimalString | null;
+  reminderLeadDays?: number | null;
+  nextDueAt?: string | null;
+  nextDueDate?: string | null;
+  isActive?: boolean;
+  active?: boolean;
+  archivedAt?: string | null;
+  tasks?: MaintenancePlanTask[];
+  checklist?: MaintenancePlanTask[];
+  /** Covered assets (PUT :id/assets replaces this set; detail only). */
+  assets?: Asset[];
+  coveredAssets?: Asset[];
+  /** List rows carry counts instead of the expanded collections. */
+  coveredAssetCount?: number;
+  taskCount?: number;
+  /** Optimistic-concurrency version; must be echoed on PATCH. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function planType(plan: MaintenancePlan): LookupValue | null {
+  return plan.maintenanceType ?? plan.type ?? null;
+}
+
+export function planIsActive(plan: MaintenancePlan): boolean {
+  return plan.isActive ?? plan.active ?? false;
+}
+
+export function planTasks(plan: MaintenancePlan): MaintenancePlanTask[] {
+  return plan.tasks ?? plan.checklist ?? [];
+}
+
+export function planCoveredAssets(plan: MaintenancePlan): Asset[] {
+  return plan.assets ?? plan.coveredAssets ?? [];
+}
+
+export function planNextDue(plan: MaintenancePlan): string | null {
+  return plan.nextDueAt ?? plan.nextDueDate ?? null;
+}
+
+/** Human description of the plan's frequency rule. */
+export function planFrequencyLabel(plan: MaintenancePlan): string {
+  if (plan.intervalDays !== null && plan.intervalDays !== undefined) {
+    return `Every ${plan.intervalDays} day${plan.intervalDays === 1 ? '' : 's'}`;
+  }
+  if (plan.meterInterval !== null && plan.meterInterval !== undefined) {
+    return `Every ${formatQuantity(plan.meterInterval)} ${plan.meterType ?? 'meter units'}`;
+  }
+  if (plan.scheduleCron) return `Schedule: ${plan.scheduleCron}`;
+  return 'No frequency set';
+}
+
+/* --------------------- Work orders (contract §6.2) ------------------------- */
+
+export interface WorkOrderTask {
+  id?: string;
+  workOrderId?: string;
+  planTaskId?: string | null;
+  sequence?: number;
+  name: string;
+  description?: string | null;
+  isRequired?: boolean;
+  required?: boolean;
+  isCompleted?: boolean;
+  completed?: boolean;
+  completedAt?: string | null;
+  completedBy?: UserRef | null;
+  notes?: string | null;
+}
+
+export function woTaskIsRequired(task: WorkOrderTask): boolean {
+  return task.isRequired ?? task.required ?? true;
+}
+
+export function woTaskIsCompleted(task: WorkOrderTask): boolean {
+  return task.isCompleted ?? task.completed ?? !!task.completedAt;
+}
+
+/** Spare part consumed by a WO — backed by a MAINTENANCE_ISSUE stock issue. */
+export interface WorkOrderPart {
+  id?: string;
+  workOrderId?: string;
+  itemId?: string;
+  item?: ItemRef | null;
+  lotId?: string | null;
+  lot?: { id: string; lotNumber?: string } | null;
+  uomId?: string;
+  uom?: Uom | null;
+  quantity?: DecimalString | null;
+  baseQuantity?: DecimalString | null;
+  /** Money fields — present only with maintenance cost permission. */
+  unitCost?: DecimalString | null;
+  totalCost?: DecimalString | null;
+  stockTransactionId?: string | null;
+  stockTransaction?: { id: string; number?: string; transactionNumber?: string; status?: string } | null;
+  notes?: string | null;
+  createdAt?: string;
+}
+
+export function woPartTransactionId(part: WorkOrderPart): string | null {
+  return part.stockTransactionId ?? part.stockTransaction?.id ?? null;
+}
+
+export function woPartTransactionStatus(part: WorkOrderPart): string | null {
+  return part.stockTransaction?.status ?? null;
+}
+
+export interface WorkOrder {
+  id: string;
+  workOrderNumber?: string;
+  number?: string;
+  status: string;
+  assetId?: string;
+  asset?: Asset | null;
+  planId?: string | null;
+  plan?: { id: string; code?: string | null; name?: string } | null;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  typeId?: string;
+  type?: LookupValue | null;
+  maintenanceType?: LookupValue | null;
+  priorityId?: string | null;
+  priority?: LookupValue | null;
+  problem?: string | null;
+  problemDescription?: string | null;
+  reportedById?: string | null;
+  reportedBy?: UserRef | null;
+  reportedAt?: string | null;
+  assignedToEmployeeId?: string | null;
+  assignedToEmployee?: EmployeeSummary | null;
+  technicianUserId?: string | null;
+  technician?: UserRef | null;
+  assignedTeam?: string | null;
+  assignedVendorId?: string | null;
+  assignedVendor?: SupplierRef | null;
+  scheduledStartAt?: string | null;
+  plannedStart?: string | null;
+  scheduledEndAt?: string | null;
+  plannedEnd?: string | null;
+  actualStartAt?: string | null;
+  actualEndAt?: string | null;
+  diagnosis?: string | null;
+  actionTaken?: string | null;
+  resolution?: string | null;
+  holdReason?: string | null;
+  /** Money fields — present only with maintenance cost permission. */
+  laborCost?: DecimalString | null;
+  partsCost?: DecimalString | null;
+  externalCost?: DecimalString | null;
+  totalCost?: DecimalString | null;
+  downtimeHours?: DecimalString | null;
+  downtimeMinutes?: DecimalString | null;
+  completionConditionId?: string | null;
+  completionCondition?: LookupValue | null;
+  finalCondition?: LookupValue | null;
+  nextMaintenanceAt?: string | null;
+  nextMaintenanceDate?: string | null;
+  /** Asset lifecycle status chosen at completion (AVAILABLE | … | RETIRED). */
+  outcomeStatus?: string | null;
+  /** Status the asset held before the WO started (restored on cancel). */
+  assetStatusBeforeWo?: string | null;
+  completionMeterReading?: DecimalString | null;
+  completedBy?: UserRef | null;
+  verifiedById?: string | null;
+  verifiedBy?: UserRef | null;
+  verifiedAt?: string | null;
+  canceledBy?: UserRef | null;
+  canceledAt?: string | null;
+  cancelReason?: string | null;
+  completedAt?: string | null;
+  createdBy?: UserRef | null;
+  createdById?: string | null;
+  tasks?: WorkOrderTask[];
+  checklist?: WorkOrderTask[];
+  parts?: WorkOrderPart[];
+  partsIssues?: WorkOrderPart[];
+  /** Optimistic-concurrency version; must be echoed on PATCH. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function workOrderNumber(wo: WorkOrder): string {
+  return wo.workOrderNumber ?? wo.number ?? wo.id.slice(0, 8);
+}
+
+export function woProblem(wo: WorkOrder): string | null {
+  return wo.problemDescription ?? wo.problem ?? null;
+}
+
+export function woType(wo: WorkOrder): LookupValue | null {
+  return wo.type ?? wo.maintenanceType ?? null;
+}
+
+export function woPlannedStart(wo: WorkOrder): string | null {
+  return wo.scheduledStartAt ?? wo.plannedStart ?? null;
+}
+
+export function woPlannedEnd(wo: WorkOrder): string | null {
+  return wo.scheduledEndAt ?? wo.plannedEnd ?? null;
+}
+
+export function woNextMaintenance(wo: WorkOrder): string | null {
+  return wo.nextMaintenanceAt ?? wo.nextMaintenanceDate ?? null;
+}
+
+export function woCompletionCondition(wo: WorkOrder): LookupValue | null {
+  return wo.completionCondition ?? wo.finalCondition ?? null;
+}
+
+export function woTasks(wo: WorkOrder): WorkOrderTask[] {
+  return wo.tasks ?? wo.checklist ?? [];
+}
+
+export function woParts(wo: WorkOrder): WorkOrderPart[] {
+  return wo.parts ?? wo.partsIssues ?? [];
+}
+
+/** Who the WO is assigned to, for display (employee, team, or vendor). */
+export function woAssigneeLabel(wo: WorkOrder): string | null {
+  if (wo.assignedToEmployee) return employeeName(wo.assignedToEmployee);
+  if (wo.technician?.displayName) return wo.technician.displayName;
+  if (wo.assignedTeam) return wo.assignedTeam;
+  if (wo.assignedVendor) return supplierRefLabel(wo.assignedVendor);
+  return null;
+}
+
+/** Downtime in minutes, tolerating hour- or minute-based payloads. */
+export function woDowntimeMinutes(wo: WorkOrder): number | null {
+  if (wo.downtimeMinutes !== undefined && wo.downtimeMinutes !== null) {
+    return decimalValue(wo.downtimeMinutes);
+  }
+  if (wo.downtimeHours !== undefined && wo.downtimeHours !== null) {
+    return decimalValue(wo.downtimeHours) * 60;
+  }
+  return null;
+}
+
+export function formatDowntime(minutes: number | null): string {
+  if (minutes === null) return '—';
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = Math.round(minutes % 60);
+  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+/** Total cost — server value wins; falls back to summing the components. */
+export function woTotalCost(wo: WorkOrder): DecimalString | null {
+  if (wo.totalCost !== undefined && wo.totalCost !== null) return wo.totalCost;
+  const components = [wo.laborCost, wo.partsCost, wo.externalCost].filter(
+    (value): value is DecimalString => value !== undefined && value !== null,
+  );
+  if (components.length === 0) return null;
+  return components.reduce<number>((sum, value) => sum + decimalValue(value), 0);
+}
+
+/** True when the session user's employee/user id is the assigned technician. */
+export function woIsAssignedTo(wo: WorkOrder, me: Me): boolean {
+  const employeeId = meEmployeeId(me);
+  if (employeeId && (wo.assignedToEmployeeId === employeeId || wo.assignedToEmployee?.id === employeeId)) {
+    return true;
+  }
+  const userId = me.id;
+  return !!userId && (wo.technicianUserId === userId || wo.technician?.id === userId);
+}
+
+/* ------------------ Asset meter readings (contract §6.2) ------------------- */
+
+export interface AssetMeterReading {
+  id: string;
+  assetId?: string;
+  meterType?: string | null;
+  readingValue?: DecimalString | null;
+  value?: DecimalString | null;
+  readingAt?: string | null;
+  readAt?: string | null;
+  recordedBy?: UserRef | null;
+  notes?: string | null;
+  createdAt?: string;
+}
+
+export function meterReadingValue(reading: AssetMeterReading): DecimalString | null {
+  return reading.readingValue ?? reading.value ?? null;
+}
+
+export function meterReadingAt(reading: AssetMeterReading): string | null {
+  return reading.readingAt ?? reading.readAt ?? reading.createdAt ?? null;
+}
+
 /* ------------------------- Scanning (contract §4.4) ----------------------- */
 
 export interface ScanResolution {

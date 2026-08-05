@@ -355,29 +355,35 @@ Manual/scripted checks against the running stack:
 
 ---
 
-## Phase 5 — Maintenance — 📋 Planned
+## Phase 5 — Maintenance — ✅ Complete (2026-08-05)
 
 ### Deliverables
 
-- [ ] Migrations: `maintenance_plans`, `maintenance_plan_tasks`,
-      `maintenance_work_orders`, `maintenance_work_order_tasks`,
-      `maintenance_parts`, `asset_meter_readings`.
-- [ ] Preventive maintenance plans (spec section 18): frequency by interval,
-      meter, or schedule; checklists; assigned team/vendor; reminder lead time.
-- [ ] Work orders: numbered, typed (preventive/corrective/inspection/…),
-      prioritized, full status flow (Draft → … → Completed → Verified/Canceled);
-      diagnosis/action/resolution; labor/parts/external cost; downtime capture;
-      attachments.
-- [ ] Parts consumption via linked Phase 3 maintenance-parts stock issues.
-- [ ] Lifecycle integration: asset becomes `Under Maintenance`; cannot be
-      transferred/issued while an open work order holds it; completion records
-      final condition and returns the asset to Available/Assigned/Damaged/Retired.
-- [ ] Worker jobs: generate work orders from due plans; upcoming/overdue
-      maintenance alerts (idempotent).
-- [ ] Permissions: `maintenance.plan.*`, `maintenance.work_order.*`.
-- [ ] Web: plan admin, work-order board/detail, technician task view, cost and
-      downtime history per asset.
-- [ ] Seed extension: a plan with upcoming maintenance and one overdue work order.
+- [x] Migrations: plan/WO lifecycle columns (`version`, hold/cancel/complete
+      metadata, `downtime_minutes`, `completion_meter_reading`) + new
+      `maintenance_plan_assets`; base tables existed from the Phase 1 schema.
+- [x] Preventive maintenance plans (spec section 18): frequency by interval,
+      meter, or schedule (cron stored verbatim, explicit `nextDueAt` required);
+      checklists; assigned team/vendor; reminder lead time.
+- [x] Work orders: numbered `WO-{YYYY}-{SEQ5}`, typed, prioritized, status flow
+      (created on Open → … → Completed → Verified/Canceled; verifier ≠ completer);
+      diagnosis/action/resolution; labor/parts/external cost; downtime capture.
+      (Attachments deferred to Phase 3.5 generic attachments module.)
+- [x] Parts consumption via MAINTENANCE_ISSUE stock transactions posted through
+      `StockPostingService` in one DB transaction (idempotency-keyed, replay-safe).
+- [x] Lifecycle integration: start → `Under Maintenance` (pre-WO status
+      snapshotted); completion outcome Available/Assigned/Damaged/Retired via the
+      assets state machine; cancel reverts to the pre-WO status.
+- [x] Worker jobs: hourly `generate-due-work-orders` (calendar + meter due,
+      advisory-locked, exactly one open WO per plan+asset, re-run safe).
+      Maintenance-due notifications deferred to Phase 6 notifications module.
+- [x] Permissions: mapped onto existing `maintenance.*` catalog strings
+      (no `plan.manage`/WO `manage`-only strings in shared catalog — documented).
+- [x] Web: plan admin, work-order table+board/detail, technician "Assigned to me"
+      default view, cost and downtime history per asset (+ meter readings).
+- [x] Seed extension: interval plan due in reminder window + meter plan, one
+      completed WO (parts+costs+downtime), one overdue scheduled WO, one in
+      progress.
 
 ### Verification criteria
 

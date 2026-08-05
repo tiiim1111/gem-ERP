@@ -36,6 +36,7 @@ import {
   type AssetAction,
 } from '@/lib/status-maps';
 import { formatDate, formatDateTime, humanize } from '@/lib/utils';
+import { PERMISSIONS } from '@gemerp/shared';
 import { useSession } from '@/components/auth/session-provider';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +49,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { assetStatusBadge } from '@/components/inventory/badges';
+import { AssetMaintenanceSection } from '@/components/maintenance/asset-maintenance-section';
 import { AssetActionDialogs } from './asset-action-dialogs';
 import { AssetLabelPanel } from './asset-label-panel';
 
@@ -135,7 +137,7 @@ export function AssetDetail({
   initialAction?: string;
 }) {
   const queryClient = useQueryClient();
-  const { user, canAny } = useSession();
+  const { user, can, canAny } = useSession();
   const { toast } = useToast();
   const [openAction, setOpenAction] = React.useState<AssetAction | null>(() =>
     initialAction && isKnownAssetAction(initialAction) ? initialAction : null,
@@ -355,6 +357,9 @@ export function AssetDetail({
               <TabsTrigger value="movement">Movements</TabsTrigger>
               <TabsTrigger value="status">Status history</TabsTrigger>
               <TabsTrigger value="condition">Condition history</TabsTrigger>
+              {can(PERMISSIONS.maintenanceWorkOrder.view) ? (
+                <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
+              ) : null}
             </TabsList>
 
             <TabsContent value="assignments">
@@ -431,6 +436,12 @@ export function AssetDetail({
                 )}
               </TabsContent>
             ))}
+
+            {can(PERMISSIONS.maintenanceWorkOrder.view) ? (
+              <TabsContent value="maintenance">
+                <AssetMaintenanceSection asset={asset} />
+              </TabsContent>
+            ) : null}
           </Tabs>
         </CardContent>
       </Card>
