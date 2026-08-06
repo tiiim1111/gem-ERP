@@ -20,6 +20,7 @@ import {
   ImportTypeConfig,
   importTypeConfig,
 } from './import-types';
+import { parseXlsxToRows } from './xlsx';
 import {
   CsvRow,
   EmployeeImportRefs,
@@ -36,6 +37,17 @@ import {
 
 const MAX_ROWS = 5000;
 const PREVIEW_ROWS = 10;
+
+/** Upload metadata needed to pick the parser (CSV vs XLSX). */
+export interface ImportFileInput {
+  buffer: Buffer;
+  originalName: string;
+  mimeType: string;
+}
+
+const XLSX_MIME =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const CSV_MIMES = ['text/csv', 'application/csv', 'text/plain'];
 
 interface StagedRow<T> {
   /** 1-based data row number (header excluded). */
@@ -87,7 +99,7 @@ export interface StagingStatusView {
 }
 
 /**
- * Staged CSV imports (spec §24): validate first (no writes), commit
+ * Staged CSV/XLSX imports (spec §24): validate first (no writes), commit
  * explicitly. `mode: "strict"` is all-or-nothing; `mode: "partial"` writes
  * valid rows only — invalid rows are never imported silently.
  *
@@ -121,12 +133,12 @@ export class ImportsService {
   async validate(
     user: AuthUser,
     type: string,
-    fileBuffer: Buffer,
+    file: ImportFileInput,
     ctx: AuditContext,
   ): Promise<ValidateResult> {
     const config = this.assertPermission(user, type);
     const importType = type as ImportType;
-    const records = this.parseCsv(fileBuffer, config);
+    const records = await this.parseUpload(file, config);
 
     let staged: StagedRow<AnyValidatedRow>[];
     let errors: ImportRowError[];
@@ -306,10 +318,42 @@ export class ImportsService {
 
   // ----------------------------------------------------------------- parsing
 
-  private parseCsv(buffer: Buffer, config: ImportTypeConfig): CsvRow[] {
+  /**
+   * Pick the parser from the upload's extension/MIME type (CSV or XLSX),
+   * then run the shared row/header validation. Unknown formats are rejected
+   * up front — never guessed at.
+   */
+  private async parseUpload(
+    file: ImportFileInput,
+    config: ImportTypeConfig,
+  ): Promise<CsvRow[]> {
+    const name = (file.originalName ?? '').toLowerCase();
+    const mime = (file.mimeType ?? '').toLowerCase();
+
     let records: CsvRow[];
+    if (name.endsWith('.xlsx') || mime === XLSX_MIME) {
+      records = await parseXlsxToRows(file.buffer);
+    } else if (
+      name.endsWith('.csv') ||
+      CSV_MIMES.includes(mime) ||
+      // Legacy callers that never declared a type keep the CSV behavior.
+      (name === '' && mime === '')
+    ) {
+      records = this.parseCsv(file.buffer);
+    } else {
+      throw AppException.validation([
+        {
+          field: 'file',
+          message: 'Unsupported file type. Upload a .csv or .xlsx file.',
+        },
+      ]);
+    }
+    return this.checkRecords(records, config);
+  }
+
+  private parseCsv(buffer: Buffer): CsvRow[] {
     try {
-      records = parse(buffer, {
+      return parse(buffer, {
         columns: true,
         bom: true,
         trim: true,
@@ -321,6 +365,10 @@ export class ImportsService {
         { field: 'file', message: 'The file is not parseable CSV.' },
       ]);
     }
+  }
+
+  /** Format-independent sanity checks shared by the CSV and XLSX paths. */
+  private checkRecords(records: CsvRow[], config: ImportTypeConfig): CsvRow[] {
     if (records.length === 0) {
       throw AppException.validation([
         { field: 'file', message: 'The file contains no data rows.' },

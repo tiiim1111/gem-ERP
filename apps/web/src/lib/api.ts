@@ -300,6 +300,52 @@ export async function fetchBinary(
   return { blob: await response.blob(), contentType };
 }
 
+/**
+ * Authenticated binary POST — JSON body in, blob out. Used for the batch
+ * label sheet endpoint whose response is a printable HTML page, not JSON.
+ */
+export async function postBinary(
+  path: string,
+  body?: unknown,
+): Promise<{ blob: Blob; contentType: string }> {
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path), {
+      method: 'POST',
+      credentials: 'include',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(sanitizeBody(body)) : undefined,
+    });
+  } catch {
+    throw new ApiClientError(
+      0,
+      'NETWORK_ERROR',
+      'Could not reach the server. Check your connection and try again.',
+    );
+  }
+
+  if (!response.ok) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await response.text());
+    } catch {
+      payload = undefined;
+    }
+    const envelope = parseErrorEnvelope(payload);
+    if (envelope) {
+      throw new ApiClientError(response.status, envelope.code, envelope.message, envelope.details);
+    }
+    throw new ApiClientError(
+      response.status,
+      'INTERNAL_ERROR',
+      `Request failed with status ${response.status}.`,
+    );
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? 'application/octet-stream';
+  return { blob: await response.blob(), contentType };
+}
+
 /** Trigger a browser download of a fetched blob. */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

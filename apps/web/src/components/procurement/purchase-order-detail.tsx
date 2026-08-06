@@ -21,6 +21,7 @@ import { PERMISSIONS, PurchaseOrderStatus } from '@gemerp/shared';
 import { getErrorMessage, isApiClientError } from '@/lib/api';
 import {
   approvePurchaseOrder,
+  ATTACHMENT_RESOURCE_TYPES,
   cancelPurchaseOrder,
   closePurchaseOrder,
   getPurchaseOrder,
@@ -69,6 +70,7 @@ import { ReasonDialog } from '@/components/ui/reason-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { poStatusBadge, receiptStatusBadge } from '@/components/procurement/badges';
 
 function PoStepper({ po }: { po: PurchaseOrder }) {
@@ -555,6 +557,15 @@ export function PurchaseOrderDetail({ poId }: { poId: string }) {
       ) : null}
 
       {canViewReceipts ? <ReceiptsCard poId={po.id} /> : null}
+
+      {can(PERMISSIONS.attachment.view) ? (
+        <AttachmentsPanel
+          resourceType={ATTACHMENT_RESOURCE_TYPES.purchaseOrder}
+          resourceId={po.id}
+          managePermissions={[PERMISSIONS.procurementPo.update]}
+          description="Quotations, supplier confirmations, and other order documents."
+        />
+      ) : null}
 
       {/* Confirm dialogs */}
       <ConfirmDialog

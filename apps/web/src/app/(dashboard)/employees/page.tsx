@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   title: 'Employees',
 };
 
-export default function Page() {
-  return <EmployeesPage />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ detail?: string }>;
+}) {
+  const { detail } = await searchParams;
+  return <EmployeesPage initialDetailId={detail} />;
 }

@@ -14,9 +14,11 @@ import type {
   TrackingMethod,
   TransferStatus,
 } from '@gemerp/shared';
-import { api, fetchBinary, type QueryParams } from './api';
+import { api, fetchBinary, postBinary, type QueryParams } from './api';
+import { normalizeSearchResults, type GlobalSearchGroup } from './types';
 import type {
   Asset,
+  Attachment,
   AssetAssignment,
   AssetHistoryEntry,
   AssetMeterReading,
@@ -1167,6 +1169,17 @@ export function fetchAssetLabel(
   return fetchBinary(`/assets/${id}/label`, params, signal);
 }
 
+/**
+ * POST /assets/labels/batch — one printable HTML sheet of labels for up to
+ * 100 assets (requires asset.print).
+ */
+export function fetchAssetLabelSheet(
+  assetIds: string[],
+  size: '2x1' | '3x2' = '2x1',
+): Promise<{ blob: Blob; contentType: string }> {
+  return postBinary('/assets/labels/batch', { assetIds, size });
+}
+
 /* --------------- Employee custody & acknowledgments (§3.1 P3) ------------- */
 
 /** GET /employees/:id/assets — open custody assignments with nested asset. */
@@ -1887,4 +1900,85 @@ export function recordAssetMeterReading(
   body: { readingValue: string | number; meterType?: string; readingAt?: string; notes?: string },
 ): Promise<AssetMeterReading> {
   return api.post<AssetMeterReading>(`/assets/${assetId}/meter-readings`, body);
+}
+
+/* ========================================================================== */
+/* Phase 3.5 — Attachments & global search (docs/api-outline.md §4.6–4.7)     */
+/* ========================================================================== */
+
+/* --------------------------- Attachments (§4.6) --------------------------- */
+
+/**
+ * Parent resource discriminators — mirror the API's ATTACHMENT_PARENTS
+ * registry (apps/api/src/attachments/attachment-parents.ts), which reuses the
+ * audit-log resource_type vocabulary. Single source of truth for every panel
+ * mount.
+ */
+export const ATTACHMENT_RESOURCE_TYPES = {
+  asset: 'asset',
+  item: 'item',
+  employee: 'employee',
+  supplier: 'supplier',
+  purchaseOrder: 'purchase_order',
+  goodsReceipt: 'goods_receipt',
+  workOrder: 'maintenance_work_order',
+  transfer: 'transfer',
+  assetAssignment: 'asset_assignment',
+  stockTransaction: 'stock_transaction',
+} as const;
+
+export type AttachmentResourceType =
+  (typeof ATTACHMENT_RESOURCE_TYPES)[keyof typeof ATTACHMENT_RESOURCE_TYPES];
+
+export function listAttachments(
+  resourceType: AttachmentResourceType,
+  resourceId: string,
+  signal?: AbortSignal,
+): Promise<Paginated<Attachment> | Attachment[]> {
+  return api.get<Paginated<Attachment> | Attachment[]>(
+    '/attachments',
+    { resourceType, resourceId },
+    signal,
+  );
+}
+
+/**
+ * Multipart upload (UploadAttachmentDto): `{resourceType, resourceId,
+ * documentTypeId?}` + the `file` part. `documentTypeId` is a DOCUMENT_TYPE
+ * lookup id classifying the file.
+ */
+export function uploadAttachment(body: {
+  resourceType: AttachmentResourceType;
+  resourceId: string;
+  file: File;
+  documentTypeId?: string;
+}): Promise<Attachment> {
+  const form = new FormData();
+  form.append('resourceType', body.resourceType);
+  form.append('resourceId', body.resourceId);
+  if (body.documentTypeId) form.append('documentTypeId', body.documentTypeId);
+  form.append('file', body.file, body.file.name);
+  return api.postForm<Attachment>('/attachments', form);
+}
+
+/** Download path for use with the authenticated downloadFile helper. */
+export function attachmentDownloadPath(id: string): string {
+  return `/attachments/${id}/download`;
+}
+
+/** Archives the attachment (DELETE per contract §4.6 — never destroys bytes). */
+export function deleteAttachment(id: string): Promise<void> {
+  return api.delete<void>(`/attachments/${id}`);
+}
+
+/* -------------------------- Global search (§4.7) -------------------------- */
+
+/**
+ * GET /search?q= — results are already filtered by the caller's permissions
+ * and branch scope server-side; the payload is normalized into ordered
+ * entity groups for the topbar dropdown.
+ */
+export async function globalSearch(q: string, signal?: AbortSignal): Promise<GlobalSearchGroup[]> {
+  const payload = await api.get<unknown>('/search', { q }, signal);
+  return normalizeSearchResults(payload);
 }

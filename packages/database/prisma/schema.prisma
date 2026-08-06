@@ -1191,6 +1191,9 @@ model Asset {
   disposalMethodId   String?              @map("disposal_method_id") @db.Uuid
   disposalNotes      String?              @map("disposal_notes")
   notes              String?
+  /// Optimistic-concurrency token (api-outline 1.6): starts at 1, increments
+  /// on every successful mutation. PATCH must send the current value.
+  version            Int                  @default(1)
   archivedAt         DateTime?            @map("archived_at")
   createdAt          DateTime             @default(now()) @map("created_at")
   updatedAt          DateTime             @updatedAt @map("updated_at")

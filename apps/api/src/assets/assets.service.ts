@@ -41,6 +41,7 @@ export const ASSET_SELECT = {
   disposedAt: true,
   disposalNotes: true,
   notes: true,
+  version: true,
   archivedAt: true,
   createdAt: true,
   updatedAt: true,
@@ -79,8 +80,8 @@ export type AssetRow = Prisma.AssetGetPayload<{ select: typeof ASSET_SELECT }>;
 /**
  * Public asset shape. `scanToken` is deliberately never serialized — it only
  * ever leaves the API inside a rendered QR label. `acquisitionCost` appears
- * only with asset.view_cost. `version` is the optimistic-concurrency token
- * (derived — see versionOf).
+ * only with asset.view_cost. `version` is the integer optimistic-concurrency
+ * token (api-outline 1.6): starts at 1, increments on every mutation.
  */
 export interface AssetView
   extends Omit<AssetRow, 'acquisitionCost' | 'updatedAt'> {
@@ -153,19 +154,6 @@ const SORTABLE = {
   warrantyEndDate: 'warrantyEndDate',
   createdAt: 'createdAt',
 };
-
-/**
- * Optimistic-concurrency token for assets.
- *
- * The assets table has no integer `version` column (schema gap vs
- * api-outline 1.6), so the token is derived from `updatedAt` (epoch ms,
- * millisecond-precise in Postgres timestamp(3)). PATCH compares it atomically
- * via a conditional update — semantics match the integer-version contract:
- * stale token → 409 VERSION_CONFLICT.
- */
-export function versionOf(updatedAt: Date): number {
-  return updatedAt.getTime();
-}
 
 const OPEN_ASSIGNMENT_STATUSES: AssetAssignmentStatus[] = [
   AssetAssignmentStatus.PENDING_ACKNOWLEDGMENT,
@@ -580,8 +568,8 @@ export class AssetsService {
 
     // Atomic optimistic-concurrency update: 0 rows touched = stale version.
     const result = await this.prisma.asset.updateMany({
-      where: { id, updatedAt: new Date(dto.version) },
-      data,
+      where: { id, version: dto.version },
+      data: { ...data, version: { increment: 1 } },
     });
     if (result.count === 0) {
       throw AppException.versionConflict();
@@ -709,7 +697,6 @@ export class AssetsService {
       ...(includeCost
         ? { acquisitionCost: acquisitionCost?.toString() ?? null }
         : {}),
-      version: versionOf(row.updatedAt),
     };
   }
 

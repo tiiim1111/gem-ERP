@@ -9,6 +9,7 @@ import { getErrorMessage } from '@/lib/api';
 import {
   activateSupplier,
   archiveSupplier,
+  ATTACHMENT_RESOURCE_TYPES,
   deactivateSupplier,
   deleteSupplierContact,
   getSupplier,
@@ -48,6 +49,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
 import { poStatusBadge } from '@/components/procurement/badges';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { SupplierContactDialog } from './supplier-contact-dialog';
 import { SupplierFormDialog } from './supplier-form-dialog';
 
@@ -466,6 +468,14 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
         <div className="space-y-4 xl:col-span-2">
           <ContactsCard supplier={supplier} canUpdate={canUpdate} />
           {canViewPos ? <PurchaseSummaryCard supplierId={supplier.id} /> : null}
+          {can(PERMISSIONS.attachment.view) ? (
+            <AttachmentsPanel
+              resourceType={ATTACHMENT_RESOURCE_TYPES.supplier}
+              resourceId={supplier.id}
+              managePermissions={[PERMISSIONS.supplier.update]}
+              description="Accreditation papers, contracts, and other supplier documents."
+            />
+          ) : null}
         </div>
       </div>
 

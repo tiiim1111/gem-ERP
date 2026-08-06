@@ -53,7 +53,12 @@ import {
   EmployeeSeparationDialog,
 } from './employee-status-dialogs';
 
-export function EmployeesPage() {
+export function EmployeesPage({
+  initialDetailId,
+}: {
+  /** Employee whose detail sheet opens on load (global-search deep link). */
+  initialDetailId?: string;
+}) {
   const { can } = useSession();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -70,7 +75,13 @@ export function EmployeesPage() {
   // Dialog state
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editTarget, setEditTarget] = React.useState<Employee | null>(null);
-  const [detailId, setDetailId] = React.useState<string | null>(null);
+  const [detailId, setDetailId] = React.useState<string | null>(initialDetailId ?? null);
+
+  // A global-search hit while already on /employees only changes the URL
+  // param — sync it into the sheet state.
+  React.useEffect(() => {
+    if (initialDetailId) setDetailId(initialDetailId);
+  }, [initialDetailId]);
   const [deactivateTarget, setDeactivateTarget] = React.useState<Employee | null>(null);
   const [activateTarget, setActivateTarget] = React.useState<Employee | null>(null);
   const [separateTarget, setSeparateTarget] = React.useState<Employee | null>(null);

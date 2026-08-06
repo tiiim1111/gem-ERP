@@ -29,9 +29,9 @@ register.
 | 0 | Discovery & architecture | ✅ Delivered (this session) |
 | 1 | Foundation | 🟡 Delivered — verification pending (e2e against live DB deferred) |
 | 2 | Employees, lookups, and catalog | ✅ Delivered |
-| 3 | Inventory and serialized assets | ✅ Delivered (attachments + global search deferred to Phase 3.5) |
-| 4 | Procurement | 📋 Planned |
-| 5 | Maintenance | 📋 Planned |
+| 3 | Inventory and serialized assets | ✅ Delivered (Phase 3.5 deferrals delivered 2026-08-06: attachments, global search, assets.version, inventory.approve, XLSX import, batch labels) |
+| 4 | Procurement | ✅ Delivered (2026-08-05) |
+| 5 | Maintenance | ✅ Delivered (2026-08-05) |
 | 6 | Counts, approvals, and notifications | 📋 Planned |
 | 7 | Analytics and reports | 📋 Planned |
 | 8 | Hardening and deployment | 📋 Planned |
@@ -283,13 +283,17 @@ Manual/scripted checks against the running stack:
 - [x] Seed extension: opening balances, sample assets, an active assignment,
       a low-stock example.
 
-### Deferred to Phase 3.5 (honest gaps, tracked)
+### Deferred to Phase 3.5 (honest gaps, tracked) — ✅ delivered 2026-08-06
 
-- Attachments module (api-outline §4.6) and global search (§4.7).
-- XLSX import/export (CSV shipped); draft-line editing UI (cancel+recreate flow shipped).
-- Approval-framework routing for controlled actions (Phase 6; actions run under direct permissions, fully audited, self-approval already blocked).
-- `assets.version` column (PATCH uses an atomic updatedAt guard — same 409 contract); `inventory.approve` permission string (approve uses `approval.act` from the shared catalog).
-- Batch label printing UI and `/employees/:id/issuances` UI (endpoints live).
+- [x] Attachments module (api-outline §4.6) — S3/MinIO storage, 10 polymorphic parents, parent-permission re-authorization, streamed downloads, soft archive; panel mounted on 7 detail pages. Graceful 503 when S3_ENABLED=false.
+- [x] Global search (§4.7) — 9 entity types, branch-scoped + permission-filtered; topbar UI with Ctrl/Cmd+K.
+- [x] XLSX import (exceljs; CSV path untouched; templates stay CSV). XLSX *export* remains Phase 7 with the other report exports.
+- [x] `assets.version` column (migration `20260805090000`; PATCH + all 13 lifecycle transitions increment; 409 VERSION_CONFLICT) + asset edit dialog UI.
+- [x] `inventory.approve` permission string in the shared catalog (stock-transaction approve/reject routes migrated off `approval.act`).
+- [x] Batch label printing UI (multi-select on assets list → 2×1/3×2 label sheet).
+- Approval-framework routing for controlled actions → still Phase 6 (by design).
+- `/employees/:id/issuances` UI → rolled into Phase 7 reporting screens (endpoint live).
+- Draft-line editing UI → cancel+recreate flow shipped; dedicated editor not planned unless requested.
 
 ### Verification criteria
 

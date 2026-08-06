@@ -36,6 +36,7 @@ import { PERMISSIONS } from '@gemerp/shared';
 import { cn, initials } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
 import { ChangePasswordDialog } from '@/components/auth/change-password-dialog';
+import { GlobalSearch } from '@/components/search/global-search';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -313,7 +314,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="lg:pl-60">
         {/* Top bar */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b bg-background px-4 sm:px-6">
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -323,7 +324,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu aria-hidden />
             </Button>
-            <span className="text-sm font-semibold lg:hidden">GEM-ENI</span>
+            <span className="hidden text-sm font-semibold sm:inline lg:hidden">GEM-ENI</span>
+          </div>
+          <div className="flex flex-1 justify-center">
+            <GlobalSearch />
           </div>
           <UserMenu onChangePassword={() => setChangePasswordOpen(true)} />
         </header>

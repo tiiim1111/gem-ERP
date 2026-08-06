@@ -52,6 +52,7 @@ function assetRow(overrides: Record<string, unknown> = {}) {
     disposedAt: null,
     disposalNotes: null,
     notes: null,
+    version: 1,
     archivedAt: null,
     createdAt: new Date('2026-07-01T00:00:00.000Z'),
     updatedAt: new Date('2026-07-10T12:00:00.000Z'),
@@ -316,7 +317,7 @@ describe('AssetsService.update', () => {
     service = makeService(mocks);
   });
 
-  it('rejects a stale version with 409 VERSION_CONFLICT (updatedAt-derived lock)', async () => {
+  it('rejects a stale version with 409 VERSION_CONFLICT (integer version lock)', async () => {
     const row = assetRow();
     mocks.prisma.asset.findUnique.mockResolvedValue(row);
     mocks.prisma.asset.updateMany.mockResolvedValue({ count: 0 });
@@ -335,12 +336,12 @@ describe('AssetsService.update', () => {
     expectAppError(caught, 409, 'VERSION_CONFLICT');
     expect(mocks.prisma.asset.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'asset-1', updatedAt: new Date(12345) },
+        where: { id: 'asset-1', version: 12345 },
       }),
     );
   });
 
-  it('accepts the matching version and audits old/new values', async () => {
+  it('accepts the matching version, increments it, and audits old/new values', async () => {
     const row = assetRow();
     mocks.prisma.asset.findUnique.mockResolvedValue(row);
     mocks.prisma.asset.updateMany.mockResolvedValue({ count: 1 });
@@ -348,10 +349,16 @@ describe('AssetsService.update', () => {
     const view = await service.update(
       superAdmin,
       'asset-1',
-      { version: row.updatedAt.getTime(), notes: 'refreshed' },
+      { version: row.version, notes: 'refreshed' },
       {},
     );
     expect(view.id).toBe('asset-1');
+    expect(mocks.prisma.asset.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'asset-1', version: row.version },
+        data: expect.objectContaining({ version: { increment: 1 } }),
+      }),
+    );
     expect(mocks.audit.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'asset.updated' }),
     );
@@ -407,8 +414,8 @@ describe('AssetsService scoping and cost gating', () => {
     const shown = service.toView(row as any, true);
     expect('acquisitionCost' in hidden).toBe(false);
     expect(shown.acquisitionCost).toBe('65000.00');
-    // The optimistic-concurrency token mirrors updatedAt.
-    expect(shown.version).toBe(row.updatedAt.getTime());
+    // The optimistic-concurrency token is the integer version column.
+    expect(shown.version).toBe(row.version);
   });
 
   it('returns 404 for an out-of-scope asset (no existence leak)', async () => {

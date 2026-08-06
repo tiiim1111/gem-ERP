@@ -2011,3 +2011,306 @@ export function scanSummaryDetail(resolution: ScanResolution): string | null {
   if (typeof serial === 'string' && serial) parts.push(`SN ${serial}`);
   return parts.length > 0 ? parts.join(' · ') : null;
 }
+
+/* ========================================================================== */
+/* Phase 3.5 — Attachments (contract §4.6)                                    */
+/* ========================================================================== */
+
+/**
+ * Attachment metadata row (bytes live in S3/MinIO; downloads proxy through
+ * the API). Field names mirror the persistence model with the usual tolerant
+ * aliases.
+ */
+export interface Attachment {
+  id: string;
+  resourceType?: string;
+  resourceId?: string;
+  fileName?: string;
+  filename?: string;
+  originalName?: string;
+  mimeType?: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  size?: number | null;
+  documentTypeId?: string | null;
+  documentType?: { id: string; code?: string; name?: string } | null;
+  kind?: string | null;
+  branchId?: string | null;
+  uploadedById?: string | null;
+  uploadedBy?: UserRef | null;
+  uploader?: UserRef | null;
+  archivedAt?: string | null;
+  uploadedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function attachmentFileName(attachment: Attachment): string {
+  return (
+    attachment.fileName ?? attachment.filename ?? attachment.originalName ?? attachment.id
+  );
+}
+
+export function attachmentMimeType(attachment: Attachment): string | null {
+  return attachment.mimeType ?? attachment.contentType ?? null;
+}
+
+export function attachmentSizeBytes(attachment: Attachment): number | null {
+  return attachment.sizeBytes ?? attachment.size ?? null;
+}
+
+export function attachmentUploader(attachment: Attachment): UserRef | null {
+  return attachment.uploadedBy ?? attachment.uploader ?? null;
+}
+
+export function attachmentUploadedAt(attachment: Attachment): string | null {
+  return attachment.uploadedAt ?? attachment.createdAt ?? null;
+}
+
+/** DOCUMENT_TYPE lookup label, or the raw kind string when not hydrated. */
+export function attachmentKindLabel(attachment: Attachment): string | null {
+  if (attachment.documentType) {
+    return attachment.documentType.name ?? attachment.documentType.code ?? null;
+  }
+  return attachment.kind ?? null;
+}
+
+/** "2048" -> "2.0 KB"; null-safe. */
+export function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
+/* ========================================================================== */
+/* Phase 3.5 — Global search (contract §4.7)                                  */
+/* ========================================================================== */
+
+/**
+ * One global-search hit. The server serializes each entity with its natural
+ * fields, so every label field is optional and read through helpers.
+ */
+export interface GlobalSearchResult {
+  id: string;
+  /** Entity discriminator (e.g. "asset", "purchase_order"). */
+  type?: string;
+  resourceType?: string;
+  entity?: string;
+  /** Common label fields across entity payloads. */
+  assetTag?: string | null;
+  tag?: string | null;
+  serialNumber?: string | null;
+  sku?: string | null;
+  name?: string | null;
+  displayName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  employeeNumber?: string | null;
+  legalName?: string | null;
+  tradeName?: string | null;
+  code?: string | null;
+  number?: string | null;
+  poNumber?: string | null;
+  receiptNumber?: string | null;
+  workOrderNumber?: string | null;
+  transactionNumber?: string | null;
+  transferNumber?: string | null;
+  status?: string | null;
+  /** Nested summaries some entities carry. */
+  item?: { id?: string; sku?: string; name?: string } | null;
+  supplier?: { id?: string; code?: string; legalName?: string; tradeName?: string | null } | null;
+  branch?: { id?: string; code?: string; name?: string } | null;
+  /** Optional pre-computed display fields, when the API provides them. */
+  title?: string | null;
+  label?: string | null;
+  subtitle?: string | null;
+  description?: string | null;
+}
+
+/** Canonical entity keys the search UI groups by. */
+export type SearchEntityType =
+  | 'asset'
+  | 'item'
+  | 'employee'
+  | 'supplier'
+  | 'purchase_order'
+  | 'goods_receipt'
+  | 'work_order'
+  | 'stock_transaction'
+  | 'transfer'
+  | 'lot';
+
+/** "purchaseOrders" / "PURCHASE_ORDER" / "purchase-orders" -> "purchase_order". */
+function canonicalSearchType(raw: string): SearchEntityType | null {
+  const normalized = raw
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase()
+    .replace(/s$/, '');
+  switch (normalized) {
+    case 'asset':
+      return 'asset';
+    case 'item':
+      return 'item';
+    case 'employee':
+      return 'employee';
+    case 'supplier':
+      return 'supplier';
+    case 'purchase_order':
+    case 'po':
+      return 'purchase_order';
+    case 'goods_receipt':
+    case 'receipt':
+      return 'goods_receipt';
+    case 'work_order':
+    case 'maintenance_work_order':
+      return 'work_order';
+    case 'stock_transaction':
+    case 'transaction':
+      return 'stock_transaction';
+    case 'transfer':
+      return 'transfer';
+    case 'lot':
+      return 'lot';
+    default:
+      return null;
+  }
+}
+
+export interface GlobalSearchGroup {
+  type: SearchEntityType;
+  results: GlobalSearchResult[];
+}
+
+const SEARCH_GROUP_ORDER: SearchEntityType[] = [
+  'asset',
+  'item',
+  'employee',
+  'supplier',
+  'purchase_order',
+  'goods_receipt',
+  'work_order',
+  'stock_transaction',
+  'transfer',
+  'lot',
+];
+
+function isSearchResult(value: unknown): value is GlobalSearchResult & Record<string, unknown> {
+  return !!value && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'string';
+}
+
+/**
+ * Normalize any of the plausible GET /search payload shapes — a flat result
+ * array (each row carrying a `type`), `{ results: [...] }`, or an object
+ * keyed by entity group (`{ assets: [...], purchaseOrders: [...] }`) — into
+ * ordered groups. Unrecognized rows/groups are dropped rather than crashing.
+ */
+export function normalizeSearchResults(payload: unknown): GlobalSearchGroup[] {
+  const buckets = new Map<SearchEntityType, GlobalSearchResult[]>();
+  const add = (type: SearchEntityType | null, row: GlobalSearchResult) => {
+    if (!type) return;
+    const bucket = buckets.get(type) ?? [];
+    if (!bucket.some((existing) => existing.id === row.id)) bucket.push(row);
+    buckets.set(type, bucket);
+  };
+  const addFlat = (rows: unknown[]) => {
+    for (const row of rows) {
+      if (!isSearchResult(row)) continue;
+      const raw = row.type ?? row.resourceType ?? row.entity;
+      add(typeof raw === 'string' ? canonicalSearchType(raw) : null, row);
+    }
+  };
+
+  if (Array.isArray(payload)) {
+    addFlat(payload);
+  } else if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    const flat = record['results'] ?? record['data'];
+    if (Array.isArray(flat)) {
+      addFlat(flat);
+    } else {
+      for (const [key, value] of Object.entries(record)) {
+        if (!Array.isArray(value)) continue;
+        const type = canonicalSearchType(key);
+        for (const row of value) {
+          if (isSearchResult(row)) add(type, row);
+        }
+      }
+    }
+  }
+
+  return SEARCH_GROUP_ORDER.filter((type) => buckets.has(type)).map((type) => ({
+    type,
+    results: buckets.get(type)!,
+  }));
+}
+
+/** Primary display line for a search hit. */
+export function searchResultTitle(type: SearchEntityType, row: GlobalSearchResult): string {
+  if (row.title) return row.title;
+  if (row.label) return row.label;
+  switch (type) {
+    case 'asset':
+      return row.assetTag ?? row.tag ?? row.serialNumber ?? row.id.slice(0, 8);
+    case 'item':
+      return row.name ?? row.sku ?? row.id.slice(0, 8);
+    case 'employee': {
+      const name =
+        row.displayName ?? [row.firstName, row.lastName].filter(Boolean).join(' ');
+      return name || (row.employeeNumber ?? row.id.slice(0, 8));
+    }
+    case 'supplier':
+      return row.tradeName ?? row.legalName ?? row.name ?? row.code ?? row.id.slice(0, 8);
+    case 'purchase_order':
+      return row.poNumber ?? row.number ?? row.id.slice(0, 8);
+    case 'goods_receipt':
+      return row.receiptNumber ?? row.number ?? row.id.slice(0, 8);
+    case 'work_order':
+      return row.workOrderNumber ?? row.number ?? row.id.slice(0, 8);
+    case 'stock_transaction':
+      return row.transactionNumber ?? row.number ?? row.id.slice(0, 8);
+    case 'transfer':
+      return row.transferNumber ?? row.number ?? row.id.slice(0, 8);
+    case 'lot':
+      return row.number ?? row.code ?? row.name ?? row.id.slice(0, 8);
+  }
+}
+
+/** Secondary display line for a search hit (item, serial, supplier, status…). */
+export function searchResultSubtitle(
+  type: SearchEntityType,
+  row: GlobalSearchResult,
+): string | null {
+  const parts: string[] = [];
+  if (row.subtitle || row.description) {
+    // Server-computed context line (SearchResult.subtitle) + status.
+    parts.push(row.subtitle ?? row.description ?? '');
+  } else if (type === 'asset') {
+    if (row.item?.name || row.item?.sku) parts.push(row.item.name ?? row.item.sku ?? '');
+    if (row.serialNumber) parts.push(`SN ${row.serialNumber}`);
+  } else if (type === 'item') {
+    if (row.sku && row.name) parts.push(row.sku);
+  } else if (type === 'employee') {
+    if (row.employeeNumber) parts.push(row.employeeNumber);
+  } else if (type === 'supplier') {
+    if (row.code) parts.push(row.code);
+  } else if (type === 'purchase_order' || type === 'goods_receipt') {
+    const supplier = row.supplier;
+    if (supplier) {
+      parts.push(supplier.tradeName ?? supplier.legalName ?? supplier.code ?? '');
+    }
+  } else if (type === 'work_order' || type === 'stock_transaction' || type === 'transfer') {
+    if (row.item?.name) parts.push(row.item.name);
+  } else if (type === 'lot') {
+    if (row.item?.name || row.item?.sku) parts.push(row.item.name ?? row.item.sku ?? '');
+  }
+  if (row.status) {
+    const spaced = row.status.replace(/[_-]+/g, ' ').toLowerCase();
+    parts.push(spaced.charAt(0).toUpperCase() + spaced.slice(1));
+  }
+  const text = parts.filter(Boolean).join(' · ');
+  return text || null;
+}

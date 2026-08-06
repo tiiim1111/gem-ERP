@@ -77,7 +77,10 @@ export class AssetLifecycleService {
 
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.asset.update({ where: { id }, data: { status: target } });
+      await tx.asset.update({
+        where: { id },
+        data: { status: target, version: { increment: 1 } },
+      });
       await this.writeStatusHistory(tx, row, target, now, ctx, 'activate');
     });
     await this.logTransition('asset.activated', row, target, ctx);
@@ -180,6 +183,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           custodianId: dto.employeeId ?? null,
           departmentId: dto.departmentId ?? row.department?.id ?? null,
@@ -376,6 +380,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           custodianId: null,
           conditionId: dto.conditionId,
@@ -498,6 +503,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           conditionId: dto.conditionId,
           lastInspectionAt: now,
@@ -593,6 +599,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           maintenanceRequired: outcome === AssetLifecycleStatus.DAMAGED,
           ...(dto.conditionId ? { conditionId: dto.conditionId } : {}),
@@ -651,6 +658,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           custodianId: null,
           maintenanceRequired: true,
@@ -707,7 +715,7 @@ export class AssetLifecycleService {
       });
       await tx.asset.update({
         where: { id },
-        data: { status: target, custodianId: null },
+        data: { status: target, custodianId: null, version: { increment: 1 } },
       });
       await tx.assetMovement.create({
         data: {
@@ -769,7 +777,12 @@ export class AssetLifecycleService {
     await this.prisma.$transaction(async (tx) => {
       await tx.asset.update({
         where: { id },
-        data: { status: target, retiredAt: now, custodianId: null },
+        data: {
+          status: target,
+          retiredAt: now,
+          custodianId: null,
+          version: { increment: 1 },
+        },
       });
       await this.writeStatusHistory(tx, row, target, now, ctx, event, dto.reason);
     });
@@ -800,6 +813,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           disposedAt: now,
           disposalMethodId: dto.disposalMethodId,
@@ -834,6 +848,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           disposedAt: null,
           disposalMethodId: null,
@@ -911,6 +926,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           custodianId: employee.id,
           ...(dto.conditionId ? { conditionId: dto.conditionId } : {}),
@@ -999,6 +1015,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           branchId: toBranchId,
           ...(dto.warehouseId ? { warehouseId: dto.warehouseId } : {}),
           ...(dto.locationId !== undefined
@@ -1062,6 +1079,7 @@ export class AssetLifecycleService {
       await tx.asset.update({
         where: { id },
         data: {
+          version: { increment: 1 },
           status: target,
           ...(options.maintenanceRequired !== undefined
             ? { maintenanceRequired: options.maintenanceRequired }

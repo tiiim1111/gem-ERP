@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { PERMISSIONS } from '@gemerp/shared';
 import { isApiClientError } from '@/lib/api';
 import {
+  ATTACHMENT_RESOURCE_TYPES,
   getEmployee,
   listEmployeeAcknowledgments,
   listEmployeeCustody,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/types';
 import { formatDate, humanize } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { assetStatusBadge } from '@/components/inventory/badges';
 import { Badge } from '@/components/ui/badge';
 import { ErrorState } from '@/components/ui/error-state';
@@ -279,6 +281,15 @@ export function EmployeeDetailSheet({
           ) : null}
 
           <CustodySection employeeId={employee.id} />
+
+          {can(PERMISSIONS.attachment.view) ? (
+            <AttachmentsPanel
+              resourceType={ATTACHMENT_RESOURCE_TYPES.employee}
+              resourceId={employee.id}
+              managePermissions={[PERMISSIONS.employee.update]}
+              variant="bare"
+            />
+          ) : null}
         </div>
       ) : null}
     </Sheet>

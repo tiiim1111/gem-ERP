@@ -3,10 +3,11 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BadgeCheck } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Pencil } from 'lucide-react';
 import { getErrorMessage } from '@/lib/api';
 import {
   acknowledgeAsset,
+  ATTACHMENT_RESOURCE_TYPES,
   getAsset,
   listAssetAssignments,
   listAssetHistory,
@@ -50,7 +51,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { assetStatusBadge } from '@/components/inventory/badges';
 import { AssetMaintenanceSection } from '@/components/maintenance/asset-maintenance-section';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { AssetActionDialogs } from './asset-action-dialogs';
+import { AssetEditDialog } from './asset-edit-dialog';
 import { AssetLabelPanel } from './asset-label-panel';
 
 /** Buttons that read as destructive/consequential. */
@@ -142,6 +145,7 @@ export function AssetDetail({
   const [openAction, setOpenAction] = React.useState<AssetAction | null>(() =>
     initialAction && isKnownAssetAction(initialAction) ? initialAction : null,
   );
+  const [editOpen, setEditOpen] = React.useState(false);
   const [tab, setTab] = React.useState('assignments');
 
   const assetQuery = useQuery({
@@ -208,6 +212,10 @@ export function AssetDetail({
     !!myEmployeeId &&
     (openAssignment.employee?.id === myEmployeeId || openAssignment.employeeId === myEmployeeId);
 
+  // Non-lifecycle field edits (PATCH) — archived/disposed records are frozen.
+  const canEdit =
+    can(PERMISSIONS.asset.update) && !asset.archivedAt && asset.status !== 'DISPOSED';
+
   const warrantyDays = daysUntil(asset.warrantyEndDate);
   const location = asset.storageLocation ?? asset.location ?? null;
   const historyEntries = historyQuery.data ? unwrapList(historyQuery.data) : [];
@@ -223,6 +231,11 @@ export function AssetDetail({
             <Link href="/assets" className={buttonVariants({ variant: 'ghost' })}>
               <ArrowLeft aria-hidden /> All assets
             </Link>
+            {canEdit ? (
+              <Button variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil aria-hidden /> Edit
+              </Button>
+            ) : null}
             {canAcknowledge ? (
               <Button
                 variant="outline"
@@ -360,6 +373,9 @@ export function AssetDetail({
               {can(PERMISSIONS.maintenanceWorkOrder.view) ? (
                 <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
               ) : null}
+              {can(PERMISSIONS.attachment.view) ? (
+                <TabsTrigger value="attachments">Attachments</TabsTrigger>
+              ) : null}
             </TabsList>
 
             <TabsContent value="assignments">
@@ -442,11 +458,23 @@ export function AssetDetail({
                 <AssetMaintenanceSection asset={asset} />
               </TabsContent>
             ) : null}
+
+            {can(PERMISSIONS.attachment.view) ? (
+              <TabsContent value="attachments">
+                <AttachmentsPanel
+                  resourceType={ATTACHMENT_RESOURCE_TYPES.asset}
+                  resourceId={asset.id}
+                  managePermissions={[PERMISSIONS.asset.update]}
+                  variant="bare"
+                />
+              </TabsContent>
+            ) : null}
           </Tabs>
         </CardContent>
       </Card>
 
       <AssetActionDialogs asset={asset} action={openAction} onClose={() => setOpenAction(null)} />
+      <AssetEditDialog asset={asset} open={editOpen} onOpenChange={setEditOpen} />
     </>
   );
 }

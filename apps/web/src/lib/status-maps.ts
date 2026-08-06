@@ -96,8 +96,11 @@ export function transactionTypeNeedsReason(type: string): boolean {
 
 /* --------------- Stock transaction document actions ----------------------- */
 
-/** `inventory.approve` per api-outline Appendix A (not in the shared catalog yet). */
-export const INVENTORY_APPROVE_PERMISSIONS = ['inventory.approve', PERMISSIONS.approval.act];
+/** Approve/reject pending stock transactions (Phase 3.5 catalog entry). */
+export const INVENTORY_APPROVE_PERMISSIONS = [
+  PERMISSIONS.inventory.approve,
+  PERMISSIONS.approval.act,
+];
 
 export type StockTransactionAction =
   | 'submit'

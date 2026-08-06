@@ -44,14 +44,14 @@ const TYPE_PARAM = {
   description: 'Import type.',
 };
 
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // 2 MiB of CSV ≈ tens of thousands of rows
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MiB — thousands of rows in CSV or XLSX
 
 /**
  * Staged imports (spec §24). Permissions are per type (employee.import /
  * item.import / lookup.manage), so the service enforces them dynamically —
  * every route still requires an authenticated session via the global guards.
  *
- * CSV only in Phase 2; XLSX support is deferred to Phase 8 polish.
+ * Uploads may be CSV or XLSX (Phase 3.5); templates download as CSV.
  */
 @ApiTags('imports')
 @ApiCookieAuth()
@@ -92,7 +92,7 @@ export class ImportsController {
   @ApiParam(TYPE_PARAM)
   @ApiOperation({
     summary:
-      'Parse + validate a CSV upload (no writes): row-level errors, preview, staging ID.',
+      'Parse + validate a CSV or XLSX upload (no writes): row-level errors, preview, staging ID.',
   })
   validate(
     @CurrentUser() user: AuthUser,
@@ -102,10 +102,22 @@ export class ImportsController {
   ): Promise<ValidateResult> {
     if (!file || !file.buffer || file.buffer.length === 0) {
       throw AppException.validation([
-        { field: 'file', message: 'A non-empty CSV file upload is required.' },
+        {
+          field: 'file',
+          message: 'A non-empty CSV or XLSX file upload is required.',
+        },
       ]);
     }
-    return this.imports.validate(user, type, file.buffer, auditContextFrom(req));
+    return this.imports.validate(
+      user,
+      type,
+      {
+        buffer: file.buffer,
+        originalName: file.originalname ?? '',
+        mimeType: file.mimetype ?? '',
+      },
+      auditContextFrom(req),
+    );
   }
 
   @Post(':type/commit')

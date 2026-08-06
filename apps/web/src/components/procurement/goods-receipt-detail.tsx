@@ -4,8 +4,15 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Ban, CircleAlert, Undo2, UploadCloud } from 'lucide-react';
+import { PERMISSIONS } from '@gemerp/shared';
 import { getErrorMessage, isApiClientError } from '@/lib/api';
-import { cancelGoodsReceipt, getGoodsReceipt, postGoodsReceipt, reverseGoodsReceipt } from '@/lib/endpoints';
+import {
+  ATTACHMENT_RESOURCE_TYPES,
+  cancelGoodsReceipt,
+  getGoodsReceipt,
+  postGoodsReceipt,
+  reverseGoodsReceipt,
+} from '@/lib/endpoints';
 import { useIdempotencyKey } from '@/lib/idempotency';
 import {
   formatQuantity,
@@ -37,11 +44,12 @@ import { ReasonDialog } from '@/components/ui/reason-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { receiptStatusBadge } from '@/components/procurement/badges';
 
 export function GoodsReceiptDetail({ receiptId }: { receiptId: string }) {
   const queryClient = useQueryClient();
-  const { canAny } = useSession();
+  const { can, canAny } = useSession();
   const { toast } = useToast();
 
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -297,6 +305,15 @@ export function GoodsReceiptDetail({ receiptId }: { receiptId: string }) {
           )}
         </CardContent>
       </Card>
+
+      {can(PERMISSIONS.attachment.view) ? (
+        <AttachmentsPanel
+          resourceType={ATTACHMENT_RESOURCE_TYPES.goodsReceipt}
+          resourceId={receipt.id}
+          managePermissions={[PERMISSIONS.procurementReceipt.update]}
+          description="Delivery receipts, invoices, and inspection photos."
+        />
+      ) : null}
 
       <ConfirmDialog
         open={confirmPost}

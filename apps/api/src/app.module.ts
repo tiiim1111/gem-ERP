@@ -26,6 +26,8 @@ import { AssetsModule } from './assets/assets.module';
 import { ScanModule } from './scan/scan.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { AttachmentsModule } from './attachments/attachments.module';
+import { SearchModule } from './search/search.module';
 
 const env = loadEnv();
 
@@ -88,6 +90,9 @@ const env = loadEnv();
     ProcurementModule,
     // Phase 5: maintenance plans, work orders, parts issues, meter readings.
     MaintenanceModule,
+    // Phase 3.5: file attachments (S3/MinIO) and cross-entity global search.
+    AttachmentsModule,
+    SearchModule,
     HealthModule,
   ],
   providers: [

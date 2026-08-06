@@ -131,11 +131,9 @@ export class StockTransactionsController {
     return this.transactions.submit(user, id, auditContextFrom(req));
   }
 
-  // The shared catalog has no inventory.approve string; approval decisions use
-  // approval.act (docs/api-outline.md appendix A) until Phase 6 refines it.
   @Post(':id/approve')
   @HttpCode(200)
-  @RequirePermissions(PERMISSIONS.approval.act)
+  @RequirePermissions(PERMISSIONS.inventory.approve)
   @ApiOperation({
     summary: 'Approve a pending transaction (self-approval → 409 SELF_APPROVAL_FORBIDDEN).',
   })
@@ -150,7 +148,7 @@ export class StockTransactionsController {
 
   @Post(':id/reject')
   @HttpCode(200)
-  @RequirePermissions(PERMISSIONS.approval.act)
+  @RequirePermissions(PERMISSIONS.inventory.approve)
   @ApiOperation({ summary: 'Reject a pending transaction (comment mandatory).' })
   reject(
     @CurrentUser() user: AuthUser,

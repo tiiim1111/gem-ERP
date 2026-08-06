@@ -24,6 +24,7 @@ import {
 import { PERMISSIONS, WorkOrderStatus } from '@gemerp/shared';
 import { getErrorMessage, isApiClientError, isVersionConflict } from '@/lib/api';
 import {
+  ATTACHMENT_RESOURCE_TYPES,
   cancelWorkOrder,
   completeWorkOrderTask,
   getWorkOrder,
@@ -75,6 +76,7 @@ import {
 } from '@/lib/status-maps';
 import { cn, formatDate, formatDateTime } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -1007,6 +1009,18 @@ export function WorkOrderDetail({ workOrderId }: { workOrderId: string }) {
         canAddParts={canAddParts}
         onAddParts={() => setDialog('parts')}
       />
+
+      {can(PERMISSIONS.attachment.view) ? (
+        <AttachmentsPanel
+          resourceType={ATTACHMENT_RESOURCE_TYPES.workOrder}
+          resourceId={wo.id}
+          managePermissions={[
+            PERMISSIONS.maintenanceWorkOrder.update,
+            PERMISSIONS.maintenanceWorkOrder.manage,
+          ]}
+          description="Service reports, vendor quotes, and before/after photos."
+        />
+      ) : null}
 
       {/* Confirm dialogs */}
       <ConfirmDialog

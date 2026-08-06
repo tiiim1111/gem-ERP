@@ -11,6 +11,7 @@ import { ArrowLeft, ArrowRight, Plus, Power, PowerOff, Trash2 } from 'lucide-rea
 import { ItemBusinessCategory, PERMISSIONS, TrackingMethod } from '@gemerp/shared';
 import { getErrorMessage, isApiClientError, isVersionConflict } from '@/lib/api';
 import {
+  ATTACHMENT_RESOURCE_TYPES,
   createItem,
   createUomConversion,
   deleteUomConversion,
@@ -28,6 +29,7 @@ import {
 } from '@/lib/endpoints';
 import { formatFactor, type Item } from '@/lib/types';
 import { useSession } from '@/components/auth/session-provider';
+import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -891,6 +893,14 @@ export function ItemForm({ itemId }: { itemId?: string }) {
         <div className="mt-4 space-y-4">
           <ItemBarcodesCard item={item} canManage={canUpdate} />
           <ItemWarehouseSettingsCard item={item} canManage={canUpdate} />
+          {can(PERMISSIONS.attachment.view) ? (
+            <AttachmentsPanel
+              resourceType={ATTACHMENT_RESOURCE_TYPES.item}
+              resourceId={item.id}
+              managePermissions={[PERMISSIONS.item.update]}
+              description="Datasheets, manuals, and product photos."
+            />
+          ) : null}
         </div>
       ) : null}
 

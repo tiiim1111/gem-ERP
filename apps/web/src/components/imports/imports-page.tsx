@@ -303,8 +303,8 @@ export function ImportsPage() {
 
   const acceptFile = (candidate: File | null) => {
     if (!candidate) return;
-    if (!/\.csv$/i.test(candidate.name)) {
-      setStepError('Only CSV files are supported for now.');
+    if (!/\.(csv|xlsx)$/i.test(candidate.name)) {
+      setStepError('Only CSV (.csv) and Excel (.xlsx) files are supported.');
       return;
     }
     setStepError(null);
@@ -314,7 +314,10 @@ export function ImportsPage() {
   if (!hasAccess) {
     return (
       <>
-        <PageHeader title="Imports" description="Bulk-load employees, items, and lookup values from CSV." />
+        <PageHeader
+          title="Imports"
+          description="Bulk-load employees, items, and lookup values from CSV or Excel."
+        />
         <Card>
           <CardContent className="p-0 sm:p-0">
             <EmptyState
@@ -335,7 +338,7 @@ export function ImportsPage() {
     <>
       <PageHeader
         title="Imports"
-        description="Staged CSV imports: validate first, review row-level errors, then commit."
+        description="Staged imports from CSV or Excel (.xlsx): validate first, review row-level errors, then commit."
       />
       <Stepper current={commitResult ? 4 : step} />
 
@@ -345,7 +348,8 @@ export function ImportsPage() {
           <CardHeader>
             <CardTitle>1 · Choose what to import</CardTitle>
             <CardDescription>
-              Download the matching template, fill it in, then continue to upload. CSV only for now.
+              Download the matching template, fill it in, then continue to upload. Templates are
+              CSV; uploads may be CSV or Excel (.xlsx).
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -396,7 +400,7 @@ export function ImportsPage() {
       {step === 2 && type ? (
         <Card>
           <CardHeader>
-            <CardTitle>2 · Upload the {selectedConfig?.label.toLowerCase()} CSV</CardTitle>
+            <CardTitle>2 · Upload the {selectedConfig?.label.toLowerCase()} file</CardTitle>
             <CardDescription>
               The file is parsed and validated without writing anything.
             </CardDescription>
@@ -406,7 +410,7 @@ export function ImportsPage() {
             <div
               role="button"
               tabIndex={0}
-              aria-label="Upload CSV file"
+              aria-label="Upload import file"
               onClick={() => fileInputRef.current?.click()}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -431,12 +435,12 @@ export function ImportsPage() {
               )}
             >
               <Upload className="h-6 w-6 text-muted-foreground" aria-hidden />
-              <p className="text-sm font-medium">Drag &amp; drop the CSV here, or click to browse</p>
-              <p className="text-xs text-muted-foreground">.csv up to a few thousand rows</p>
+              <p className="text-sm font-medium">Drag &amp; drop the file here, or click to browse</p>
+              <p className="text-xs text-muted-foreground">.csv or .xlsx, up to a few thousand rows</p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv,text/csv"
+                accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="sr-only"
                 aria-hidden
                 tabIndex={-1}

@@ -49,6 +49,8 @@ export const PERMISSIONS = {
     adjust: 'inventory.adjust',
     /** Submit a draft stock transaction for approval. */
     submit: 'inventory.submit',
+    /** Approve or reject a pending stock transaction. */
+    approve: 'inventory.approve',
     /** Post an approved/draft stock transaction to the ledger. */
     post: 'inventory.post',
     cancel: 'inventory.cancel',

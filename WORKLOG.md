@@ -17,6 +17,32 @@ Entry format:
 
 ---
 
+## 2026-08-06 — ✅ Phase 3.5 deferrals complete (attachments, search, versions, XLSX, batch labels)
+
+Both agents died on session limits mid-build (resumed via SendMessage, context intact). **Local commit only — no push/deploy per Tim.**
+
+**Done (backend — verified: api build ✅, 30 suites / 392 tests ✅ (+26), typecheck api/shared/worker ✅, lint ✅, migrate status clean):**
+- **Attachments §4.6** (`apps/api/src/attachments/`): multipart POST (20 MB cap, extension+MIME whitelist, sha256, UUID storage keys), list by parent, streamed download (bucket never public), soft archive. Polymorphic parents registry (10 resource types matching audit vocabulary); every op re-authorizes vs parent (any-of view/update perms + branch scope, out-of-scope = 404 no-leak). S3 via @aws-sdk/client-s3; **S3_ENABLED=false → 503 SERVICE_DISABLED envelope, unreachable → 503 STORAGE_UNAVAILABLE — never crashes** (Railway-safe). No schema change (attachments table existed since init).
+- **Global search §4.7** (`apps/api/src/search/`): `GET /search?q=` across 9 entity types (assets/items/employees/suppliers/POs/GRs/WOs/transfers/stock txns), branch-scoped + per-type permission filtering (unviewable types never queried; WO technician scoping honored), bounded per type (5 default/20 max).
+- **assets.version**: additive migration `20260805090000_phase35_assets_version`; PATCH matches {id, version} atomically → 409 VERSION_CONFLICT; all 13 lifecycle transitions increment version. Replaces updatedAt-derived token; web client unaffected (round-trips version opaquely).
+- **inventory.approve** added to `packages/shared/src/permissions.ts` (auto-grants SUPER_ADMIN + BRANCH_ADMIN); stock-transactions approve/reject routes now use it (approval.act workaround removed); web status-maps already tolerant.
+- **XLSX imports**: `xlsx.ts` (exceljs) — first sheet, dates→YYYY-MM-DD, formulas by result; format detect by extension/MIME; shared row/header validation with CSV; upload cap 2→4 MiB. Templates stay CSV.
+- New specs: attachments (13), search (6), xlsx (7).
+
+**Done (frontend — verified: web typecheck ✅, lint 0, build 45 routes ✅):**
+- **Attachments panel** (`components/attachments/attachments-panel.tsx`, card + bare variants): drag-drop/picker upload with DOCUMENT_TYPE select, list, authenticated download, delete-with-confirm; DTO-exact multipart; client mirror of 20 MB cap + extension whitelist; graceful empty state on 503 SERVICE_DISABLED/404 (no retry storm); permission-gated (attachment.view/upload/archive + parent perms). Mounted on 7 parents: asset detail (new tab), item edit, employee sheet, supplier/PO/GR/WO details.
+- **Global search** (`components/search/global-search.tsx` in topbar): 300 ms debounce, min 2 chars, grouped results, keyboard nav + **Ctrl/Cmd+K**, permission gating; employee hits deep-link `/employees?detail=<id>` (sheet opens from param).
+- **Asset edit dialog** (bagong `asset-edit-dialog.tsx` — walang asset edit form dati): changed-fields-only PATCH + required version, 409 → toast + rehydrate; field split mirrors service (always-editable vs draft-only; cost gated).
+- **XLSX imports UI**: accepts .csv/.xlsx (templates stay CSV). **Batch labels**: multi-select sa assets list (asset.print-gated, 100 cap) → 2×1/3×2 → printable sheet sa bagong tab (`postBinary` helper).
+
+**Integration (orchestrator):** wired AttachmentsModule + SearchModule sa app.module.ts; full chain green (build 4/4, typecheck 5/5, lint 3/3, **392 api tests**, migrate status clean sa 7 migrations, seed idempotent). **Live smoke via proxy (8 steps, all passed):** login → search "laptop" (items) at "WO-2026" (5 work orders) → attachment upload sa asset → list → download **byte-identical** → soft archive (204, wala na sa list) → asset PATCH v1→v2 ok, stale v → **409 VERSION_CONFLICT** → employees .xlsx staged validate (template-derived headers, 1 row / 1 valid — exceljs parse verified live).
+
+**Decisions:** attachment parents mounted sa 7 UI pages (backend supports 10 — transfer/stock_transaction/asset_assignment panels one-liner na lang kung kailanganin); XLSX *export* stays Phase 7; single-resource GET/PATCH responses are bare objects (house convention confirmed again in smoke).
+
+**Pending / Next:** Phase 6 (counts + parameterized approval engine + in-app notifications) → Phase 7. **HOLD: push/deploy/password rotation (ChangeMe!123 live publicly).**
+
+---
+
 ## 2026-08-05 (later) — ✅ Phase 5 Maintenance complete (plans, work orders, parts, worker job)
 
 Both agents died early on session limits, resumed via SendMessage (context intact). **Local commit only — no push/deploy per Tim.**
