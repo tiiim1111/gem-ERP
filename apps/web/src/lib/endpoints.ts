@@ -15,10 +15,16 @@ import type {
   TransferStatus,
 } from '@gemerp/shared';
 import { api, fetchBinary, postBinary, type QueryParams } from './api';
-import { normalizeSearchResults, type GlobalSearchGroup } from './types';
+import { normalizeSearchResults, normalizeUnreadCount, type GlobalSearchGroup } from './types';
 import type {
+  AppNotification,
+  ApprovalDelegation,
+  ApprovalRequest,
+  ApprovalWorkflow,
   Asset,
   Attachment,
+  CountLine,
+  CountSession,
   AssetAssignment,
   AssetHistoryEntry,
   AssetMeterReading,
@@ -1981,4 +1987,302 @@ export function deleteAttachment(id: string): Promise<void> {
 export async function globalSearch(q: string, signal?: AbortSignal): Promise<GlobalSearchGroup[]> {
   const payload = await api.get<unknown>('/search', { q }, signal);
   return normalizeSearchResults(payload);
+}
+
+/* ========================================================================== */
+/* Phase 6 — Counts, approvals, notifications (docs/api-outline.md §7)        */
+/* ========================================================================== */
+
+/* -------------------- Count sessions (contract §7.1) ----------------------- */
+
+export interface CountSessionListParams extends ListParams {
+  status?: string;
+  /** full | cycle (server may also accept FULL | CYCLE). */
+  type?: string;
+  branchId?: string;
+  warehouseId?: string;
+  number?: string;
+  from?: string;
+  to?: string;
+}
+
+/** Contract §7.1 scope object — branch required, the rest narrow it. */
+export interface CountScopeInput {
+  branchId: string;
+  warehouseId?: string;
+  locationId?: string;
+  categoryId?: string;
+  itemIds?: string[];
+}
+
+export interface CountSessionCreateBody {
+  scope: CountScopeInput;
+  blind: boolean;
+  type: 'full' | 'cycle';
+  notes?: string;
+}
+
+export function listCountSessions(
+  params: CountSessionListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<CountSession>> {
+  return api.get<Paginated<CountSession>>('/count-sessions', params, signal);
+}
+
+export function getCountSession(id: string, signal?: AbortSignal): Promise<CountSession> {
+  return api.get<CountSession>(`/count-sessions/${id}`, undefined, signal);
+}
+
+export function createCountSession(body: CountSessionCreateBody): Promise<CountSession> {
+  return api.post<CountSession>('/count-sessions', body);
+}
+
+/** Draft-only edit; requires the current `version` (409 VERSION_CONFLICT when stale). */
+export function updateCountSession(
+  id: string,
+  body: Partial<CountSessionCreateBody> & { version: number },
+): Promise<CountSession> {
+  return api.patch<CountSession>(`/count-sessions/${id}`, body);
+}
+
+/** Freezes/snapshots expected balances and generates the count lines. */
+export function startCountSession(id: string): Promise<CountSession> {
+  return api.post<CountSession>(`/count-sessions/${id}/start`);
+}
+
+/**
+ * Record a count on one line (RecordCountDto): quantity lines take
+ * `{countedQty}`; asset lines take `{found, conditionId?, locationConfirmed?}`
+ * — conditionId is the ASSET_CONDITION lookup value id.
+ */
+export interface CountLineRecordBody {
+  countedQty?: string | number;
+  found?: boolean;
+  conditionId?: string;
+  locationConfirmed?: boolean;
+  notes?: string;
+}
+
+export function recordCountLine(
+  id: string,
+  lineId: string,
+  body: CountLineRecordBody,
+): Promise<CountLine | CountSession> {
+  return api.post<CountLine | CountSession>(`/count-sessions/${id}/lines/${lineId}/count`, body);
+}
+
+/**
+ * Rapid-scan entry (ScanCountDto) — the server resolves the code (SKU,
+ * barcode, lot, asset tag, or serial) and increments/creates the line.
+ */
+export function scanCountSession(
+  id: string,
+  body: { code: string; qty?: string | number; warehouseId?: string; locationId?: string },
+): Promise<CountLine | CountSession> {
+  return api.post<CountLine | CountSession>(`/count-sessions/${id}/scans`, body);
+}
+
+/** Reopen the selected lines for a recount. */
+export function recountCountSession(id: string, lineIds: string[]): Promise<CountSession> {
+  return api.post<CountSession>(`/count-sessions/${id}/recount`, { lineIds });
+}
+
+/** Variance report — payload shape varies; normalize via normalizeVarianceRows. */
+export function getCountVariance(id: string, signal?: AbortSignal): Promise<unknown> {
+  return api.get<unknown>(`/count-sessions/${id}/variance`, undefined, signal);
+}
+
+/** Close counting and lock lines (count.approve). */
+export function completeCountSession(id: string): Promise<CountSession> {
+  return api.post<CountSession>(`/count-sessions/${id}/complete`);
+}
+
+/**
+ * Generate draft adjustment transactions from approved variances.
+ * Requires an Idempotency-Key (contract §1.5).
+ */
+export function createCountAdjustments(
+  id: string,
+  idempotencyKey: string,
+): Promise<CountSession | StockTransaction[]> {
+  return api.post<CountSession | StockTransaction[]>(
+    `/count-sessions/${id}/create-adjustments`,
+    undefined,
+    { idempotencyKey },
+  );
+}
+
+export function cancelCountSession(id: string, reason: string): Promise<CountSession> {
+  return api.post<CountSession>(`/count-sessions/${id}/cancel`, { reason });
+}
+
+/* ------------------- Approvals framework (contract §7.2) ------------------- */
+
+export interface ApprovalWorkflowListParams extends ListParams {
+  documentType?: string;
+  branchId?: string;
+  isActive?: boolean;
+}
+
+/** One workflow step — exactly the field matching approverType is set. */
+export interface ApprovalStepInput {
+  /** 1-based order; defaults to the array position when omitted. */
+  sequence?: number;
+  name?: string;
+  approverType: 'ROLE' | 'POSITION' | 'DEPT_HEAD' | 'USER';
+  approverRoleId?: string;
+  approverPositionId?: string;
+  approverUserId?: string;
+}
+
+/**
+ * PATCH-able workflow fields (UpdateApprovalWorkflowDto). `code` and
+ * `documentType` are create-only; sending them on PATCH is rejected by
+ * forbidNonWhitelisted. There is no version field — step replacement is
+ * refused (409 IN_USE) while requests are pending instead.
+ */
+export interface ApprovalWorkflowUpdateBody {
+  name?: string;
+  description?: string | null;
+  /** Sub-type scope (e.g. stock transaction types); empty/omitted = all. */
+  documentSubtypes?: string[];
+  /** Branch scope — null clears it (all branches). */
+  branchId?: string | null;
+  /** Amount thresholds as decimal strings — the workflow applies within [min, max]. */
+  minAmount?: string | null;
+  maxAmount?: string | null;
+  /** Quantity thresholds against the document's total base quantity. */
+  minQuantity?: string | null;
+  maxQuantity?: string | null;
+  /** Replaces the step list wholesale (1–10 steps). */
+  steps?: ApprovalStepInput[];
+}
+
+/** CreateApprovalWorkflowDto — code + documentType + steps are required. */
+export interface ApprovalWorkflowCreateBody extends ApprovalWorkflowUpdateBody {
+  /** Business code (letters/digits/hyphens/underscores), immutable afterwards. */
+  code: string;
+  name: string;
+  /** STOCK_TRANSACTION | PURCHASE_ORDER | TRANSFER | SUPPLIER_RETURN. */
+  documentType: string;
+  steps: ApprovalStepInput[];
+}
+
+export function listApprovalWorkflows(
+  params: ApprovalWorkflowListParams = {},
+  signal?: AbortSignal,
+): Promise<Paginated<ApprovalWorkflow>> {
+  return api.get<Paginated<ApprovalWorkflow>>('/approval-workflows', params, signal);
+}
+
+export function getApprovalWorkflow(id: string, signal?: AbortSignal): Promise<ApprovalWorkflow> {
+  return api.get<ApprovalWorkflow>(`/approval-workflows/${id}`, undefined, signal);
+}
+
+export function createApprovalWorkflow(body: ApprovalWorkflowCreateBody): Promise<ApprovalWorkflow> {
+  return api.post<ApprovalWorkflow>('/approval-workflows', body);
+}
+
+export function updateApprovalWorkflow(
+  id: string,
+  body: ApprovalWorkflowUpdateBody,
+): Promise<ApprovalWorkflow> {
+  return api.patch<ApprovalWorkflow>(`/approval-workflows/${id}`, body);
+}
+
+export function activateApprovalWorkflow(id: string): Promise<ApprovalWorkflow> {
+  return api.post<ApprovalWorkflow>(`/approval-workflows/${id}/activate`);
+}
+
+export function deactivateApprovalWorkflow(id: string): Promise<ApprovalWorkflow> {
+  return api.post<ApprovalWorkflow>(`/approval-workflows/${id}/deactivate`);
+}
+
+export interface ApprovalRequestListParams extends ListParams {
+  status?: string;
+  documentType?: string;
+  branchId?: string;
+  assignedToMe?: boolean;
+}
+
+export function listApprovalRequests(
+  params: ApprovalRequestListParams,
+  signal?: AbortSignal,
+): Promise<Paginated<ApprovalRequest>> {
+  return api.get<Paginated<ApprovalRequest>>('/approval-requests', params, signal);
+}
+
+export function getApprovalRequest(id: string, signal?: AbortSignal): Promise<ApprovalRequest> {
+  return api.get<ApprovalRequest>(`/approval-requests/${id}`, undefined, signal);
+}
+
+/** Advances the current step or finalizes the request. */
+export function approveApprovalRequest(id: string, comment?: string): Promise<ApprovalRequest> {
+  return api.post<ApprovalRequest>(
+    `/approval-requests/${id}/approve`,
+    comment ? { comment } : {},
+  );
+}
+
+/** Rejection comment is REQUIRED (contract §7.2). */
+export function rejectApprovalRequest(id: string, comment: string): Promise<ApprovalRequest> {
+  return api.post<ApprovalRequest>(`/approval-requests/${id}/reject`, { comment });
+}
+
+/** Return for revision — the document goes back to Draft. */
+export function returnApprovalRequest(id: string, comment: string): Promise<ApprovalRequest> {
+  return api.post<ApprovalRequest>(`/approval-requests/${id}/return`, { comment });
+}
+
+export function listApprovalDelegations(
+  params: ListParams = {},
+  signal?: AbortSignal,
+): Promise<Paginated<ApprovalDelegation> | ApprovalDelegation[]> {
+  return api.get<Paginated<ApprovalDelegation> | ApprovalDelegation[]>(
+    '/approval-delegations',
+    params,
+    signal,
+  );
+}
+
+export function createApprovalDelegation(body: {
+  delegateUserId: string;
+  startsAt: string;
+  endsAt: string;
+  reason?: string;
+}): Promise<ApprovalDelegation> {
+  return api.post<ApprovalDelegation>('/approval-delegations', body);
+}
+
+/** Revokes the delegation (DELETE per contract §7.2). */
+export function deleteApprovalDelegation(id: string): Promise<void> {
+  return api.delete<void>(`/approval-delegations/${id}`);
+}
+
+/* ---------------------- Notifications (contract §7.3) ---------------------- */
+
+export interface NotificationListParams extends ListParams {
+  /** true = read only, false = unread only. */
+  read?: boolean;
+  type?: string;
+}
+
+export function listNotifications(
+  params: NotificationListParams = {},
+  signal?: AbortSignal,
+): Promise<Paginated<AppNotification>> {
+  return api.get<Paginated<AppNotification>>('/notifications', params, signal);
+}
+
+export async function getUnreadNotificationCount(signal?: AbortSignal): Promise<number> {
+  const payload = await api.get<unknown>('/notifications/unread-count', undefined, signal);
+  return normalizeUnreadCount(payload);
+}
+
+export function markNotificationRead(id: string): Promise<AppNotification | void> {
+  return api.post<AppNotification | void>(`/notifications/${id}/read`);
+}
+
+export function markAllNotificationsRead(): Promise<void> {
+  return api.post<void>('/notifications/read-all');
 }

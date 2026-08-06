@@ -300,8 +300,10 @@ model User {
   workOrderTasksCompleted    MaintenanceWorkOrderTask[] @relation("MaintenanceWorkOrderTaskCompletedBy")
   maintenancePlansCreated    MaintenancePlan[]          @relation("MaintenancePlanCreatedBy")
   meterReadingsRecorded      AssetMeterReading[]        @relation("AssetMeterReadingRecordedBy")
+  countSessionsCanceled      InventoryCountSession[]    @relation("InventoryCountSessionCanceledBy")
   approvalStepsAsApprover    ApprovalStep[]             @relation("ApprovalStepApproverUser")
   approvalRequestsMade       ApprovalRequest[]          @relation("ApprovalRequestRequestedBy")
+  approvalRequestStepsActed  ApprovalRequestStep[]      @relation("ApprovalRequestStepActedBy")
   approvalActions            ApprovalAction[]           @relation("ApprovalActionActor")
   approvalActionsDelegated   ApprovalAction[]           @relation("ApprovalActionDelegatedFor")
   delegationsGiven           ApprovalDelegation[]       @relation("ApprovalDelegationDelegator")
@@ -521,6 +523,7 @@ model Warehouse {
   transfersOut              Transfer[]              @relation("TransferSourceWarehouse")
   transfersIn               Transfer[]              @relation("TransferDestinationWarehouse")
   countSessions             InventoryCountSession[] @relation("InventoryCountSessionWarehouse")
+  countLines                InventoryCountLine[]    @relation("InventoryCountLineWarehouse")
 
   @@unique([branchId, code])
   @@index([branchId])
@@ -1827,11 +1830,22 @@ model InventoryCountSession {
   warehouseId       String?              @map("warehouse_id") @db.Uuid
   storageLocationId String?              @map("storage_location_id") @db.Uuid
   categoryId        String?              @map("category_id") @db.Uuid
+  /// Optional explicit item scope (cycle counts over selected items).
+  scopeItemIds      String[]             @map("scope_item_ids") @db.Uuid
   isBlind           Boolean              @default(false) @map("is_blind")
   snapshotAt        DateTime?            @map("snapshot_at")
   startedAt         DateTime?            @map("started_at")
   completedAt       DateTime?            @map("completed_at")
   notes             String?
+  /// Optimistic-concurrency token (api-outline 1.6).
+  version           Int                  @default(1)
+  /// Idempotency-Key of the create-adjustments call (api-outline 1.5).
+  /// Unique: replaying the key returns the original result.
+  adjustmentIdempotencyKey String?       @unique @map("adjustment_idempotency_key")
+  adjustmentsCreatedAt     DateTime?     @map("adjustments_created_at")
+  cancelReason      String?              @map("cancel_reason")
+  canceledById      String?              @map("canceled_by_id") @db.Uuid
+  canceledAt        DateTime?            @map("canceled_at")
   createdById       String               @map("created_by_id") @db.Uuid
   approvedById      String?              @map("approved_by_id") @db.Uuid
   approvedAt        DateTime?            @map("approved_at")
@@ -1844,6 +1858,7 @@ model InventoryCountSession {
   category        ItemCategory?    @relation("InventoryCountSessionCategory", fields: [categoryId], references: [id], onDelete: Restrict)
   createdBy       User             @relation("InventoryCountSessionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   approvedBy      User?            @relation("InventoryCountSessionApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  canceledBy      User?            @relation("InventoryCountSessionCanceledBy", fields: [canceledById], references: [id], onDelete: Restrict)
 
   lines                  InventoryCountLine[] @relation("InventoryCountLines")
   adjustmentTransactions StockTransaction[]   @relation("StockTransactionCountSession")
@@ -1860,6 +1875,9 @@ model InventoryCountLine {
   itemId            String?        @map("item_id") @db.Uuid
   assetId           String?        @map("asset_id") @db.Uuid
   lotId             String?        @map("lot_id") @db.Uuid
+  /// Warehouse of the snapshotted balance bucket / expected asset location —
+  /// adjustment drafts group per warehouse (api-outline 7.1).
+  warehouseId       String?        @map("warehouse_id") @db.Uuid
   storageLocationId String?        @map("storage_location_id") @db.Uuid
   uomId             String?        @map("uom_id") @db.Uuid
   expectedQuantity  Decimal?       @map("expected_quantity") @db.Decimal(14, 4)
@@ -1867,6 +1885,12 @@ model InventoryCountLine {
   recountQuantity   Decimal?       @map("recount_quantity") @db.Decimal(14, 4)
   varianceQuantity  Decimal?       @map("variance_quantity") @db.Decimal(14, 4)
   flag              CountLineFlag?
+  /// Asset verification (spec section 17): existence, condition, location.
+  assetFound        Boolean?       @map("asset_found")
+  locationConfirmed Boolean?       @map("location_confirmed")
+  conditionId       String?        @map("condition_id") @db.Uuid
+  /// Line reopened for recount; the next count writes recount_quantity.
+  recountRequested  Boolean        @default(false) @map("recount_requested")
   countedById       String?        @map("counted_by_id") @db.Uuid
   countedAt         DateTime?      @map("counted_at")
   notes             String?
@@ -1877,13 +1901,16 @@ model InventoryCountLine {
   item            Item?                 @relation("InventoryCountLineItem", fields: [itemId], references: [id], onDelete: Restrict)
   asset           Asset?                @relation("InventoryCountLineAsset", fields: [assetId], references: [id], onDelete: Restrict)
   lot             InventoryLot?         @relation("InventoryCountLineLot", fields: [lotId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse?            @relation("InventoryCountLineWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
   storageLocation StorageLocation?      @relation("InventoryCountLineLocation", fields: [storageLocationId], references: [id], onDelete: Restrict)
   uom             UnitOfMeasure?        @relation("InventoryCountLineUom", fields: [uomId], references: [id], onDelete: Restrict)
+  condition       LookupValue?          @relation("LookupCountLineCondition", fields: [conditionId], references: [id], onDelete: Restrict)
   countedBy       User?                 @relation("InventoryCountLineCountedBy", fields: [countedById], references: [id], onDelete: Restrict)
 
   @@index([countSessionId])
   @@index([itemId])
   @@index([assetId])
+  @@index([warehouseId])
   @@map("inventory_count_lines")
 }
 
@@ -2118,9 +2145,16 @@ model ApprovalWorkflow {
   name         String
   description  String?
   resourceType String   @map("resource_type")
+  /// Optional sub-type scope within the resource type (e.g. stock transaction
+  /// types ADJUSTMENT_INCREASE/ADJUSTMENT_DECREASE, transfer type
+  /// INTER_BRANCH). Empty array = every sub-type.
+  documentSubtypes String[] @map("document_subtypes")
   branchId     String?  @map("branch_id") @db.Uuid
   minAmount    Decimal? @map("min_amount") @db.Decimal(14, 2)
   maxAmount    Decimal? @map("max_amount") @db.Decimal(14, 2)
+  /// Quantity thresholds evaluated against the document's total base quantity.
+  minQuantity  Decimal? @map("min_quantity") @db.Decimal(14, 4)
+  maxQuantity  Decimal? @map("max_quantity") @db.Decimal(14, 4)
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -2156,8 +2190,9 @@ model ApprovalStep {
   approverPosition Position?        @relation("ApprovalStepApproverPosition", fields: [approverPositionId], references: [id], onDelete: Restrict)
   approverUser     User?            @relation("ApprovalStepApproverUser", fields: [approverUserId], references: [id], onDelete: Restrict)
 
-  currentForRequests ApprovalRequest[] @relation("ApprovalRequestCurrentStep")
-  actions            ApprovalAction[]  @relation("ApprovalActionStep")
+  currentForRequests ApprovalRequest[]     @relation("ApprovalRequestCurrentStep")
+  actions            ApprovalAction[]      @relation("ApprovalActionStep")
+  requestSteps       ApprovalRequestStep[] @relation("ApprovalRequestStepStep")
 
   @@unique([workflowId, sequence])
   @@map("approval_steps")
@@ -2169,9 +2204,12 @@ model ApprovalRequest {
   workflowId    String         @map("workflow_id") @db.Uuid
   resourceType  String         @map("resource_type")
   resourceId    String         @map("resource_id") @db.Uuid
+  /// Human-readable business number of the document (queue display).
+  resourceNumber String?       @map("resource_number")
   status        ApprovalStatus @default(PENDING)
   currentStepId String?        @map("current_step_id") @db.Uuid
   amount        Decimal?       @db.Decimal(14, 2)
+  quantity      Decimal?       @db.Decimal(14, 4)
   branchId      String?        @map("branch_id") @db.Uuid
   requestedById String         @map("requested_by_id") @db.Uuid
   requestedAt   DateTime       @default(now()) @map("requested_at")
@@ -2185,12 +2223,39 @@ model ApprovalRequest {
   branch      Branch?          @relation("ApprovalRequestBranch", fields: [branchId], references: [id], onDelete: Restrict)
   requestedBy User             @relation("ApprovalRequestRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
 
-  actions ApprovalAction[] @relation("ApprovalActionRequest")
+  actions ApprovalAction[]      @relation("ApprovalActionRequest")
+  steps   ApprovalRequestStep[] @relation("ApprovalRequestSteps")
 
   @@index([resourceType, resourceId])
   @@index([status])
   @@index([requestedById])
   @@map("approval_requests")
+}
+
+/// Per-request materialization of the workflow steps with the approvers
+/// RESOLVED AT REQUEST TIME (GemCor requirement 2026-07-27: ROLE holders,
+/// POSITION holders, the requester's DEPT_HEAD, or a named USER). The queue's
+/// assignedToMe filter and the act-authorization check read assigneeUserIds.
+model ApprovalRequestStep {
+  id             String         @id @default(uuid()) @db.Uuid
+  requestId      String         @map("request_id") @db.Uuid
+  stepId         String         @map("step_id") @db.Uuid
+  sequence       Int
+  status         ApprovalStatus @default(PENDING)
+  assigneeUserIds String[]      @map("assignee_user_ids") @db.Uuid
+  actedById      String?        @map("acted_by_id") @db.Uuid
+  actedAt        DateTime?      @map("acted_at")
+  comment        String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  request ApprovalRequest @relation("ApprovalRequestSteps", fields: [requestId], references: [id], onDelete: Cascade)
+  step    ApprovalStep    @relation("ApprovalRequestStepStep", fields: [stepId], references: [id], onDelete: Restrict)
+  actedBy User?           @relation("ApprovalRequestStepActedBy", fields: [actedById], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, sequence])
+  @@index([requestId])
+  @@map("approval_request_steps")
 }
 
 /// Full approval history. delegatedFor records the original approver when the
@@ -2247,6 +2312,9 @@ model Notification {
   resourceType String?   @map("resource_type")
   resourceId   String?   @map("resource_id") @db.Uuid
   branchId     String?   @map("branch_id") @db.Uuid
+  /// In-app deep-link path matching the web routes (spec section 20),
+  /// e.g. /approvals/:id, /procurement/purchase-orders/:id.
+  link         String?
   dedupeKey    String?   @map("dedupe_key")
   readAt       DateTime? @map("read_at")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -2359,6 +2427,7 @@ model LookupValue {
   workOrdersCompletedCondition MaintenanceWorkOrder[]  @relation("LookupWorkOrderCompletionCondition")
   transferReceiptConditions    TransferReceiptLine[]   @relation("LookupTransferReceiptLineCondition")
   attachmentsOfType            Attachment[]            @relation("LookupAttachmentDocumentType")
+  countLineConditions          InventoryCountLine[]    @relation("LookupCountLineCondition")
 
   @@unique([category, code])
   @@index([category, isActive])

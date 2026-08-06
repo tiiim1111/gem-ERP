@@ -8,6 +8,7 @@ import {
   TransferStatus,
   TransferType,
 } from '@prisma/client';
+import { ApprovalEngineService } from '../approvals/approval-engine.service';
 import { AuditService } from '../audit/audit.service';
 import { AppException } from '../common/errors/app.exception';
 import { pageArgs, paginated, parseSort } from '../common/pagination';
@@ -202,6 +203,7 @@ export class TransfersService {
     private readonly audit: AuditService,
     private readonly sequences: SequenceService,
     private readonly posting: StockPostingService,
+    private readonly approvals: ApprovalEngineService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -516,46 +518,64 @@ export class TransfersService {
       ]);
     }
 
-    // Approval engine arrives in Phase 6; without a matching active workflow
-    // submit auto-advances to APPROVED and the document records why.
-    const workflow = await this.prisma.approvalWorkflow.findFirst({
-      where: {
-        resourceType: 'TRANSFER',
-        isActive: true,
-        OR: [
-          { branchId: null },
-          { branchId: transfer.sourceBranchId },
-          { branchId: transfer.destinationBranchId },
-        ],
-      },
-      select: { id: true },
-    });
+    // Phase 6 approval engine: route through the most specific matching
+    // active workflow (source/destination branch scope, transfer type,
+    // quantity thresholds). No match → auto-approve exactly as before.
     const now = new Date();
-    const autoApproved = !workflow;
-    const claimed = await this.prisma.transfer.updateMany({
-      where: { id, status: TransferStatus.DRAFT },
-      data: {
-        status: autoApproved
-          ? TransferStatus.APPROVED
-          : TransferStatus.PENDING_APPROVAL,
-        submittedAt: now,
-        ...(autoApproved
-          ? {
-              approvedById: user.id,
-              approvedAt: now,
-              notes: this.appendNote(
-                transfer.notes,
-                '[auto-approved on submit: no approval workflow configured — approval engine arrives in Phase 6]',
-              ),
-            }
-          : {}),
-        version: { increment: 1 },
-      },
+    const totals = await this.prisma.transferLine.aggregate({
+      where: { transferId: id },
+      _sum: { baseQuantity: true },
     });
-    if (claimed.count === 0) {
-      throw AppException.invalidStateTransition(
-        'The transfer was modified concurrently. Refetch and retry.',
-      );
+    const routed = await this.approvals.routeSubmit(
+      {
+        resourceType: 'TRANSFER',
+        resourceId: id,
+        resourceNumber: transfer.transferNumber,
+        branchId: transfer.sourceBranchId,
+        extraBranchIds: [transfer.destinationBranchId],
+        subtype: transfer.type,
+        quantity: totals._sum.baseQuantity,
+        requester: user,
+      },
+      async (tx) => {
+        const claimed = await tx.transfer.updateMany({
+          where: { id, status: TransferStatus.DRAFT },
+          data: {
+            status: TransferStatus.PENDING_APPROVAL,
+            submittedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count === 0) {
+          throw AppException.invalidStateTransition(
+            'The transfer was modified concurrently. Refetch and retry.',
+          );
+        }
+      },
+      ctx,
+    );
+
+    const autoApproved = !routed;
+    if (autoApproved) {
+      const claimed = await this.prisma.transfer.updateMany({
+        where: { id, status: TransferStatus.DRAFT },
+        data: {
+          status: TransferStatus.APPROVED,
+          submittedAt: now,
+          approvedById: user.id,
+          approvedAt: now,
+          notes: this.appendNote(
+            transfer.notes,
+            '[auto-approved on submit: no approval workflow matched]',
+          ),
+          version: { increment: 1 },
+        },
+      });
+      if (claimed.count === 0) {
+        throw AppException.invalidStateTransition(
+          'The transfer was modified concurrently. Refetch and retry.',
+        );
+      }
     }
 
     await this.audit.log({
@@ -571,6 +591,9 @@ export class TransfersService {
           ? TransferStatus.APPROVED
           : TransferStatus.PENDING_APPROVAL,
         autoApproved,
+        ...(routed
+          ? { workflowCode: routed.workflowCode, requestId: routed.requestId }
+          : {}),
       },
       ...ctx,
     });
@@ -588,6 +611,18 @@ export class TransfersService {
       throw AppException.invalidStateTransition(
         transferTransitionError(transfer.status, 'approve'),
       );
+    }
+    // Phase 6: engine-managed transfers are decided through the engine.
+    const handled = await this.approvals.actOnResource(
+      user,
+      'TRANSFER',
+      id,
+      'APPROVE',
+      dto.comment,
+      ctx,
+    );
+    if (handled) {
+      return this.getById(user, id);
     }
     this.assertNotSelfApproval(user, transfer.createdById);
 
@@ -631,6 +666,18 @@ export class TransfersService {
       throw AppException.invalidStateTransition(
         transferTransitionError(transfer.status, 'reject'),
       );
+    }
+    // Phase 6: engine-managed transfers are decided through the engine.
+    const handled = await this.approvals.actOnResource(
+      user,
+      'TRANSFER',
+      id,
+      'REJECT',
+      dto.comment,
+      ctx,
+    );
+    if (handled) {
+      return this.getById(user, id);
     }
     this.assertNotSelfApproval(user, transfer.createdById);
 

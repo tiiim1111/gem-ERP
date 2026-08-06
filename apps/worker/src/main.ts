@@ -14,12 +14,18 @@ import { PrismaClient } from "@prisma/client";
 
 import { env } from "./env";
 import { generateWorkOrdersFromDuePlans } from "./jobs/maintenance-work-orders";
+import { runNotificationDetectors } from "./jobs/notification-detectors";
+import {
+  notifyUsersOnce,
+  superAdminUserIds,
+} from "./jobs/notification-helpers";
 import { logger } from "./logger";
 import {
   DEFAULT_JOB_OPTIONS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_JOB_OPTIONS,
   MAINTENANCE_GENERATION_INTERVAL_MS,
+  NOTIFICATION_DETECTOR_INTERVAL_MS,
   QUEUE_NAMES,
 } from "./queues";
 
@@ -68,12 +74,48 @@ function registerWorker(name: string, processor: Processor): Worker {
       { queue: name, jobId: job?.id, jobName: job?.name, attemptsMade: job?.attemptsMade, err: error },
       "job failed",
     );
+    // Phase 6 (spec §20): a job that exhausted its retries raises a
+    // JOB_FAILED in-app notice to super admins. Deduped per queue + job id;
+    // fire-and-forget — an alerting failure must never crash the worker.
+    const finalAttempt =
+      job !== undefined && job.attemptsMade >= (job.opts.attempts ?? 1);
+    if (finalAttempt && name !== QUEUE_NAMES.HEARTBEAT) {
+      void notifyFailedJob(name, job.id ?? "unknown", job.name, error).catch(
+        (notifyError) => {
+          logger.error(
+            { queue: name, err: notifyError },
+            "failed to write the failed-job notification",
+          );
+        },
+      );
+    }
   });
   worker.on("error", (error) => {
     logger.error({ queue: name, err: error }, "worker error");
   });
   workers.push(worker);
   return worker;
+}
+
+/** JOB_FAILED notice fan-out (Phase 6). Skips silently without a database. */
+async function notifyFailedJob(
+  queueName: string,
+  jobId: string,
+  jobName: string,
+  error: Error,
+): Promise<void> {
+  const prisma = getPrisma();
+  if (!prisma) {
+    return;
+  }
+  const admins = await superAdminUserIds(prisma);
+  await notifyUsersOnce(prisma, admins, {
+    type: "JOB_FAILED",
+    title: "Background job failed",
+    message: `Job ${jobName} (${jobId}) on queue ${queueName} exhausted its retries: ${error.message.slice(0, 300)}`,
+    resourceType: "worker_job",
+    dedupeKey: `JOB_FAILED|${queueName}|${jobId}`,
+  });
 }
 
 /** Shared stub behavior: acknowledge the job in the logs and complete. */
@@ -123,13 +165,30 @@ registerWorker(QUEUE_NAMES.MAINTENANCE_REMINDERS, async (job) => {
   logger.info({ jobId: job.id, ...summary }, "maintenance work-order generation done");
 });
 
-// "notifications" — STUB until Phase 6 (Counts, approvals, and notifications):
-// the real processor will deliver in-app notifications (low stock, warranty
-// expiry, approval requests). Until then it only logs receipt and completes.
-registerQueue(QUEUE_NAMES.NOTIFICATIONS);
-registerWorker(QUEUE_NAMES.NOTIFICATIONS, (job) =>
-  acknowledgeStub(job, "Phase 6 (Notifications)"),
-);
+// "notifications" — Phase 6: the repeatable "run-detectors" job sweeps the
+// spec §20 alert conditions (low/out-of-stock, lot expiry, maintenance
+// overdue, warranty expiry, overdue asset returns, unreceived transfers)
+// and writes deduplicated in-app notifications. Idempotent by dedupe key;
+// requires DATABASE_URL — without it the processor warns and skips.
+const notificationsQueue = registerQueue(QUEUE_NAMES.NOTIFICATIONS);
+registerWorker(QUEUE_NAMES.NOTIFICATIONS, async (job) => {
+  if (job.name !== "run-detectors") {
+    await acknowledgeStub(job, "Phase 6 (Notifications)");
+    return;
+  }
+  const prisma = getPrisma();
+  if (!prisma) {
+    logger.warn(
+      { queue: job.queueName, jobId: job.id },
+      "DATABASE_URL is not configured — skipping notification detectors",
+    );
+    return;
+  }
+  const summary = await runNotificationDetectors(prisma, logger);
+  if (summary) {
+    logger.info({ jobId: job.id, ...summary }, "notification detectors done");
+  }
+});
 
 // "report-exports" — STUB until Phase 7 (Analytics and reports): the real
 // processor will run heavy CSV/XLSX/PDF exports, upload the result to object
@@ -225,6 +284,14 @@ async function main(): Promise<void> {
     "maintenance-generate-hourly",
     { every: MAINTENANCE_GENERATION_INTERVAL_MS },
     { name: "generate-due-work-orders" },
+  );
+
+  // Phase 6: alert-detector sweep. Idempotent via notification dedup keys,
+  // so the cadence only bounds how fast conditions surface in-app.
+  await notificationsQueue.upsertJobScheduler(
+    "notification-detectors-every-15m",
+    { every: NOTIFICATION_DETECTOR_INTERVAL_MS },
+    { name: "run-detectors" },
   );
 
   const redisTarget = new URL(env.REDIS_URL);

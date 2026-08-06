@@ -31,6 +31,14 @@ export const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 export const MAINTENANCE_GENERATION_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
+ * Alert-detector cadence (Phase 6). Every 15 minutes: detectors are
+ * idempotent through the notification dedup keys, so the interval only
+ * bounds how fast a new condition (low stock, expiring lot, overdue WO,
+ * unreceived transfer, ...) surfaces as an in-app notification.
+ */
+export const NOTIFICATION_DETECTOR_INTERVAL_MS = 15 * 60 * 1000;
+
+/**
  * Retry/backoff defaults applied to every business queue. Individual jobs can
  * override these when enqueued. Failed jobs are retried 3 times with
  * exponential backoff (5s, 10s, 20s); completed jobs are kept for a day (max

@@ -31,9 +31,10 @@ const BRANCH_ADMIN_EXCLUDED: string[] = [
   P.branch.create,
   P.branch.activate,
   P.branch.deactivate,
-  // System configuration.
+  // System configuration. (approval.manage is deliberately NOT excluded:
+  // Phase 6 approval workflows carry a branch scope, and configuring the
+  // approval routes of their own branches is branch-admin work.)
   P.settings.manage,
-  P.approval.manage,
   P.lookup.manage,
   P.notification.manage,
   // Audit log export is reserved for Super Admin / Auditor grants.

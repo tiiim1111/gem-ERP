@@ -2314,3 +2314,518 @@ export function searchResultSubtitle(
   const text = parts.filter(Boolean).join(' · ');
   return text || null;
 }
+
+/* ========================================================================== */
+/* Phase 6 — Counts, approvals, notifications (docs/api-outline.md §7)        */
+/* ========================================================================== */
+
+/* -------------------- Count sessions (contract §7.1) ----------------------- */
+
+/** InventoryCountStatus (Prisma) — the count-session lifecycle. */
+export const CountSessionStatus = {
+  DRAFT: 'DRAFT',
+  IN_PROGRESS: 'IN_PROGRESS',
+  REVIEW: 'REVIEW',
+  COMPLETED: 'COMPLETED',
+  CANCELED: 'CANCELED',
+} as const;
+export type CountSessionStatus = (typeof CountSessionStatus)[keyof typeof CountSessionStatus];
+
+/** CountLineFlag (Prisma) — result flag on a counted line (spec §17). */
+export const CountLineFlag = {
+  MATCHED: 'MATCHED',
+  VARIANCE: 'VARIANCE',
+  MISSING: 'MISSING',
+  UNEXPECTED: 'UNEXPECTED',
+  DUPLICATE: 'DUPLICATE',
+  MISPLACED: 'MISPLACED',
+} as const;
+export type CountLineFlag = (typeof CountLineFlag)[keyof typeof CountLineFlag];
+
+/** One line of a count session — a quantity item OR a serialized asset. */
+export interface CountLine {
+  id: string;
+  countSessionId?: string;
+  /** Server discriminator ("item" | "asset"); the ids are the fallback. */
+  kind?: string;
+  itemId?: string | null;
+  item?: ItemRef | null;
+  assetId?: string | null;
+  asset?: Asset | null;
+  lotId?: string | null;
+  lot?: { id: string; lotNumber?: string; number?: string } | null;
+  warehouseId?: string | null;
+  warehouse?: WarehouseRef | null;
+  storageLocationId?: string | null;
+  locationId?: string | null;
+  storageLocation?: LocationRef | null;
+  location?: LocationRef | null;
+  uomId?: string | null;
+  uom?: Uom | null;
+  /** Snapshot quantity — the API omits/nulls it while a blind count runs. */
+  expectedQuantity?: DecimalString | null;
+  expectedQty?: DecimalString | null;
+  countedQuantity?: DecimalString | null;
+  countedQty?: DecimalString | null;
+  recountQuantity?: DecimalString | null;
+  recountQty?: DecimalString | null;
+  varianceQuantity?: DecimalString | null;
+  varianceQty?: DecimalString | null;
+  /** Recount ?? counted, as the server serializes it. */
+  effectiveQuantity?: DecimalString | null;
+  /** Asset verification — found / condition / location confirmed. */
+  found?: boolean | null;
+  assetFound?: boolean | null;
+  conditionId?: string | null;
+  condition?: LookupValue | null;
+  locationConfirmed?: boolean | null;
+  recountRequested?: boolean | null;
+  flag?: CountLineFlag | string | null;
+  countedById?: string | null;
+  countedBy?: UserRef | null;
+  countedAt?: string | null;
+  /** Money fields — present only with the inventory cost permission. */
+  unitCost?: DecimalString | null;
+  valueImpact?: DecimalString | null;
+  varianceValue?: DecimalString | null;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function countLineExpected(line: CountLine): DecimalString | null {
+  return line.expectedQuantity ?? line.expectedQty ?? null;
+}
+
+export function countLineCounted(line: CountLine): DecimalString | null {
+  return line.countedQuantity ?? line.countedQty ?? null;
+}
+
+export function countLineRecount(line: CountLine): DecimalString | null {
+  return line.recountQuantity ?? line.recountQty ?? null;
+}
+
+/** Variance — server value wins; falls back to (recount ?? counted) − expected. */
+export function countLineVariance(line: CountLine): number | null {
+  const server = line.varianceQuantity ?? line.varianceQty;
+  if (server !== undefined && server !== null) return decimalValue(server);
+  const expected = countLineExpected(line);
+  const counted = countLineRecount(line) ?? countLineCounted(line);
+  if (expected === null || counted === null) return null;
+  return decimalValue(counted) - decimalValue(expected);
+}
+
+/** Peso impact of the variance, when the API exposes cost fields. */
+export function countLineValueImpact(line: CountLine): number | null {
+  const server = line.valueImpact ?? line.varianceValue;
+  if (server !== undefined && server !== null) return decimalValue(server);
+  if (line.unitCost === undefined || line.unitCost === null) return null;
+  const variance = countLineVariance(line);
+  if (variance === null) return null;
+  return variance * decimalValue(line.unitCost);
+}
+
+/** Asset verification outcome, whichever field the API populated. */
+export function countLineFound(line: CountLine): boolean | null {
+  return line.found ?? line.assetFound ?? null;
+}
+
+/** True once a value has been recorded against the line. */
+export function countLineIsCounted(line: CountLine): boolean {
+  return (
+    countLineCounted(line) !== null ||
+    countLineFound(line) !== null ||
+    !!line.countedAt
+  );
+}
+
+/** Primary display label — asset tag for asset lines, item name otherwise. */
+export function countLineTitle(line: CountLine): string {
+  if (line.asset) return assetTag(line.asset);
+  if (line.item) return itemRefLabel(line.item);
+  return line.assetId ?? line.itemId ?? line.id.slice(0, 8);
+}
+
+export function countLineLocation(line: CountLine): LocationRef | null {
+  return line.storageLocation ?? line.location ?? null;
+}
+
+export interface CountSession {
+  id: string;
+  countNumber?: string;
+  number?: string;
+  /** FULL | CYCLE (server enum); the create API takes "full" | "cycle". */
+  type?: string;
+  status: CountSessionStatus | string;
+  branchId?: string;
+  branch?: BranchSummary | null;
+  warehouseId?: string | null;
+  warehouse?: WarehouseRef | null;
+  storageLocationId?: string | null;
+  locationId?: string | null;
+  storageLocation?: LocationRef | null;
+  location?: LocationRef | null;
+  categoryId?: string | null;
+  category?: { id: string; code?: string; name?: string } | null;
+  /** Explicit item scope, when the session targets selected items. */
+  itemIds?: string[];
+  scopeItemIds?: string[];
+  items?: ItemRef[];
+  isBlind?: boolean;
+  blind?: boolean;
+  snapshotAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  adjustmentsCreatedAt?: string | null;
+  canceledAt?: string | null;
+  canceledBy?: UserRef | null;
+  cancelReason?: string | null;
+  notes?: string | null;
+  createdById?: string;
+  createdBy?: UserRef | null;
+  approvedById?: string | null;
+  approvedBy?: UserRef | null;
+  approvedAt?: string | null;
+  lines?: CountLine[];
+  /** List rows carry counts instead of the hydrated lines. */
+  lineCount?: number;
+  adjustmentCount?: number;
+  /** Draft adjustment transactions generated from approved variances. */
+  adjustmentTransactions?: StockTransaction[];
+  adjustments?: StockTransaction[];
+  /** Optimistic-concurrency version; must be echoed on PATCH. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function countSessionNumber(session: CountSession): string {
+  return session.countNumber ?? session.number ?? session.id.slice(0, 8);
+}
+
+export function countSessionIsBlind(session: CountSession): boolean {
+  return session.isBlind ?? session.blind ?? false;
+}
+
+export function countSessionLines(session: CountSession): CountLine[] {
+  return session.lines ?? [];
+}
+
+export function countSessionAdjustments(session: CountSession): StockTransaction[] {
+  return session.adjustmentTransactions ?? session.adjustments ?? [];
+}
+
+export function countSessionLocation(session: CountSession): LocationRef | null {
+  return session.storageLocation ?? session.location ?? null;
+}
+
+/** "Main WH · Bin A-01 · IT Supplies" scope summary for lists. */
+export function countScopeSummary(session: CountSession): string {
+  const parts: string[] = [];
+  if (session.warehouse) parts.push(refLabel(session.warehouse));
+  const location = countSessionLocation(session);
+  if (location) parts.push(refLabel(location));
+  if (session.category) parts.push(refLabel(session.category));
+  const itemCount =
+    session.scopeItemIds?.length ?? session.itemIds?.length ?? session.items?.length ?? 0;
+  if (itemCount > 0) parts.push(`${itemCount} item${itemCount === 1 ? '' : 's'}`);
+  return parts.length > 0 ? parts.join(' · ') : 'Whole branch';
+}
+
+/** Variance-report row (GET :id/variance) — tolerant of line-shaped payloads. */
+export type CountVarianceRow = CountLine;
+
+/** Normalize the variance payload: array, {lines}, {rows}, or paginated. */
+export function normalizeVarianceRows(payload: unknown): CountVarianceRow[] {
+  if (Array.isArray(payload)) return payload as CountVarianceRow[];
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    for (const key of ['lines', 'rows', 'data', 'variances']) {
+      if (Array.isArray(record[key])) return record[key] as CountVarianceRow[];
+    }
+  }
+  return [];
+}
+
+/* ------------------- Approvals framework (contract §7.2) ------------------- */
+
+/** ApprovalApproverType (Prisma) — how a step resolves its approver. */
+export const ApprovalApproverType = {
+  ROLE: 'ROLE',
+  POSITION: 'POSITION',
+  DEPT_HEAD: 'DEPT_HEAD',
+  USER: 'USER',
+} as const;
+export type ApprovalApproverType =
+  (typeof ApprovalApproverType)[keyof typeof ApprovalApproverType];
+
+export interface ApprovalStep {
+  id?: string;
+  workflowId?: string;
+  sequence?: number;
+  name?: string | null;
+  approverType: ApprovalApproverType | string;
+  approverRoleId?: string | null;
+  approverRole?: RoleSummary | null;
+  approverPositionId?: string | null;
+  approverPosition?: { id: string; code?: string; name?: string } | null;
+  approverUserId?: string | null;
+  approverUser?: UserRef | null;
+}
+
+/** "Role: Branch Manager" / "Requester's department head" step summary. */
+export function approvalStepApproverLabel(step: ApprovalStep): string {
+  switch (step.approverType) {
+    case ApprovalApproverType.ROLE:
+      return `Role: ${step.approverRole ? refLabel(step.approverRole) : (step.approverRoleId ?? '—')}`;
+    case ApprovalApproverType.POSITION:
+      return `Position: ${step.approverPosition ? refLabel(step.approverPosition) : (step.approverPositionId ?? '—')}`;
+    case ApprovalApproverType.DEPT_HEAD:
+      return "Requester's department head";
+    case ApprovalApproverType.USER:
+      return `User: ${step.approverUser?.displayName ?? step.approverUserId ?? '—'}`;
+    default:
+      return String(step.approverType);
+  }
+}
+
+export interface ApprovalWorkflow {
+  id: string;
+  code?: string;
+  name?: string;
+  description?: string | null;
+  /** Canonical document type (STOCK_TRANSACTION | PURCHASE_ORDER | TRANSFER | SUPPLIER_RETURN). */
+  resourceType?: string;
+  documentType?: string;
+  /** Sub-type scope within the resource type; empty = every sub-type. */
+  documentSubtypes?: string[];
+  branchId?: string | null;
+  branch?: BranchSummary | null;
+  minAmount?: DecimalString | null;
+  maxAmount?: DecimalString | null;
+  /** Quantity thresholds against the document's total base quantity. */
+  minQuantity?: DecimalString | null;
+  maxQuantity?: DecimalString | null;
+  isActive?: boolean;
+  steps?: ApprovalStep[];
+  /** List rows carry counts instead of the hydrated steps. */
+  stepCount?: number;
+  requestCount?: number;
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function workflowDocumentType(workflow: ApprovalWorkflow): string {
+  return workflow.documentType ?? workflow.resourceType ?? '';
+}
+
+export function workflowSteps(workflow: ApprovalWorkflow): ApprovalStep[] {
+  return [...(workflow.steps ?? [])].sort(
+    (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0),
+  );
+}
+
+export function workflowStepCount(workflow: ApprovalWorkflow): number {
+  return workflow.stepCount ?? workflowSteps(workflow).length;
+}
+
+export interface ApprovalAction {
+  id: string;
+  requestId?: string;
+  stepId?: string | null;
+  step?: ApprovalStep | null;
+  actorId?: string;
+  actor?: UserRef | null;
+  /** APPROVE | REJECT | RETURN | CANCEL | COMMENT. */
+  action: string;
+  comment?: string | null;
+  /** Original approver when the actor acted under a delegation. */
+  delegatedForId?: string | null;
+  delegatedFor?: UserRef | null;
+  actedAt?: string | null;
+  createdAt?: string;
+}
+
+export function approvalActionAt(action: ApprovalAction): string | null {
+  return action.actedAt ?? action.createdAt ?? null;
+}
+
+/**
+ * Per-request snapshot of one workflow step (ApprovalRequestStep): who it
+ * resolved to and how it was acted on.
+ */
+export interface ApprovalRequestStep {
+  id?: string;
+  requestId?: string;
+  stepId?: string;
+  step?: ApprovalStep | null;
+  sequence?: number;
+  /** Step label — the detail view flattens it to the top level. */
+  name?: string | null;
+  /** ROLE | POSITION | DEPT_HEAD | USER — flattened in the detail view. */
+  approverType?: string;
+  /** PENDING | APPROVED | REJECTED | RETURNED | CANCELED. */
+  status?: string;
+  assigneeUserIds?: string[];
+  /** Resolved assignees ({id, displayName, email}). */
+  assignees?: UserRef[];
+  actedById?: string | null;
+  actedBy?: UserRef | null;
+  actedAt?: string | null;
+  comment?: string | null;
+}
+
+export interface ApprovalRequest {
+  id: string;
+  workflowId?: string;
+  workflow?: ApprovalWorkflow | null;
+  /** Document under approval (polymorphic). */
+  resourceType?: string;
+  documentType?: string;
+  resourceId?: string;
+  documentId?: string;
+  /** Human-readable business number of the document (queue display). */
+  resourceNumber?: string | null;
+  documentNumber?: string | null;
+  /** Server-provided document snapshot (number/status/summary), when present. */
+  document?: Record<string, unknown> | null;
+  resource?: Record<string, unknown> | null;
+  status: string;
+  currentStepId?: string | null;
+  currentStep?: ApprovalStep | null;
+  amount?: DecimalString | null;
+  quantity?: DecimalString | null;
+  branchId?: string | null;
+  branch?: BranchSummary | null;
+  requestedById?: string;
+  requestedBy?: UserRef | null;
+  requestedAt?: string | null;
+  completedAt?: string | null;
+  notes?: string | null;
+  actions?: ApprovalAction[];
+  history?: ApprovalAction[];
+  /** Per-request step snapshots (assignees + resolution). */
+  steps?: ApprovalRequestStep[];
+  /** True when the current step is assigned to the session user. */
+  assignedToMe?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Ordered per-request step snapshots. */
+export function approvalRequestSteps(request: ApprovalRequest): ApprovalRequestStep[] {
+  return [...(request.steps ?? [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+}
+
+export function approvalDocumentType(request: ApprovalRequest): string {
+  return request.resourceType ?? request.documentType ?? '';
+}
+
+export function approvalDocumentId(request: ApprovalRequest): string | null {
+  return request.resourceId ?? request.documentId ?? null;
+}
+
+export function approvalActions(request: ApprovalRequest): ApprovalAction[] {
+  const actions = request.actions ?? request.history ?? [];
+  return [...actions].sort((a, b) => {
+    const left = approvalActionAt(a) ?? '';
+    const right = approvalActionAt(b) ?? '';
+    return left.localeCompare(right);
+  });
+}
+
+/** Human label of the document under approval (number from the snapshot). */
+export function approvalDocumentLabel(request: ApprovalRequest): string {
+  if (request.documentNumber) return request.documentNumber;
+  if (request.resourceNumber) return request.resourceNumber;
+  const snapshot = request.document ?? request.resource;
+  if (snapshot && typeof snapshot === 'object') {
+    for (const key of [
+      'number',
+      'poNumber',
+      'transactionNumber',
+      'transferNumber',
+      'workOrderNumber',
+      'receiptNumber',
+      'countNumber',
+      'assetTag',
+      'name',
+      'title',
+    ]) {
+      const value = (snapshot as Record<string, unknown>)[key];
+      if (typeof value === 'string' && value) return value;
+    }
+  }
+  const id = approvalDocumentId(request);
+  return id ? id.slice(0, 8) : request.id.slice(0, 8);
+}
+
+export interface ApprovalDelegation {
+  id: string;
+  delegatorId?: string;
+  delegator?: UserRef | null;
+  delegateId?: string;
+  delegateUserId?: string;
+  delegate?: UserRef | null;
+  startsAt?: string;
+  endsAt?: string;
+  reason?: string | null;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+export function delegationIsCurrent(delegation: ApprovalDelegation): boolean {
+  if (delegation.isActive === false) return false;
+  const now = Date.now();
+  const starts = delegation.startsAt ? new Date(delegation.startsAt).getTime() : null;
+  const ends = delegation.endsAt ? new Date(delegation.endsAt).getTime() : null;
+  if (starts !== null && Number.isFinite(starts) && now < starts) return false;
+  if (ends !== null && Number.isFinite(ends) && now > ends) return false;
+  return true;
+}
+
+/* ---------------------- Notifications (contract §7.3) ---------------------- */
+
+/**
+ * In-app notification (self-scoped). `type` is a machine code — LOW_STOCK,
+ * PENDING_APPROVAL, MAINTENANCE_DUE, … (spec §20); treat unknown codes
+ * gracefully.
+ */
+export interface AppNotification {
+  id: string;
+  type?: string | null;
+  title?: string | null;
+  message?: string | null;
+  body?: string | null;
+  /** Server-computed deep-link path (NOTIFICATION_LINKS) — navigate verbatim. */
+  link?: string | null;
+  /** Fallback deep-link target (resource type + id). */
+  resourceType?: string | null;
+  resourceId?: string | null;
+  branchId?: string | null;
+  readAt?: string | null;
+  isRead?: boolean;
+  read?: boolean;
+  createdAt?: string;
+}
+
+export function notificationIsRead(notification: AppNotification): boolean {
+  return notification.isRead ?? notification.read ?? !!notification.readAt;
+}
+
+export function notificationMessage(notification: AppNotification): string | null {
+  return notification.message ?? notification.body ?? null;
+}
+
+/** Unread-count payload — number or {count}/{unread}/{total} object. */
+export function normalizeUnreadCount(payload: unknown): number {
+  if (typeof payload === 'number') return payload;
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    for (const key of ['count', 'unread', 'unreadCount', 'total']) {
+      if (typeof record[key] === 'number') return record[key];
+    }
+  }
+  return 0;
+}

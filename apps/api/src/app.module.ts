@@ -28,6 +28,9 @@ import { ProcurementModule } from './procurement/procurement.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { SearchModule } from './search/search.module';
+import { ApprovalsModule } from './approvals/approvals.module';
+import { CountsModule } from './counts/counts.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 const env = loadEnv();
 
@@ -93,6 +96,10 @@ const env = loadEnv();
     // Phase 3.5: file attachments (S3/MinIO) and cross-entity global search.
     AttachmentsModule,
     SearchModule,
+    // Phase 6: physical counts, configurable approvals, in-app notifications.
+    ApprovalsModule,
+    CountsModule,
+    NotificationsModule,
     HealthModule,
   ],
   providers: [

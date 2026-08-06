@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ApprovalsModule } from '../approvals/approvals.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { SupplierReturnsController } from './supplier-returns.controller';
 import { SupplierReturnsService } from './supplier-returns.service';
@@ -9,7 +10,7 @@ import { SupplierReturnsService } from './supplier-returns.service';
  * transaction through the shared posting engine.
  */
 @Module({
-  imports: [InventoryModule],
+  imports: [InventoryModule, ApprovalsModule],
   controllers: [SupplierReturnsController],
   providers: [SupplierReturnsService],
   exports: [SupplierReturnsService],

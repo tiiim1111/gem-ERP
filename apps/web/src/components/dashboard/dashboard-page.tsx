@@ -9,6 +9,7 @@ import {
   Building2,
   CalendarClock,
   IdCard,
+  Inbox,
   MonitorSmartphone,
   Package,
   PackageCheck,
@@ -23,6 +24,7 @@ import {
 import { AssetStatus, PERMISSIONS, PurchaseOrderStatus, TransferStatus } from '@gemerp/shared';
 import { getErrorMessage } from '@/lib/api';
 import {
+  listApprovalRequests,
   listAssets,
   listAuditLogs,
   listBranches,
@@ -481,6 +483,32 @@ function MaintenanceTiles() {
   );
 }
 
+/**
+ * "Pending my approval" tile — the queue is self-scoped (own + assigned), so
+ * the tile renders for every session; a 404 while the API lands hides it.
+ */
+function PendingApprovalsTile() {
+  const pendingQuery = useQuery({
+    queryKey: ['approval-requests', 'count', 'pending-mine'],
+    queryFn: ({ signal }) =>
+      listApprovalRequests({ page: 1, pageSize: 1, status: 'PENDING', assignedToMe: true }, signal),
+    retry: false,
+  });
+
+  if (pendingQuery.isError) return null;
+
+  return (
+    <StatCard
+      title="Pending my approval"
+      icon={Inbox}
+      value={pendingQuery.data?.meta.total}
+      loading={pendingQuery.isPending}
+      error={undefined}
+      href="/approvals"
+    />
+  );
+}
+
 /** Outstanding acknowledgments for the session user's employee record. */
 function MyAcknowledgmentsCard({ employeeId }: { employeeId: string }) {
   const acknowledgmentsQuery = useQuery({
@@ -639,8 +667,9 @@ export function DashboardPage() {
         description="Overview of your GEM-ENI workspace."
       />
 
-      {/* Phase 3 + 4 operations tiles */}
+      {/* Phase 3 + 4 + 6 operations tiles */}
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <PendingApprovalsTile />
         {canViewInventory ? <LowStockTile /> : null}
         {canViewAssets ? <AssetStatusCard /> : null}
         {canViewTransfers ? (

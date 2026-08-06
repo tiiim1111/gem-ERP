@@ -9,11 +9,13 @@ import {
   Building2,
   CalendarClock,
   ChevronDown,
+  ClipboardCheck,
   ClipboardList,
   Factory,
   FileUp,
   History,
   IdCard,
+  Inbox,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -28,6 +30,7 @@ import {
   SlidersHorizontal,
   TriangleAlert,
   Users,
+  Workflow,
   Wrench,
   X,
   type LucideIcon,
@@ -36,6 +39,7 @@ import { PERMISSIONS } from '@gemerp/shared';
 import { cn, initials } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
 import { ChangePasswordDialog } from '@/components/auth/change-password-dialog';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { GlobalSearch } from '@/components/search/global-search';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,6 +60,8 @@ interface NavItem {
    * An array means ANY of the listed permissions unlocks the entry.
    */
   permission: string | readonly string[] | null;
+  /** Highlight only on an exact path match (for entries with sibling subpaths). */
+  exact?: boolean;
 }
 
 interface NavSection {
@@ -96,6 +102,12 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Transfers',
         icon: ArrowLeftRight,
         permission: PERMISSIONS.transfer.view,
+      },
+      {
+        href: '/inventory/counts',
+        label: 'Counts',
+        icon: ClipboardCheck,
+        permission: PERMISSIONS.count.view,
       },
     ],
   },
@@ -145,6 +157,19 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    label: 'Approvals',
+    items: [
+      // The queue is self-scoped (own + assigned requests) — any session.
+      { href: '/approvals', label: 'Inbox', icon: Inbox, permission: null, exact: true },
+      {
+        href: '/approvals/workflows',
+        label: 'Workflows',
+        icon: Workflow,
+        permission: PERMISSIONS.approval.manage,
+      },
+    ],
+  },
+  {
     label: 'Catalog & people',
     items: [
       { href: '/employees', label: 'Employees', icon: IdCard, permission: PERMISSIONS.employee.view },
@@ -170,8 +195,8 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function isActivePath(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/';
+function isActivePath(pathname: string, href: string, exact?: boolean): boolean {
+  if (href === '/' || exact) return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -208,7 +233,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               </p>
             ) : null}
             {section.items.map((item) => {
-              const active = isActivePath(pathname, item.href);
+              const active = isActivePath(pathname, item.href, item.exact);
               return (
                 <Link
                   key={item.href}
@@ -329,7 +354,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex flex-1 justify-center">
             <GlobalSearch />
           </div>
-          <UserMenu onChangePassword={() => setChangePasswordOpen(true)} />
+          <div className="flex shrink-0 items-center gap-1">
+            <NotificationBell />
+            <UserMenu onChangePassword={() => setChangePasswordOpen(true)} />
+          </div>
         </header>
 
         {/* Forced password-change banner */}

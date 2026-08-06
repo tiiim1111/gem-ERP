@@ -32,6 +32,7 @@ import { seedPhase3Inventory } from "./seed-phase3-inventory";
 import { seedPhase3Assets } from "./seed-phase3-assets";
 import { seedPhase4Procurement } from "./seed-phase4-procurement";
 import { seedPhase5Maintenance } from "./seed-phase5-maintenance";
+import { seedPhase6ApprovalsCounts } from "./seed-phase6-approvals-counts";
 
 const prisma = new PrismaClient();
 
@@ -979,6 +980,10 @@ async function main(): Promise<void> {
   // Phase 5: maintenance plans, meter readings, work orders (completed/overdue/in-progress).
   await seedPhase5Maintenance(prisma);
   console.log("  Phase 5 maintenance: plans, meter readings, work orders with parts + history");
+
+  // Phase 6: approval workflows (all four approver types), a completed count, notifications.
+  await seedPhase6ApprovalsCounts(prisma);
+  console.log("  Phase 6 approvals + counts: workflows (ROLE/POSITION/DEPT_HEAD/USER), count session, notifications");
 
   await prisma.auditLog.create({
     data: {

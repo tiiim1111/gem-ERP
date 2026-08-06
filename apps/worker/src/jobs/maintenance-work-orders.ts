@@ -22,9 +22,8 @@
  *    baseline is the completion_meter_reading snapshot of the last completed
  *    WO of that plan+asset (0 when never serviced).
  *
- * Maintenance-due NOTIFICATIONS are deliberately deferred: the notifications
- * module is Phase 6. This job logs reminder-window hits instead of
- * half-building a notification store.
+ * Plans inside their reminder window emit MAINTENANCE_DUE notifications
+ * (Phase 6) — deduplicated per plan + due date so hourly re-runs never nag.
  *
  * The decision logic mirrors apps/api/src/maintenance/work-order-generation.ts
  * (pure, unit-tested there); apps cannot import from each other, so the tiny
@@ -36,8 +35,17 @@ import {
   Prisma,
   PrismaClient,
 } from "@prisma/client";
+import {
+  NOTIFICATION_LINKS,
+  NOTIFICATION_TYPES,
+  notificationDedupeKey,
+} from "@gemerp/shared";
 
 import type { logger as rootLogger } from "../logger";
+import {
+  notifyUsersOnce,
+  usersWithPermissionInBranch,
+} from "./notification-helpers";
 
 type Logger = typeof rootLogger;
 
@@ -364,7 +372,9 @@ export async function generateWorkOrdersFromDuePlans(
     }
   }
 
-  // Reminder-window visibility (notifications land in Phase 6 — deferral).
+  // Reminder window → MAINTENANCE_DUE notifications (Phase 6, spec §20).
+  // Idempotent through the dedup key (plan + due date): the hourly re-run
+  // never duplicates a reminder, and a NEW due date alerts again.
   const reminderPlans = await prisma.maintenancePlan.findMany({
     where: {
       isActive: true,
@@ -372,7 +382,14 @@ export async function generateWorkOrdersFromDuePlans(
       nextDueAt: { not: null, gt: now },
       reminderLeadDays: { not: null },
     },
-    select: { id: true, code: true, nextDueAt: true, reminderLeadDays: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      nextDueAt: true,
+      reminderLeadDays: true,
+      assetLinks: { select: { asset: { select: { branchId: true } } } },
+    },
   });
   for (const plan of reminderPlans) {
     if (!plan.nextDueAt || plan.reminderLeadDays === null) {
@@ -381,16 +398,41 @@ export async function generateWorkOrdersFromDuePlans(
     const windowStart = new Date(
       plan.nextDueAt.getTime() - plan.reminderLeadDays * 24 * 60 * 60 * 1000,
     );
-    if (windowStart <= now) {
-      summary.reminderWindowPlans += 1;
-      logger.info(
-        {
-          planId: plan.id,
-          planCode: plan.code,
-          nextDueAt: plan.nextDueAt.toISOString(),
-        },
-        "maintenance plan inside its reminder window (notification fan-out arrives in Phase 6)",
+    if (windowStart > now) {
+      continue;
+    }
+    summary.reminderWindowPlans += 1;
+    const dueDate = plan.nextDueAt.toISOString().slice(0, 10);
+    const branchIds = [
+      ...new Set(plan.assetLinks.map((link) => link.asset.branchId)),
+    ];
+    for (const branchId of branchIds) {
+      const recipients = await usersWithPermissionInBranch(
+        prisma,
+        "maintenance.work_order.manage",
+        branchId,
       );
+      const created = await notifyUsersOnce(prisma, recipients, {
+        type: NOTIFICATION_TYPES.maintenanceDue,
+        title: "Maintenance due soon",
+        message: `Plan ${plan.code} (${plan.name}) is due ${dueDate}.`,
+        resourceType: "maintenance_plan",
+        resourceId: plan.id,
+        branchId,
+        dedupeKey: notificationDedupeKey(
+          NOTIFICATION_TYPES.maintenanceDue,
+          "maintenance_plan",
+          plan.id,
+          dueDate,
+        ),
+        link: NOTIFICATION_LINKS.maintenancePlans(),
+      });
+      if (created > 0) {
+        logger.info(
+          { planId: plan.id, planCode: plan.code, dueDate, branchId, created },
+          "maintenance-due reminders sent",
+        );
+      }
     }
   }
 

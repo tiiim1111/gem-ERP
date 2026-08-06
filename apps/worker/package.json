@@ -2,7 +2,7 @@
   "name": "@gemerp/worker",
   "version": "0.1.0",
   "private": true,
-  "description": "BullMQ background job runner for GEM ERP — consumes the maintenance-reminders, notifications, and report-exports queues",
+  "description": "BullMQ background job runner for GEM ERP \u2014 consumes the maintenance-reminders, notifications, and report-exports queues",
   "type": "commonjs",
   "main": "dist/main.js",
   "engines": {
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@gemerp/database": "workspace:*",
+    "@gemerp/shared": "workspace:*",
     "@prisma/client": "^6.5.0",
     "bullmq": "^5.34.0",
     "ioredis": "^5.4.2",

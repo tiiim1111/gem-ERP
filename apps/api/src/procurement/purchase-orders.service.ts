@@ -5,6 +5,7 @@ import {
   Prisma,
   PurchaseOrderStatus,
 } from '@prisma/client';
+import { ApprovalEngineService } from '../approvals/approval-engine.service';
 import { AuditService } from '../audit/audit.service';
 import { AppException } from '../common/errors/app.exception';
 import { pageArgs, paginated, parseSort } from '../common/pagination';
@@ -73,6 +74,7 @@ export class PurchaseOrdersService {
     private readonly branchScope: BranchScopeService,
     private readonly audit: AuditService,
     private readonly sequences: SequenceService,
+    private readonly approvals: ApprovalEngineService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -334,44 +336,68 @@ export class PurchaseOrdersService {
       ]);
     }
 
-    // Approval engine arrives in Phase 6. Until a matching active workflow
-    // exists for this resource/branch, submit auto-advances to APPROVED
-    // (docs/status-transitions.md §3) and the document records why —
-    // mirroring stock transactions.
-    const workflow = await this.prisma.approvalWorkflow.findFirst({
-      where: {
-        resourceType: 'PURCHASE_ORDER',
-        isActive: true,
-        OR: [{ branchId: null }, { branchId: po.branchId }],
-      },
-      select: { id: true },
-    });
+    // Phase 6 approval engine: route through the most specific matching
+    // active workflow (branch scope + amount/quantity thresholds picked
+    // from the PO's grand total and total quantity). No match → the PO
+    // auto-advances to APPROVED exactly as before (backward compatible).
     const now = new Date();
-    const autoApproved = !workflow;
-    const claimed = await this.prisma.purchaseOrder.updateMany({
-      where: { id, status: PurchaseOrderStatus.DRAFT },
-      data: {
-        status: autoApproved
-          ? PurchaseOrderStatus.APPROVED
-          : PurchaseOrderStatus.PENDING_APPROVAL,
-        submittedAt: now,
-        ...(autoApproved
-          ? {
-              approvedById: user.id,
-              approvedAt: now,
-              notes: this.appendNote(
-                po.notes,
-                '[auto-approved on submit: no approval workflow configured — approval engine arrives in Phase 6]',
-              ),
-            }
-          : {}),
-        version: { increment: 1 },
-      },
+    const header = await this.prisma.purchaseOrder.findUnique({
+      where: { id },
+      select: { grandTotal: true },
     });
-    if (claimed.count === 0) {
-      throw AppException.invalidStateTransition(
-        'The purchase order was modified concurrently. Refetch and retry.',
-      );
+    const totals = await this.prisma.purchaseOrderLine.aggregate({
+      where: { purchaseOrderId: id },
+      _sum: { quantity: true },
+    });
+    const routed = await this.approvals.routeSubmit(
+      {
+        resourceType: 'PURCHASE_ORDER',
+        resourceId: id,
+        resourceNumber: po.poNumber,
+        branchId: po.branchId,
+        amount: header?.grandTotal ?? null,
+        quantity: totals._sum.quantity,
+        requester: user,
+      },
+      async (tx) => {
+        const claimed = await tx.purchaseOrder.updateMany({
+          where: { id, status: PurchaseOrderStatus.DRAFT },
+          data: {
+            status: PurchaseOrderStatus.PENDING_APPROVAL,
+            submittedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count === 0) {
+          throw AppException.invalidStateTransition(
+            'The purchase order was modified concurrently. Refetch and retry.',
+          );
+        }
+      },
+      ctx,
+    );
+
+    const autoApproved = !routed;
+    if (autoApproved) {
+      const claimed = await this.prisma.purchaseOrder.updateMany({
+        where: { id, status: PurchaseOrderStatus.DRAFT },
+        data: {
+          status: PurchaseOrderStatus.APPROVED,
+          submittedAt: now,
+          approvedById: user.id,
+          approvedAt: now,
+          notes: this.appendNote(
+            po.notes,
+            '[auto-approved on submit: no approval workflow matched]',
+          ),
+          version: { increment: 1 },
+        },
+      });
+      if (claimed.count === 0) {
+        throw AppException.invalidStateTransition(
+          'The purchase order was modified concurrently. Refetch and retry.',
+        );
+      }
     }
 
     await this.audit.log({
@@ -387,6 +413,9 @@ export class PurchaseOrdersService {
           ? PurchaseOrderStatus.APPROVED
           : PurchaseOrderStatus.PENDING_APPROVAL,
         autoApproved,
+        ...(routed
+          ? { workflowCode: routed.workflowCode, requestId: routed.requestId }
+          : {}),
       },
       ...ctx,
     });
@@ -404,6 +433,18 @@ export class PurchaseOrdersService {
       throw AppException.invalidStateTransition(
         poTransitionError(po.status, 'approve'),
       );
+    }
+    // Phase 6: engine-managed POs are decided through the engine.
+    const handled = await this.approvals.actOnResource(
+      user,
+      'PURCHASE_ORDER',
+      id,
+      'APPROVE',
+      comment,
+      ctx,
+    );
+    if (handled) {
+      return this.getById(user, id);
     }
     this.assertNotSelfApproval(user, po.createdById);
 
@@ -455,6 +496,18 @@ export class PurchaseOrdersService {
       throw AppException.invalidStateTransition(
         poTransitionError(po.status, 'reject'),
       );
+    }
+    // Phase 6: engine-managed POs are decided through the engine.
+    const handled = await this.approvals.actOnResource(
+      user,
+      'PURCHASE_ORDER',
+      id,
+      'REJECT',
+      comment,
+      ctx,
+    );
+    if (handled) {
+      return this.getById(user, id);
     }
     this.assertNotSelfApproval(user, po.createdById);
 
@@ -842,6 +895,7 @@ export class PurchaseOrdersService {
       where: { id },
       select: {
         id: true,
+        poNumber: true,
         status: true,
         branchId: true,
         supplierId: true,

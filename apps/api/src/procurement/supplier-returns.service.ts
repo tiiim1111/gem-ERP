@@ -7,6 +7,7 @@ import {
   StockTransactionType,
   TrackingMethod,
 } from '@prisma/client';
+import { ApprovalEngineService } from '../approvals/approval-engine.service';
 import { AuditService } from '../audit/audit.service';
 import { AppException } from '../common/errors/app.exception';
 import { pageArgs, paginated, parseSort } from '../common/pagination';
@@ -84,6 +85,7 @@ export class SupplierReturnsService {
     private readonly audit: AuditService,
     private readonly sequences: SequenceService,
     private readonly posting: StockPostingService,
+    private readonly approvals: ApprovalEngineService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -308,41 +310,59 @@ export class SupplierReturnsService {
       ]);
     }
 
-    // Approval engine arrives in Phase 6 — same auto-approval convention as
-    // stock transactions and purchase orders.
-    const workflow = await this.prisma.approvalWorkflow.findFirst({
-      where: {
-        resourceType: 'SUPPLIER_RETURN',
-        isActive: true,
-        OR: [{ branchId: null }, { branchId: doc.branchId }],
-      },
-      select: { id: true },
-    });
+    // Phase 6 approval engine: route through the most specific matching
+    // active workflow. No match → auto-approve exactly as before.
     const now = new Date();
-    const autoApproved = !workflow;
-    const claimed = await this.prisma.supplierReturn.updateMany({
-      where: { id, status: StockDocumentStatus.DRAFT },
-      data: {
-        status: autoApproved
-          ? StockDocumentStatus.APPROVED
-          : StockDocumentStatus.PENDING_APPROVAL,
-        ...(autoApproved
-          ? {
-              approvedById: user.id,
-              approvedAt: now,
-              notes: this.appendNote(
-                doc.notes,
-                '[auto-approved on submit: no approval workflow configured — approval engine arrives in Phase 6]',
-              ),
-            }
-          : {}),
-        version: { increment: 1 },
-      },
+    const totals = await this.prisma.supplierReturnLine.aggregate({
+      where: { supplierReturnId: id },
+      _sum: { baseQuantity: true },
     });
-    if (claimed.count === 0) {
-      throw AppException.invalidStateTransition(
-        'The supplier return was modified concurrently. Refetch and retry.',
-      );
+    const routed = await this.approvals.routeSubmit(
+      {
+        resourceType: 'SUPPLIER_RETURN',
+        resourceId: id,
+        resourceNumber: doc.returnNumber,
+        branchId: doc.branchId,
+        quantity: totals._sum.baseQuantity,
+        requester: user,
+      },
+      async (tx) => {
+        const claimedPending = await tx.supplierReturn.updateMany({
+          where: { id, status: StockDocumentStatus.DRAFT },
+          data: {
+            status: StockDocumentStatus.PENDING_APPROVAL,
+            version: { increment: 1 },
+          },
+        });
+        if (claimedPending.count === 0) {
+          throw AppException.invalidStateTransition(
+            'The supplier return was modified concurrently. Refetch and retry.',
+          );
+        }
+      },
+      ctx,
+    );
+
+    const autoApproved = !routed;
+    if (autoApproved) {
+      const claimed = await this.prisma.supplierReturn.updateMany({
+        where: { id, status: StockDocumentStatus.DRAFT },
+        data: {
+          status: StockDocumentStatus.APPROVED,
+          approvedById: user.id,
+          approvedAt: now,
+          notes: this.appendNote(
+            doc.notes,
+            '[auto-approved on submit: no approval workflow matched]',
+          ),
+          version: { increment: 1 },
+        },
+      });
+      if (claimed.count === 0) {
+        throw AppException.invalidStateTransition(
+          'The supplier return was modified concurrently. Refetch and retry.',
+        );
+      }
     }
 
     await this.audit.log({
@@ -375,6 +395,18 @@ export class SupplierReturnsService {
       throw AppException.invalidStateTransition(
         transitionError(doc.status, 'approve'),
       );
+    }
+    // Phase 6: engine-managed returns are decided through the engine.
+    const handled = await this.approvals.actOnResource(
+      user,
+      'SUPPLIER_RETURN',
+      id,
+      'APPROVE',
+      comment,
+      ctx,
+    );
+    if (handled) {
+      return this.getById(user, id);
     }
     if (doc.createdById === user.id) {
       throw new AppException(

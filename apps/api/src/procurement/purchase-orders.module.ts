@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ApprovalsModule } from '../approvals/approvals.module';
 import { GoodsReceiptsModule } from './goods-receipts.module';
 import { PurchaseHistoryController } from './purchase-history.controller';
 import { PurchaseHistoryService } from './purchase-history.service';
@@ -12,7 +13,7 @@ import { PurchaseOrdersService } from './purchase-orders.service';
  * Phase 6 engine is absent), plus the purchase-history search.
  */
 @Module({
-  imports: [GoodsReceiptsModule],
+  imports: [GoodsReceiptsModule, ApprovalsModule],
   controllers: [PurchaseOrdersController, PurchaseHistoryController],
   providers: [PurchaseOrdersService, PurchaseHistoryService],
   exports: [PurchaseOrdersService],

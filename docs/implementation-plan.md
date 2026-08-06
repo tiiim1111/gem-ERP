@@ -32,7 +32,7 @@ register.
 | 3 | Inventory and serialized assets | ✅ Delivered (Phase 3.5 deferrals delivered 2026-08-06: attachments, global search, assets.version, inventory.approve, XLSX import, batch labels) |
 | 4 | Procurement | ✅ Delivered (2026-08-05) |
 | 5 | Maintenance | ✅ Delivered (2026-08-05) |
-| 6 | Counts, approvals, and notifications | 📋 Planned |
+| 6 | Counts, approvals, and notifications | ✅ Delivered (2026-08-06; parameterized approver types ROLE/POSITION/DEPT_HEAD/USER; external channels on hold per GemCor) |
 | 7 | Analytics and reports | 📋 Planned |
 | 8 | Hardening and deployment | 📋 Planned |
 

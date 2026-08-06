@@ -633,3 +633,173 @@ export const WORK_ORDER_COMPLETION_OUTCOMES: Array<{
     hint: 'Beyond economic repair — routes through the retirement approval.',
   },
 ];
+
+/* ============== Phase 6 — Counts, approvals, notifications (§7) ============ */
+
+/* ----------------------- Count sessions (contract §7.1) -------------------- */
+
+export const COUNT_SESSION_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Draft',
+  IN_PROGRESS: 'Counting',
+  REVIEW: 'Review',
+  COMPLETED: 'Completed',
+  CANCELED: 'Canceled',
+};
+
+export function countSessionStatusLabel(status: string): string {
+  return COUNT_SESSION_STATUS_LABELS[status] ?? status;
+}
+
+/** Ordered steps for the count-session stepper (Canceled excluded). */
+export const COUNT_SESSION_STEPS: Array<{ status: string; label: string }> = [
+  { status: 'DRAFT', label: 'Draft' },
+  { status: 'IN_PROGRESS', label: 'Counting' },
+  { status: 'REVIEW', label: 'Review' },
+  { status: 'COMPLETED', label: 'Completed' },
+];
+
+export type CountSessionAction =
+  | 'edit'
+  | 'start'
+  | 'record'
+  | 'recount'
+  | 'complete'
+  | 'create-adjustments'
+  | 'cancel';
+
+/**
+ * Legal actions per count-session status — mirrors apps/api counts/count-rules
+ * TRANSITIONS: start → In progress (snapshot), complete → Review (locks lines,
+ * unmasks blind counts), create-adjustments → Completed; a Review recount
+ * reopens the session to In progress.
+ */
+const COUNT_SESSION_ACTIONS: Record<string, CountSessionAction[]> = {
+  DRAFT: ['edit', 'start', 'cancel'],
+  IN_PROGRESS: ['record', 'recount', 'complete', 'cancel'],
+  REVIEW: ['recount', 'create-adjustments', 'cancel'],
+  COMPLETED: [],
+  CANCELED: [],
+};
+
+export function countSessionActionsFor(status: string): CountSessionAction[] {
+  return COUNT_SESSION_ACTIONS[status] ?? [];
+}
+
+/** Permission "any of" list per count-session action (contract §7.1 bindings). */
+export function countSessionActionPermissions(action: CountSessionAction): string[] {
+  switch (action) {
+    case 'edit':
+    case 'start':
+      return [PERMISSIONS.count.create];
+    case 'record':
+      return [PERMISSIONS.count.record];
+    case 'recount':
+      return [PERMISSIONS.count.record, PERMISSIONS.count.recount];
+    case 'complete':
+    case 'create-adjustments':
+      return [PERMISSIONS.count.approve];
+    case 'cancel':
+      return [PERMISSIONS.count.cancel];
+  }
+}
+
+export const COUNT_LINE_FLAG_LABELS: Record<string, string> = {
+  MATCHED: 'Matched',
+  VARIANCE: 'Variance',
+  MISSING: 'Missing',
+  UNEXPECTED: 'Unexpected',
+  DUPLICATE: 'Duplicate',
+  MISPLACED: 'Misplaced',
+};
+
+export function countLineFlagLabel(flag: string): string {
+  return COUNT_LINE_FLAG_LABELS[flag] ?? flag;
+}
+
+/* --------------------- Approvals framework (contract §7.2) ----------------- */
+
+export const APPROVAL_REQUEST_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pending',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  RETURNED: 'Returned for revision',
+  CANCELED: 'Canceled',
+};
+
+export function approvalRequestStatusLabel(status: string): string {
+  return APPROVAL_REQUEST_STATUS_LABELS[status] ?? status;
+}
+
+/** Act on assigned requests — assignment itself is checked server-side. */
+export const APPROVAL_ACT_PERMISSIONS = [PERMISSIONS.approval.act];
+
+/** See the full queue beyond own/assigned requests. */
+export const APPROVAL_VIEW_ALL_PERMISSIONS = [
+  PERMISSIONS.approval.view,
+  PERMISSIONS.approval.manage,
+];
+
+/**
+ * The four approver-resolution types (GemCor requirement): role, position,
+ * requester's department head (resolved at request time), or a named user.
+ */
+export const APPROVAL_APPROVER_TYPES: Array<{
+  value: 'ROLE' | 'POSITION' | 'DEPT_HEAD' | 'USER';
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: 'ROLE',
+    label: 'Role',
+    hint: 'Any active user holding the selected role in the document branch can act.',
+  },
+  {
+    value: 'POSITION',
+    label: 'Position',
+    hint: 'Any employee holding the selected position (with a user account) can act.',
+  },
+  {
+    value: 'DEPT_HEAD',
+    label: 'Department head',
+    hint: "No selection needed — resolved at request time from the requester's department.",
+  },
+  {
+    value: 'USER',
+    label: 'Specific user',
+    hint: 'Exactly the selected user (or their active delegate) can act.',
+  },
+];
+
+/**
+ * Document types the Phase 6 engine routes — canonical resource_type values
+ * mirroring apps/api approvals/approval-rules.ts APPROVAL_RESOURCE_TYPES.
+ */
+export const APPROVAL_DOCUMENT_TYPES: Array<{ value: string; label: string }> = [
+  { value: 'PURCHASE_ORDER', label: 'Purchase order' },
+  { value: 'STOCK_TRANSACTION', label: 'Stock transaction (adjustment / disposal / write-off)' },
+  { value: 'TRANSFER', label: 'Transfer' },
+  { value: 'SUPPLIER_RETURN', label: 'Supplier return' },
+];
+
+/**
+ * Sub-type choices per document type (workflow `documentSubtypes` scope).
+ * Empty selection = every sub-type of the document.
+ */
+export const APPROVAL_DOCUMENT_SUBTYPES: Record<string, Array<{ value: string; label: string }>> = {
+  STOCK_TRANSACTION: CREATABLE_TRANSACTION_TYPES.map((type) => ({
+    value: type,
+    label: STOCK_TRANSACTION_TYPE_LABELS[type] ?? type,
+  })),
+  TRANSFER: [
+    { value: 'LOCATION', label: 'Location transfer' },
+    { value: 'INTRA_BRANCH', label: 'Intra-branch transfer' },
+    { value: 'INTER_BRANCH', label: 'Inter-branch transfer' },
+  ],
+};
+
+export function approvalDocumentTypeLabel(value: string): string {
+  const known = APPROVAL_DOCUMENT_TYPES.find((entry) => entry.value === value);
+  if (known) return known.label;
+  const spaced = value.replace(/[_.-]+/g, ' ').trim();
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase() : value;
+}

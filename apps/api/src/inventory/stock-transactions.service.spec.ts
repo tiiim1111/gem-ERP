@@ -25,6 +25,9 @@ function prismaMock() {
       count: jest.fn(),
       create: jest.fn(),
       deleteMany: jest.fn(),
+      aggregate: jest
+        .fn()
+        .mockResolvedValue({ _sum: { baseQuantity: null, totalCost: null } }),
     },
     item: { findMany: jest.fn() },
     uomConversion: { findMany: jest.fn() },
@@ -133,12 +136,19 @@ describe('StockTransactionsService', () => {
   let prisma: ReturnType<typeof prismaMock>;
   let audit: { log: MockFn };
   let sequences: { next: MockFn };
+  let approvals: { routeSubmit: MockFn; actOnResource: MockFn };
   let service: StockTransactionsService;
 
   beforeEach(() => {
     prisma = prismaMock();
     audit = { log: jest.fn().mockResolvedValue(undefined) };
     sequences = { next: jest.fn().mockResolvedValue(1) };
+    // Phase 6 engine stub: no matching workflow / no open request by default,
+    // so the pre-Phase-6 behaviors the tests pin down stay in force.
+    approvals = {
+      routeSubmit: jest.fn().mockResolvedValue(null),
+      actOnResource: jest.fn().mockResolvedValue(false),
+    };
     service = new StockTransactionsService(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prisma as any,
@@ -147,6 +157,8 @@ describe('StockTransactionsService', () => {
       audit as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sequences as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      approvals as any,
     );
   });
 
@@ -362,13 +374,26 @@ describe('StockTransactionsService', () => {
         .mockResolvedValueOnce(txnHead())
         .mockResolvedValue(txnDetailRow({ status: 'PENDING_APPROVAL' }));
       prisma.stockTransactionLine.count.mockResolvedValue(1);
-      prisma.approvalWorkflow.findFirst.mockResolvedValue({ id: 'wf-1' });
+      // Engine matched a workflow: it runs the claim inside its own
+      // transaction and returns the created request.
+      approvals.routeSubmit.mockImplementation(
+        async (
+          _args: unknown,
+          claim: (tx: unknown) => Promise<void>,
+        ) => {
+          await claim(prisma);
+          return { workflowId: 'wf-1', workflowCode: 'WF-1', requestId: 'req-1' };
+        },
+      );
       prisma.stockTransaction.updateMany.mockResolvedValue({ count: 1 });
 
       await service.submit(superAdmin, 'txn-1', {});
       expect(
         prisma.stockTransaction.updateMany.mock.calls[0][0].data.status,
       ).toBe('PENDING_APPROVAL');
+      expect(audit.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'stock_transaction.submitted' }),
+      );
     });
   });
 

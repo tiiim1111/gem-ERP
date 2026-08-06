@@ -17,6 +17,39 @@ Entry format:
 
 ---
 
+## 2026-08-06 (later) — ✅ Phase 6 complete: counts, parameterized approvals, notifications
+
+Both agents died on session limits mid-build TWICE (resumed via SendMessage each time; disk state verified before every resume). **Local commit only — no push/deploy per Tim.**
+
+**Done (backend — verified: api build ✅, 34 suites / 444 tests ✅ (+52), root typecheck ✅, lint ✅, 8 migrations clean, seed idempotent 3×):**
+- **Counts §7.1** (`apps/api/src/counts/`): sessions CNT-{YYYY}-{SEQ5}; start = atomic snapshot ng balances + expected assets; line counting ({countedQty} / {found, conditionId, locationConfirmed}); rapid scans (barcode + asset tag/serial, out-of-snapshot → UNEXPECTED lines); blind masking hanggang complete; recount REVIEW→IN_PROGRESS; variance report; complete → REVIEW (locks); **create-adjustments (Idempotency-Key required, resumable replay) → DRAFT adjustment txns via existing StockTransactionsService — counts never touch balances**; cancel.
+- **Approvals §7.2** (`apps/api/src/approvals/`): workflows CRUD + activate/deactivate (documentType, subtypes, branch scope, amount+quantity thresholds, ordered steps); **approver resolution at request time: ROLE | POSITION | DEPT_HEAD | USER** (bagong `approval_request_steps` table ang nag-iimbak ng resolved assignees per step — ang GemCor requirement); requests queue with delegation-aware assignedToMe; approve/reject(comment!)/return; delegations with time windows; self-approval 409 kahit via delegation; finalization executes the document's own transition. **Retrofit**: stock-transactions/transfers/POs/supplier-returns submit ay dumadaan sa ApprovalEngineService.routeSubmit (most-specific match: branch > subtype > threshold; document claim + request creation sa iisang transaction); walang workflow = legacy auto-approve behavior (backward compatible).
+- **Notifications §7.3** (`apps/api/src/notifications/`): self-scoped list/unread-count/read/read-all; channel-ready service (in-app now, email/SMS on hold per Tim); dedup per (recipient, dedupeKey), reopen-after-read para sa engine events. Shared: `packages/shared/src/notifications.ts` (NOTIFICATION_TYPES, dedupe keys, NOTIFICATION_LINKS).
+- **Worker**: `notifications` queue, repeatable run-detectors every 15min (advisory-locked): low/out-of-stock, lot expiry 30d, maintenance overdue + due reminders (pinalitan ang Phase 5 log-only note), warranty expiry 30d, overdue asset returns, unreceived transfers >3d, failed-job → super admins.
+- Migration `20260806080000_phase6_counts_approvals_notifications` (additive): approval_request_steps table, workflow subtypes/qty thresholds, count session/line columns, notifications.link.
+- Seed: WF-SEED-PO-4STEP (steps ROLE→POSITION→DEPT_HEAD→USER, lahat nagre-resolve), WF-SEED-ADJ-THRESHOLD (adjustment subtypes, minQuantity 25), completed count session + linked draft adjustment, sample notifications.
+
+**Done (frontend — verified: web build 38/38 pages ✅, lint 0, web typecheck clean):** *(detalye sa ibaba, unchanged)*
+
+**Done (frontend — verified: web build 38/38 pages ✅, lint 0, web typecheck clean):**
+- **Counts**: `/inventory/counts` list/new/detail — branch→warehouse→location scope cascade, blind toggle, full|cycle; detail stepper Draft→Counting→Review→Completed; **mobile-first counting** (64px touch rows, numeric pad dialog, rapid-scan wedge panel → `/scans`), asset lines Found/Not-found + condition + location-confirmed, blind masking until review, recount selection, variance tab (exceptions filter, cost-gated value impact), adjustments tab linking generated draft txns, complete/create-adjustments (Idempotency-Key)/cancel.
+- **Approvals**: `/approvals` inbox (PENDING + assignedToMe defaults) + delegations tabs; detail sheet (document summary + link, step snapshots with resolved assignees, history timeline with delegation attribution, approve/reject!/return!); `/approvals/workflows` list + editor — **bawat step pumipili ng ROLE | POSITION | DEPT_HEAD | USER** na may tamang picker + helper text (Tim's requirement); acting is assignment-based (assignees + in-window delegates), SELF_APPROVAL_FORBIDDEN banner.
+- **Notifications**: topbar bell (unread badge poll 60s + on-focus, 8 recent, mark-read-on-click, read-all), `/notifications` history page with read/type filters; deep links via server `link` field; `/counts/[id]` at `/approvals/[id]` ay canonical redirect targets ng shared NOTIFICATION_LINKS.
+- Nav: Counts under Inventory (count.view), Approvals section (Inbox + Workflows), "Pending my approval" dashboard tile.
+- Lib: full §7.1–7.3 endpoint surface (12 count + 14 approval + 4 notification fns), types + tolerant helpers, status-maps mirror ng backend count-rules TRANSITIONS.
+
+**Decisions (aligned sa actual DTOs):** conditionId (not condition) sa asset count lines; workflow documentType UPPERCASE + code create-only + no version sa workflow PATCH; count flow complete→REVIEW→create-adjustments→COMPLETED; unread `{unread}`; variance `{session, summary, lines}`.
+
+**Integration (orchestrator):** wired ApprovalsModule + CountsModule + NotificationsModule sa app.module.ts, seedPhase6ApprovalsCounts sa seed.ts; full chain green (build, typecheck 5/5, lint, **444 api tests**, 8 migrations clean, full seed idempotent). **Live smoke via proxy (10 steps, all passed):** workflows list may 4 approver types ROLE→POSITION→DEPT_HEAD→USER → notifications (unread 9, MAINTENANCE_DUE mula sa detectors!) → count create/start (snapshot 2 lines) → count −2 → complete → REVIEW → variance −2 → create-adjustments STK-2026-000023 + **idempotent replay 200 walang doble** → adjustment qty 30 submit → **PENDING_APPROVAL** (routed sa WF-SEED-ADJ-THRESHOLD, hindi auto-approve) → self-approve = **409 SELF_APPROVAL_FORBIDDEN** → branchadmin assignedToMe=YES → approve → document **APPROVED** → requester nakatanggap ng **APPROVAL_APPROVED** notification.
+
+**Local dev env note:** may kapwa-proyektong v-hive na nakaupo ngayon sa ports 3000/3001 paminsan-minsan; ang GEM-ENI dev ay pinapatakbo na sa **API port 3011** + web na may `API_PROXY_TARGET=http://localhost:3011` kapag okupado ang 3001. Production unaffected (sariling env vars).
+
+**Decisions:** count flow complete→REVIEW→create-adjustments→COMPLETED; one draft per warehouse+direction (mixed variance = INCREASE at DECREASE drafts); create-adjustments needs `inventory.adjust` din (reuses StockTransactionsService.create); approval acting is assignment-based hindi permission-based (per contract); missing/misplaced assets flagged only (manual follow-up); BRANCH_ADMIN granted `approval.manage`.
+
+**Pending / Next:** Phase 7 (analytics, reports, exports) — ang huling malaking phase. Deferred: variance value-impact costs sa UI (helpers ready), search indexing ng counts/approvals, external notification channels (on hold per Tim). **HOLD: push/deploy/password rotation (ChangeMe!123 live publicly).**
+
+---
+
 ## 2026-08-06 — ✅ Phase 3.5 deferrals complete (attachments, search, versions, XLSX, batch labels)
 
 Both agents died on session limits mid-build (resumed via SendMessage, context intact). **Local commit only — no push/deploy per Tim.**

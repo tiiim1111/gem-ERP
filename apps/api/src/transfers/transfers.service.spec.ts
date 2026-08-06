@@ -21,6 +21,7 @@ function prismaMock() {
       update: jest.fn(),
       createMany: jest.fn(),
       deleteMany: jest.fn(),
+      aggregate: jest.fn().mockResolvedValue({ _sum: { baseQuantity: null } }),
     },
     transferReceipt: { create: jest.fn() },
     transferReceiptLine: { create: jest.fn() },
@@ -191,6 +192,7 @@ describe('TransfersService', () => {
   let posting: ReturnType<typeof postingMock>;
   let audit: { log: MockFn };
   let sequences: { next: MockFn };
+  let approvals: { routeSubmit: MockFn; actOnResource: MockFn };
   let service: TransfersService;
 
   beforeEach(() => {
@@ -198,6 +200,11 @@ describe('TransfersService', () => {
     posting = postingMock();
     audit = { log: jest.fn().mockResolvedValue(undefined) };
     sequences = { next: jest.fn().mockResolvedValue(9) };
+    // Phase 6 engine stub: no matching workflow / no open request by default.
+    approvals = {
+      routeSubmit: jest.fn().mockResolvedValue(null),
+      actOnResource: jest.fn().mockResolvedValue(false),
+    };
     service = new TransfersService(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prisma as any,
@@ -208,6 +215,8 @@ describe('TransfersService', () => {
       sequences as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       posting as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      approvals as any,
     );
     prisma.$transaction.mockImplementation(
       async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma),
