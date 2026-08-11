@@ -31,6 +31,9 @@ import { SearchModule } from './search/search.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { CountsModule } from './counts/counts.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
+import { ExportsModule } from './exports/exports.module';
+import { PrintablesModule } from './printables/printables.module';
 
 const env = loadEnv();
 
@@ -100,6 +103,10 @@ const env = loadEnv();
     ApprovalsModule,
     CountsModule,
     NotificationsModule,
+    // Phase 7: dashboard KPIs, report registry, queued exports, printable documents.
+    ReportsModule,
+    ExportsModule,
+    PrintablesModule,
     HealthModule,
   ],
   providers: [

@@ -23,6 +23,7 @@ import {
   cancelCountSession,
   completeCountSession,
   createCountAdjustments,
+  fetchCountSheet,
   getCountSession,
   getCountVariance,
   recordCountLine,
@@ -89,6 +90,7 @@ import { useToast } from '@/components/ui/toast';
 import { LookupSelect } from '@/components/inventory/pickers';
 import { stockTransactionStatusBadge } from '@/components/inventory/badges';
 import { countLineFlagBadge, countSessionStatusBadge, countTypeBadge } from '@/components/counts/badges';
+import { PrintDocumentButton } from '@/components/reports/print-document-button';
 
 /* --------------------------------- Stepper --------------------------------- */
 
@@ -640,6 +642,11 @@ export function CountDetail({ countId }: { countId: string }) {
             <Link href="/inventory/counts" className={buttonVariants({ variant: 'outline' })}>
               <ArrowLeft aria-hidden /> All counts
             </Link>
+            <PrintDocumentButton
+              fetchDocument={() => fetchCountSheet(session.id)}
+              fileName={`count-${countSessionNumber(session)}-sheet.pdf`}
+              label="Count sheet"
+            />
             {canStart ? (
               <Button onClick={() => startMutation.mutate()} loading={startMutation.isPending}>
                 <Play aria-hidden /> Start counting

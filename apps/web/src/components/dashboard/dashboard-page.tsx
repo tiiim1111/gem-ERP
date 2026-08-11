@@ -2,53 +2,51 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeftRight,
   BadgeCheck,
-  Building2,
+  Banknote,
   CalendarClock,
-  IdCard,
+  ClipboardList,
   Inbox,
+  Layers,
   MonitorSmartphone,
   Package,
   PackageCheck,
   ScrollText,
-  ShieldCheck,
+  ShieldAlert,
   ShoppingCart,
   TriangleAlert,
-  Users,
+  Wallet,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { AssetStatus, PERMISSIONS, PurchaseOrderStatus, TransferStatus } from '@gemerp/shared';
-import { getErrorMessage } from '@/lib/api';
+import { PERMISSIONS } from '@gemerp/shared';
+import { isApiClientError } from '@/lib/api';
 import {
+  getDashboardSummary,
   listApprovalRequests,
-  listAssets,
   listAuditLogs,
-  listBranches,
   listEmployeeAcknowledgments,
-  listEmployees,
-  listItems,
-  listLowStock,
   listMySessions,
-  listPurchaseOrders,
-  listRoles,
-  listTotal,
-  listTransfers,
-  listUsers,
-  listWorkOrders,
   revokeMySession,
 } from '@/lib/endpoints';
-import { OPEN_WORK_ORDER_STATUSES } from '@/lib/status-maps';
+import { REPORTS_VIEW_PERMISSIONS, stockTransactionTypeLabel } from '@/lib/status-maps';
 import {
   assetTag,
   auditTimestamp,
   custodyExpectedReturn,
   custodyIsOverdue,
+  formatMoney,
   itemRefLabel,
   meEmployeeId,
+  stockTransactionNumber,
+  summaryCount,
+  summaryMoney,
+  summaryRecentTransactions,
+  summaryStatusCounts,
+  type DashboardSummary,
   type SessionInfo,
 } from '@/lib/types';
 import { formatDate, formatDateTime, formatRelativeTime, humanize } from '@/lib/utils';
@@ -63,6 +61,9 @@ import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/components/ui/toast';
+import { stockTransactionStatusBadge } from '@/components/inventory/badges';
+
+/* ------------------------------- Stat tiles -------------------------------- */
 
 function StatCard({
   title,
@@ -106,6 +107,434 @@ function StatCard({
     body
   );
 }
+
+/**
+ * One /dashboard/summary KPI tile. Absent metrics render nothing (per-widget
+ * absence is graceful — the server only serializes blocks the caller may see).
+ * `alarmWhenPositive` tints the tile once the count is above zero.
+ */
+function SummaryTile({
+  title,
+  icon: Icon,
+  value,
+  loading,
+  href,
+  alarmWhenPositive,
+}: {
+  title: string;
+  icon: LucideIcon;
+  value: number | null;
+  loading: boolean;
+  href?: string;
+  alarmWhenPositive?: boolean;
+}) {
+  if (!loading && value === null) return null;
+  const alarming = !!alarmWhenPositive && (value ?? 0) > 0;
+
+  const body = (
+    <Card
+      className={
+        alarming
+          ? 'border-warning/50 bg-warning/5 transition-colors hover:border-warning'
+          : href
+            ? 'transition-colors hover:border-primary/40'
+            : undefined
+      }
+    >
+      <CardContent className="flex items-center gap-4 p-4 sm:p-5">
+        <div className={alarming ? 'rounded-md bg-warning/15 p-2.5' : 'rounded-md bg-primary/10 p-2.5'}>
+          <Icon className={alarming ? 'h-5 w-5 text-warning' : 'h-5 w-5 text-primary'} aria-hidden />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm text-muted-foreground">{title}</p>
+          {loading ? (
+            <Skeleton className="mt-1 h-7 w-14" />
+          ) : (
+            <p className="text-2xl font-semibold tabular-nums">{value}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+  return href ? (
+    <Link href={href} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {body}
+    </Link>
+  ) : (
+    body
+  );
+}
+
+/** Peso value widget — rendered only when the API included the figure. */
+function ValueTile({
+  title,
+  icon: Icon,
+  value,
+  loading,
+}: {
+  title: string;
+  icon: LucideIcon;
+  value: string | number | null;
+  loading: boolean;
+}) {
+  if (!loading && value === null) return null;
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-4 p-4 sm:p-5">
+        <div className="rounded-md bg-success/10 p-2.5">
+          <Icon className="h-5 w-5 text-success" aria-hidden />
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm text-muted-foreground">{title}</p>
+          {loading ? (
+            <Skeleton className="mt-1 h-7 w-24" />
+          ) : (
+            <p className="truncate text-2xl font-semibold tabular-nums">{formatMoney(value)}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------- Assets by status card --------------------------- */
+
+/** Status → bar fill (status palette; labels below carry identity). */
+const ASSET_STATUS_BAR_CLASS: Record<string, string> = {
+  AVAILABLE: 'bg-success',
+  ASSIGNED: 'bg-primary',
+  RESERVED: 'bg-primary/60',
+  IN_TRANSFER: 'bg-primary/40',
+  UNDER_MAINTENANCE: 'bg-warning',
+  UNDER_INSPECTION: 'bg-warning/60',
+  DAMAGED: 'bg-destructive',
+  LOST: 'bg-destructive/60',
+};
+
+/**
+ * Assets by status with a simple CSS distribution bar (no chart libs). Every
+ * segment is identified by the labeled counts underneath — never color alone.
+ */
+function AssetStatusSummaryCard({
+  summary,
+  loading,
+}: {
+  summary: DashboardSummary | undefined;
+  loading: boolean;
+}) {
+  const rows = summaryStatusCounts(summary, 'assets.byStatus', 'assetsByStatus', 'assets.statusCounts');
+  if (!loading && rows.length === 0) return null;
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  const shown = [...rows].sort((a, b) => b.count - a.count).slice(0, 6);
+
+  return (
+    <Link
+      href="/assets"
+      className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:col-span-2"
+    >
+      <Card className="h-full transition-colors hover:border-primary/40">
+        <CardContent className="p-4 sm:p-5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="rounded-md bg-primary/10 p-2">
+                <MonitorSmartphone className="h-4 w-4 text-primary" aria-hidden />
+              </div>
+              <p className="text-sm text-muted-foreground">Assets by status</p>
+            </div>
+            {loading ? (
+              <Skeleton className="h-6 w-12" />
+            ) : (
+              <p className="text-lg font-semibold tabular-nums">{total}</p>
+            )}
+          </div>
+          {loading ? (
+            <Skeleton className="h-2 w-full" />
+          ) : (
+            <div
+              className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full"
+              role="img"
+              aria-label={rows.map((row) => `${humanize(row.status)}: ${row.count}`).join(', ')}
+            >
+              {rows
+                .filter((row) => row.count > 0)
+                .map((row) => (
+                  <div
+                    key={row.status}
+                    className={`${ASSET_STATUS_BAR_CLASS[row.status] ?? 'bg-muted-foreground/30'} rounded-full`}
+                    style={{ width: `${total > 0 ? (row.count / total) * 100 : 0}%` }}
+                  />
+                ))}
+            </div>
+          )}
+          <div className="mt-3 grid grid-cols-3 gap-x-2 gap-y-1.5 sm:grid-cols-6">
+            {(loading ? [] : shown).map((row) => (
+              <div key={row.status} className="min-w-0">
+                <p className="flex items-center gap-1.5 text-lg font-semibold tabular-nums">
+                  <span
+                    aria-hidden
+                    className={`h-2 w-2 shrink-0 rounded-full ${ASSET_STATUS_BAR_CLASS[row.status] ?? 'bg-muted-foreground/30'}`}
+                  />
+                  {row.count}
+                </p>
+                <p className="truncate text-[11px] text-muted-foreground">{humanize(row.status)}</p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+/* ------------------------ Recent transactions card ------------------------- */
+
+function RecentTransactionsCard({
+  summary,
+  loading,
+}: {
+  summary: DashboardSummary | undefined;
+  loading: boolean;
+}) {
+  const transactions = summaryRecentTransactions(summary);
+  if (!loading && transactions.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-start justify-between space-y-0">
+        <div className="space-y-1">
+          <CardTitle>Recent transactions</CardTitle>
+          <CardDescription>Latest stock documents across your branches.</CardDescription>
+        </div>
+        <Link href="/inventory/transactions" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+          View all
+        </Link>
+      </CardHeader>
+      <CardContent className="p-0 sm:p-0">
+        {loading ? (
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : (
+          <ul className="divide-y">
+            {transactions.slice(0, 8).map((txn) => (
+              <li key={txn.id}>
+                <Link
+                  href={`/inventory/transactions/${txn.id}`}
+                  className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 sm:px-5"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-mono text-xs font-medium">
+                      {stockTransactionNumber(txn)}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {txn.type ? stockTransactionTypeLabel(txn.type) : ''}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {txn.status ? stockTransactionStatusBadge(txn.status) : null}
+                    <time
+                      className="text-xs tabular-nums text-muted-foreground"
+                      title={formatDateTime(txn.postedAt ?? txn.createdAt)}
+                    >
+                      {formatRelativeTime(txn.postedAt ?? txn.createdAt)}
+                    </time>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ------------------------- Phase 7 summary section ------------------------- */
+
+/**
+ * All KPI tiles from the single GET /dashboard/summary call (contract §8) —
+ * replacing the per-module count queries the dashboard ran through Phase 6.
+ * Each tile hides when its block is absent from the payload; a 403/404 hides
+ * the whole section (no reports.view, or the API not deployed yet).
+ */
+function SummarySection() {
+  const summaryQuery = useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: ({ signal }) => getDashboardSummary(signal),
+    retry: false,
+  });
+
+  if (
+    summaryQuery.isError &&
+    isApiClientError(summaryQuery.error) &&
+    (summaryQuery.error.status === 403 || summaryQuery.error.status === 404)
+  ) {
+    return null;
+  }
+  if (summaryQuery.isError) {
+    return (
+      <div className="mb-4">
+        <ErrorState error={summaryQuery.error} onRetry={() => summaryQuery.refetch()} />
+      </div>
+    );
+  }
+
+  const summary = summaryQuery.data;
+  const loading = summaryQuery.isPending;
+  const count = (...paths: string[]) => summaryCount(summary, ...paths);
+
+  // Canonical paths mirror the API's DashboardSummaryView (apps/api
+  // reports/dashboard.service.ts); one flat alias each tolerates drift.
+  const inventoryValue = summaryMoney(summary, 'inventory.inventoryValue', 'inventoryValue');
+  const acquisitionValue = summaryMoney(summary, 'assets.acquisitionValue', 'acquisitionValue');
+  const expiryWindow = count('expirations.windowDays');
+
+  return (
+    <>
+      {/* Value widgets — the API includes these only for cost-permitted users. */}
+      {loading || inventoryValue !== null || acquisitionValue !== null ? (
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ValueTile title="Inventory value" icon={Wallet} value={inventoryValue} loading={loading} />
+          <ValueTile
+            title="Asset acquisition value"
+            icon={Banknote}
+            value={acquisitionValue}
+            loading={loading}
+          />
+        </div>
+      ) : null}
+
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AssetStatusSummaryCard summary={summary} loading={loading} />
+        <SummaryTile
+          title="Assigned assets"
+          icon={BadgeCheck}
+          value={count('assets.assigned', 'assignedAssets')}
+          loading={loading}
+          href="/assets"
+        />
+        <SummaryTile
+          title="Available assets"
+          icon={PackageCheck}
+          value={count('assets.available', 'availableAssets')}
+          loading={loading}
+          href="/assets"
+        />
+        <SummaryTile
+          title="Items (SKUs)"
+          icon={Package}
+          value={count('inventory.skuCount', 'skuCount')}
+          loading={loading}
+          href="/items"
+        />
+        <SummaryTile
+          title="Low-stock items"
+          icon={TriangleAlert}
+          value={count('inventory.lowStockCount', 'lowStockCount')}
+          loading={loading}
+          href="/inventory/low-stock"
+          alarmWhenPositive
+        />
+        <SummaryTile
+          title="Out of stock"
+          icon={ShieldAlert}
+          value={count('inventory.outOfStockCount', 'outOfStockCount')}
+          loading={loading}
+          href="/inventory/low-stock"
+          alarmWhenPositive
+        />
+        <SummaryTile
+          title="Transfers pending approval"
+          icon={ArrowLeftRight}
+          value={count('transfers.pendingApproval', 'pendingTransfers')}
+          loading={loading}
+          href="/inventory/transfers"
+        />
+        <SummaryTile
+          title="Transfers in transit"
+          icon={ArrowLeftRight}
+          value={count('transfers.inTransit', 'inTransitTransfers')}
+          loading={loading}
+          href="/inventory/transfers"
+        />
+        <SummaryTile
+          title="Pending approvals"
+          icon={Inbox}
+          value={count('approvals.pending', 'pendingApprovals')}
+          loading={loading}
+          href="/approvals"
+        />
+        <SummaryTile
+          title="Maintenance due soon"
+          icon={CalendarClock}
+          value={count('maintenance.assetsDueSoon', 'maintenanceDue')}
+          loading={loading}
+          href="/maintenance/work-orders"
+        />
+        <SummaryTile
+          title="Maintenance overdue"
+          icon={CalendarClock}
+          value={count('maintenance.assetsOverdue', 'maintenanceOverdue')}
+          loading={loading}
+          href="/maintenance/work-orders"
+          alarmWhenPositive
+        />
+        <SummaryTile
+          title="Open work orders"
+          icon={Wrench}
+          value={count('maintenance.openWorkOrders', 'openWorkOrders')}
+          loading={loading}
+          href="/maintenance/work-orders"
+        />
+        <SummaryTile
+          title="Overdue work orders"
+          icon={Wrench}
+          value={count('maintenance.overdueWorkOrders', 'overdueWorkOrders')}
+          loading={loading}
+          href="/maintenance/work-orders"
+          alarmWhenPositive
+        />
+        <SummaryTile
+          title={expiryWindow ? `Warranties expiring (${expiryWindow}d)` : 'Warranties expiring'}
+          icon={ShieldAlert}
+          value={count('expirations.warrantiesExpiring', 'warrantiesExpiring')}
+          loading={loading}
+          href="/assets"
+        />
+        <SummaryTile
+          title={expiryWindow ? `Lots expiring (${expiryWindow}d)` : 'Lots expiring'}
+          icon={Layers}
+          value={count('expirations.lotsExpiring', 'lotsExpiring')}
+          loading={loading}
+          href="/inventory/lots"
+          alarmWhenPositive
+        />
+        <SummaryTile
+          title="Open POs"
+          icon={ShoppingCart}
+          value={count('procurement.openPurchaseOrders', 'openPurchaseOrders')}
+          loading={loading}
+          href="/procurement/purchase-orders"
+        />
+        <SummaryTile
+          title="Draft receipts"
+          icon={PackageCheck}
+          value={count('procurement.draftReceipts', 'draftReceipts')}
+          loading={loading}
+          href="/procurement/purchase-orders"
+        />
+      </div>
+
+      <div className="mb-4">
+        <RecentTransactionsCard summary={summary} loading={loading} />
+      </div>
+    </>
+  );
+}
+
+/* ----------------------------- Self-scoped cards --------------------------- */
 
 function MySessionsCard() {
   const queryClient = useQueryClient();
@@ -270,222 +699,9 @@ function RecentActivityCard() {
   );
 }
 
-/** Prominent low-stock tile — live count linking to the report. */
-function LowStockTile() {
-  const lowStockQuery = useQuery({
-    queryKey: ['low-stock', 'count'],
-    queryFn: ({ signal }) => listLowStock({ page: 1, pageSize: 100 }, signal),
-  });
-  const count = lowStockQuery.data ? listTotal(lowStockQuery.data) : undefined;
-  const alarming = (count ?? 0) > 0;
-
-  return (
-    <Link
-      href="/inventory/low-stock"
-      className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Card
-        className={
-          alarming
-            ? 'border-warning/50 bg-warning/5 transition-colors hover:border-warning'
-            : 'transition-colors hover:border-primary/40'
-        }
-      >
-        <CardContent className="flex items-center gap-4 p-4 sm:p-5">
-          <div className={alarming ? 'rounded-md bg-warning/15 p-2.5' : 'rounded-md bg-primary/10 p-2.5'}>
-            <TriangleAlert
-              className={alarming ? 'h-5 w-5 text-warning' : 'h-5 w-5 text-primary'}
-              aria-hidden
-            />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm text-muted-foreground">Low-stock items</p>
-            {lowStockQuery.isPending ? (
-              <Skeleton className="mt-1 h-7 w-14" />
-            ) : lowStockQuery.isError ? (
-              <p className="text-sm text-destructive">Unavailable</p>
-            ) : (
-              <p className="text-2xl font-semibold tabular-nums">{count}</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
-/** Assets grouped by key lifecycle statuses. */
-function AssetStatusCard() {
-  const statuses = [
-    { status: AssetStatus.AVAILABLE, label: 'Available' },
-    { status: AssetStatus.ASSIGNED, label: 'Assigned' },
-    { status: AssetStatus.UNDER_MAINTENANCE, label: 'Maintenance' },
-    { status: AssetStatus.DAMAGED, label: 'Damaged' },
-  ] as const;
-
-  const queries = useQueries({
-    queries: statuses.map((entry) => ({
-      queryKey: ['assets', 'count', entry.status],
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        listAssets({ page: 1, pageSize: 1, status: entry.status }, signal),
-    })),
-  });
-
-  return (
-    <Link
-      href="/assets"
-      className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <Card className="transition-colors hover:border-primary/40">
-        <CardContent className="p-4 sm:p-5">
-          <div className="mb-2 flex items-center gap-2">
-            <div className="rounded-md bg-primary/10 p-2">
-              <MonitorSmartphone className="h-4 w-4 text-primary" aria-hidden />
-            </div>
-            <p className="text-sm text-muted-foreground">Assets by status</p>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {statuses.map((entry, index) => {
-              const query = queries[index]!;
-              return (
-                <div key={entry.status} className="min-w-0">
-                  {query.isPending ? (
-                    <Skeleton className="h-6 w-10" />
-                  ) : query.isError ? (
-                    <p className="text-sm text-destructive">—</p>
-                  ) : (
-                    <p className="text-lg font-semibold tabular-nums">{query.data.meta.total}</p>
-                  )}
-                  <p className="truncate text-[11px] text-muted-foreground">{entry.label}</p>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
-/**
- * "Open POs" + "Awaiting receipt" tiles — real counts from list meta.total,
- * one page-size-1 query per status (the list endpoint has no multi-status
- * filter in the contract).
- */
-function ProcurementTiles() {
-  const openStatuses = [
-    PurchaseOrderStatus.DRAFT,
-    PurchaseOrderStatus.PENDING_APPROVAL,
-    PurchaseOrderStatus.APPROVED,
-    PurchaseOrderStatus.PARTIALLY_RECEIVED,
-  ] as const;
-
-  const queries = useQueries({
-    queries: openStatuses.map((status) => ({
-      queryKey: ['purchase-orders', 'count', status],
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        listPurchaseOrders({ page: 1, pageSize: 1, status }, signal),
-    })),
-  });
-
-  const sum = (statuses: readonly string[]): number | undefined => {
-    let total = 0;
-    for (const [index, status] of openStatuses.entries()) {
-      if (!statuses.includes(status)) continue;
-      const query = queries[index]!;
-      if (!query.data) return undefined;
-      total += query.data.meta.total;
-    }
-    return total;
-  };
-
-  const anyLoading = queries.some((query) => query.isPending);
-  const anyError = queries.find((query) => query.error)?.error;
-  const awaitingStatuses = [
-    PurchaseOrderStatus.APPROVED,
-    PurchaseOrderStatus.PARTIALLY_RECEIVED,
-  ] as const;
-
-  return (
-    <>
-      <StatCard
-        title="Open POs"
-        icon={ShoppingCart}
-        value={sum(openStatuses)}
-        loading={anyLoading}
-        error={anyError}
-        href="/procurement/purchase-orders"
-      />
-      <StatCard
-        title="Awaiting receipt"
-        icon={PackageCheck}
-        value={sum(awaitingStatuses)}
-        loading={queries[2]!.isPending || queries[3]!.isPending}
-        error={queries[2]!.error ?? queries[3]!.error}
-        href="/procurement/purchase-orders"
-      />
-    </>
-  );
-}
-
-/**
- * "Open work orders" + "Overdue maintenance" tiles — real counts from list
- * meta.total, one page-size-1 query per open status (the list endpoint has no
- * multi-status filter in the contract); overdue repeats them with dueBefore.
- */
-function MaintenanceTiles() {
-  // Stable per mount so the query keys don't churn every render.
-  const [now] = React.useState(() => new Date().toISOString());
-
-  const openQueries = useQueries({
-    queries: OPEN_WORK_ORDER_STATUSES.map((status) => ({
-      queryKey: ['maintenance-work-orders', 'count', status],
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        listWorkOrders({ page: 1, pageSize: 1, status }, signal),
-    })),
-  });
-  const overdueQueries = useQueries({
-    queries: OPEN_WORK_ORDER_STATUSES.map((status) => ({
-      queryKey: ['maintenance-work-orders', 'count-overdue', status, now],
-      queryFn: ({ signal }: { signal?: AbortSignal }) =>
-        listWorkOrders({ page: 1, pageSize: 1, status, dueBefore: now }, signal),
-    })),
-  });
-
-  const sum = (queries: typeof openQueries): number | undefined => {
-    let total = 0;
-    for (const query of queries) {
-      if (!query.data) return undefined;
-      total += query.data.meta.total;
-    }
-    return total;
-  };
-
-  return (
-    <>
-      <StatCard
-        title="Open work orders"
-        icon={Wrench}
-        value={sum(openQueries)}
-        loading={openQueries.some((query) => query.isPending)}
-        error={openQueries.find((query) => query.error)?.error}
-        href="/maintenance/work-orders"
-      />
-      <StatCard
-        title="Overdue maintenance"
-        icon={CalendarClock}
-        value={sum(overdueQueries)}
-        loading={overdueQueries.some((query) => query.isPending)}
-        error={overdueQueries.find((query) => query.error)?.error}
-        href="/maintenance/work-orders"
-      />
-    </>
-  );
-}
-
 /**
  * "Pending my approval" tile — the queue is self-scoped (own + assigned), so
- * the tile renders for every session; a 404 while the API lands hides it.
+ * the tile renders for every session (unlike the branch-wide summary tile).
  */
 function PendingApprovalsTile() {
   const pendingQuery = useQuery({
@@ -583,82 +799,15 @@ function MyAcknowledgmentsCard({ employeeId }: { employeeId: string }) {
 }
 
 export function DashboardPage() {
-  const { user, can } = useSession();
-  const { toast } = useToast();
-
-  const canViewUsers = can(PERMISSIONS.user.view);
-  const canViewBranches = can(PERMISSIONS.branch.view);
-  const canViewRoles = can(PERMISSIONS.role.view);
+  const { user, can, canAny } = useSession();
   const canViewAudit = can(PERMISSIONS.audit.view);
-  const canViewEmployees = can(PERMISSIONS.employee.view);
-  const canViewItems = can(PERMISSIONS.item.view);
-  const canViewInventory = can(PERMISSIONS.inventory.view);
-  const canViewAssets = can(PERMISSIONS.asset.view);
-  const canViewTransfers = can(PERMISSIONS.transfer.view);
-  const canViewPos = can(PERMISSIONS.procurementPo.view);
-  const canViewWorkOrders = can(PERMISSIONS.maintenanceWorkOrder.view);
+  const canViewReports = canAny(REPORTS_VIEW_PERMISSIONS);
   const myEmployeeId = meEmployeeId(user);
 
-  const usersCount = useQuery({
-    queryKey: ['users', 'count'],
-    queryFn: ({ signal }) => listUsers({ page: 1, pageSize: 1 }, signal),
-    enabled: canViewUsers,
-  });
-  const branchesCount = useQuery({
-    queryKey: ['branches', 'count'],
-    queryFn: ({ signal }) => listBranches({ page: 1, pageSize: 1 }, signal),
-    enabled: canViewBranches,
-  });
-  const rolesCount = useQuery({
-    queryKey: ['roles', 'count'],
-    queryFn: ({ signal }) => listRoles({ page: 1, pageSize: 1 }, signal),
-    enabled: canViewRoles,
-  });
-  const employeesCount = useQuery({
-    queryKey: ['employees', 'count'],
-    queryFn: ({ signal }) => listEmployees({ page: 1, pageSize: 1 }, signal),
-    enabled: canViewEmployees,
-  });
-  const itemsCount = useQuery({
-    queryKey: ['items', 'count'],
-    queryFn: ({ signal }) => listItems({ page: 1, pageSize: 1 }, signal),
-    enabled: canViewItems,
-  });
   const sessionsCount = useQuery({
     queryKey: ['auth', 'sessions'],
     queryFn: ({ signal }) => listMySessions(signal),
   });
-  const inTransitCount = useQuery({
-    queryKey: ['transfers', 'count', 'in-transit'],
-    queryFn: ({ signal }) =>
-      listTransfers({ page: 1, pageSize: 1, status: TransferStatus.IN_TRANSIT }, signal),
-    enabled: canViewTransfers,
-  });
-
-  React.useEffect(() => {
-    const failed = [
-      usersCount.error,
-      branchesCount.error,
-      rolesCount.error,
-      employeesCount.error,
-      itemsCount.error,
-    ].find(Boolean);
-    if (failed) {
-      toast({
-        title: 'Some dashboard data failed to load',
-        description: getErrorMessage(failed),
-        variant: 'destructive',
-      });
-    }
-    // Intentionally keyed on error identity only.
-  }, [
-    usersCount.error,
-    branchesCount.error,
-    rolesCount.error,
-    employeesCount.error,
-    itemsCount.error,
-    toast,
-  ]);
 
   return (
     <>
@@ -667,76 +816,9 @@ export function DashboardPage() {
         description="Overview of your GEM-ENI workspace."
       />
 
-      {/* Phase 3 + 4 + 6 operations tiles */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {/* Personal tiles — self-scoped, for every session. */}
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <PendingApprovalsTile />
-        {canViewInventory ? <LowStockTile /> : null}
-        {canViewAssets ? <AssetStatusCard /> : null}
-        {canViewTransfers ? (
-          <StatCard
-            title="Transfers in transit"
-            icon={ArrowLeftRight}
-            value={inTransitCount.data?.meta.total}
-            loading={inTransitCount.isPending}
-            error={inTransitCount.error}
-            href="/inventory/transfers"
-          />
-        ) : null}
-        {canViewPos ? <ProcurementTiles /> : null}
-        {canViewWorkOrders ? <MaintenanceTiles /> : null}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {canViewEmployees ? (
-          <StatCard
-            title="Employees"
-            icon={IdCard}
-            value={employeesCount.data?.meta.total}
-            loading={employeesCount.isPending}
-            error={employeesCount.error}
-            href="/employees"
-          />
-        ) : null}
-        {canViewItems ? (
-          <StatCard
-            title="Items"
-            icon={Package}
-            value={itemsCount.data?.meta.total}
-            loading={itemsCount.isPending}
-            error={itemsCount.error}
-            href="/items"
-          />
-        ) : null}
-        {canViewUsers ? (
-          <StatCard
-            title="Users"
-            icon={Users}
-            value={usersCount.data?.meta.total}
-            loading={usersCount.isPending}
-            error={usersCount.error}
-            href="/users"
-          />
-        ) : null}
-        {canViewBranches ? (
-          <StatCard
-            title="Branches"
-            icon={Building2}
-            value={branchesCount.data?.meta.total}
-            loading={branchesCount.isPending}
-            error={branchesCount.error}
-            href="/branches"
-          />
-        ) : null}
-        {canViewRoles ? (
-          <StatCard
-            title="Roles"
-            icon={ShieldCheck}
-            value={rolesCount.data?.meta.total}
-            loading={rolesCount.isPending}
-            error={rolesCount.error}
-            href="/roles"
-          />
-        ) : null}
         <StatCard
           title="My active sessions"
           icon={MonitorSmartphone}
@@ -744,15 +826,38 @@ export function DashboardPage() {
           loading={sessionsCount.isPending}
           error={sessionsCount.error}
         />
+        {canViewReports ? (
+          <Link
+            href="/reports"
+            className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Card className="h-full transition-colors hover:border-primary/40">
+              <CardContent className="flex items-center gap-4 p-4 sm:p-5">
+                <div className="rounded-md bg-primary/10 p-2.5">
+                  <ClipboardList className="h-5 w-5 text-primary" aria-hidden />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Reports</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    Run operational reports and exports
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        ) : null}
       </div>
 
+      {/* Phase 7 KPI summary — one API call, per-widget graceful absence. */}
+      {canViewReports ? <SummarySection /> : null}
+
       {myEmployeeId ? (
-        <div className="mt-4">
+        <div className="mb-4">
           <MyAcknowledgmentsCard employeeId={myEmployeeId} />
         </div>
       ) : null}
 
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <MySessionsCard />
         {canViewAudit ? <RecentActivityCard /> : <YourAccessCard />}
       </div>

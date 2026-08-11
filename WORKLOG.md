@@ -17,6 +17,37 @@ Entry format:
 
 ---
 
+## 2026-08-11 — ✅ Phase 7 complete: dashboard, 16 reports, queued exports, printable PDFs
+
+Both agents hit session limits mid-build (resumed via SendMessage; disk verified first). **Local commit only — no push/deploy per Tim.**
+
+**Done (backend — verified: api+worker build ✅, 40 suites / 496 tests ✅ (+52), typecheck 7/7 ✅, lint ✅, 9 migrations clean):**
+- **`packages/reports` (@gemerp/reports)** — bagong workspace package: report registry (key → permissions, filters, columns, run()), filter validation, chunked runner (50k cap + truncated flag), CSV/XLSX/PDF renderers. Iisang definition para sa API at worker — walang dobleng queries.
+- **Dashboard** GET /dashboard/summary: lahat ng KPI mula sa live batched queries (assets by status/condition, assigned vs available, SKU counts, low/out-of-stock via reorder settings, pending transfers/approvals, maintenance due/overdue, warranty & lot expirations 30d, open POs/draft receipts, 10 recent txns); acquisitionValue/inventoryValue hindi man lang tumatakbo ang queries kung walang *.view_cost.
+- **Reports**: GET /reports catalog (runnable subset per caller) + 16 report endpoints (registry-driven, contract URLs), bawat isa: report.view + underlying permission, branch scope always (out-of-scope 403), §1.4 filters validated (unsupported → VALIDATION_ERROR), paginated, cost columns gated.
+- **Exports**: POST /exports (permission + scope verified at enqueue, snapshot ng includeCost/branchIds), own-jobs list/detail/download (foreign job = 404; download streamed, audit-logged). Worker: report-exports queue every 30s, atomic QUEUED→PROCESSING claim, renders via registry, upload sa S3/MinIO, EXPORT_READY/EXPORT_FAILED notification (dedup-keyed), S3 disabled = graceful FAILED status hindi crash.
+- **Printables** (sariling module, PDFs via pdfkit): PO, goods receipt, transfer, asset acknowledgment form (signature blocks), work order (checklist + parts + gated costs), count sheet (blank counted/remarks columns, blind masking). Parent view permission + branch scope + audit per render.
+- Migration `20260806120000_phase7_export_jobs` (additive): ExportJobStatus enum + export_jobs table. Shared: EXPORT_READY/EXPORT_FAILED notification types.
+
+**Done (frontend):** *(nasa itaas na entry ang detalye — reports hub, generic report pages, export center with polling, print buttons sa 6 detail pages, dashboard rebuilt sa /dashboard/summary)*
+
+**Integration (orchestrator):** wired ReportsModule + ExportsModule + PrintablesModule; full chain green (build 5/5, typecheck 7/7, lint 4/4, **496 api tests**, 9 migrations clean). **Live smoke via proxy (10 steps, all passed):** dashboard KPIs totoong data (12 assets sa 5 statuses, 10 recent txns, cost-gated values present para sa superadmin) → 16 runnable reports sa catalog → stock-on-hand rows tama → unsupported filter = VALIDATION_ERROR → **PO PDF at acknowledgment form = totoong %PDF** → **export end-to-end: queue → worker claim → XLSX render → MinIO upload → completed → download (PK magic verified) → EXPORT_READY notification**. Worker verified live: 4 queues tumatakbo (report-exports 30s, maintenance hourly, detectors 15m, heartbeat).
+
+**Decisions:** singular `report.*` permission family (existing since Phase 0) — walang duplicate `reports.*` strings; 16 report URLs served ng isang parameterized route (registry ang contract); exports capped 50k rows na may truncated flag; export statuses lowercase sa API (contract literal); worker dist run kailangan ng `node --env-file=<repo>/.env` (dev script may --env-file-if-exists na).
+
+**Pending / Next:** Phase 8 hardening remainder na lang (e2e/security passes, password rotation sa deploy). **HOLD until Tim's go: git push, Vercel/Railway deploys, seed-password rotation (ChangeMe!123 live publicly — kasama sa deploy).**
+
+**Done (frontend — verified: web build ✅ all routes, lint 0, web typecheck green):**
+- **Reports hub** `/reports` (runnable subset mula sa GET /reports, grouped by area client-side) + generic `/reports/[key]` page: client registry na mirror ng `packages/reports` server registry (16 keys, filters verbatim — VALIDATION_ERROR ang hindi supported), house pickers sa filter bar, server-paginated table, cost columns render-if-present, saved filters sa localStorage, CSV/XLSX/PDF export buttons → POST /exports → toast na tumuturo sa Export center.
+- **Export center** `/reports/exports` (may `/exports` redirect alias para sa NOTIFICATION_LINKS): own jobs, status badges, 4s polling habang may in-flight, Download, failed rows nagpapakita ng error, `truncated` warning badge.
+- **Print buttons** (shared `print-document-button.tsx`, new-tab + download fallback): PO, goods receipt, transfer, work order, asset (Acknowledgment form), count session (Count sheet).
+- **Dashboard rebuilt** sa iisang GET /dashboard/summary: KPI tiles (assets by status na may pure-CSS distribution bar, assigned vs available, SKU, low/out-of-stock, pending transfers/approvals, maintenance due/overdue, expirations, open POs/draft receipts), value tiles render-only-when-present (server cost-gates), recent transactions na naka-link; self-scoped cards retained.
+- Nav "Reports" section; lib surface: dashboard/report/export/printable endpoints + types + tolerant helpers; permissions tolerant sa `report.*` vs `reports.*` spelling.
+
+**Pending / Next:** backend agent finishing (report controllers + exports queue + printables + tests). Then: wire modules, full verify, smoke (kasama end-to-end export job), local commit. **HOLD: push/deploy/password rotation.**
+
+---
+
 ## 2026-08-06 (later) — ✅ Phase 6 complete: counts, parameterized approvals, notifications
 
 Both agents died on session limits mid-build TWICE (resumed via SendMessage each time; disk state verified before every resume). **Local commit only — no push/deploy per Tim.**

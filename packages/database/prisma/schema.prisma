@@ -221,6 +221,14 @@ enum StockReservationStatus {
   CANCELED
 }
 
+/// Background report-export job lifecycle (api-outline section 8, Phase 7).
+enum ExportJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // Identity and access
 // ---------------------------------------------------------------------------
@@ -311,6 +319,7 @@ model User {
   notifications              Notification[]             @relation("NotificationRecipient")
   attachmentsUploaded        Attachment[]               @relation("AttachmentUploadedBy")
   auditLogs                  AuditLog[]                 @relation("AuditLogActor")
+  exportJobs                 ExportJob[]                @relation("ExportJobRequestedBy")
 
   @@index([isActive])
   @@map("users")
@@ -2355,6 +2364,48 @@ model Attachment {
   @@index([resourceType, resourceId])
   @@index([branchId])
   @@map("attachments")
+}
+
+/// Queued background report export (api-outline section 8, Phase 7). The API
+/// enqueues (permission-verified) rows; the worker's report-exports queue
+/// claims QUEUED rows atomically, renders the file with the shared report
+/// registry, stores bytes in object storage (storage_key), and notifies the
+/// requester. Jobs are strictly owner-scoped: only requested_by may see or
+/// download them. include_cost and branch_ids snapshot the authorization
+/// evaluated at enqueue time so the worker never re-derives permissions.
+model ExportJob {
+  id            String          @id @default(uuid()) @db.Uuid
+  reportKey     String          @map("report_key")
+  /// "csv" | "xlsx" | "pdf"
+  format        String
+  /// Report filters exactly as validated at enqueue (api-outline 1.4 keys).
+  filters       Json?
+  /// Whether cost-gated columns are included (requester held *.view_cost).
+  includeCost   Boolean         @default(false) @map("include_cost")
+  /// Branch ids the requester could access at enqueue; DB NULL = unrestricted
+  /// (super admin). An empty array means access to no branches.
+  branchIds     Json?           @map("branch_ids")
+  status        ExportJobStatus @default(QUEUED)
+  requestedById String          @map("requested_by_id") @db.Uuid
+  fileName      String?         @map("file_name")
+  storageKey    String?         @unique @map("storage_key")
+  contentType   String?         @map("content_type")
+  sizeBytes     Int?            @map("size_bytes")
+  rowCount      Int?            @map("row_count")
+  /// True when the export hit the row cap and the file is incomplete.
+  truncated     Boolean         @default(false)
+  /// Human-readable failure reason (storage disabled, render error, ...).
+  error         String?
+  startedAt     DateTime?       @map("started_at")
+  completedAt   DateTime?       @map("completed_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  requestedBy User @relation("ExportJobRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([requestedById, createdAt])
+  @@index([status, createdAt])
+  @@map("export_jobs")
 }
 
 /// Append-only audit trail (spec section 22). No updated_at by design; rows are

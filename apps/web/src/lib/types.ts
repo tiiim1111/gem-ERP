@@ -8,6 +8,7 @@ import type {
   AssetStatus,
   EmployeeStatus,
   ItemBusinessCategory,
+  Paginated,
   PurchaseOrderStatus,
   SessionUser,
   StockTransactionStatus,
@@ -2828,4 +2829,320 @@ export function normalizeUnreadCount(payload: unknown): number {
     }
   }
   return 0;
+}
+
+/* ========================================================================== */
+/* Phase 7 — Dashboard, reports, exports (docs/api-outline.md §8)             */
+/* ========================================================================== */
+
+/* ---------------------- Dashboard summary (contract §8) -------------------- */
+
+/**
+ * GET /dashboard/summary payload. The server composes many KPI blocks and the
+ * exact nesting is its own; the UI reads it exclusively through the dotted-path
+ * helpers below so either flat (`assetCount`) or grouped (`assets.total`)
+ * serializations work. Value/cost figures are present only for sessions with
+ * the relevant `*.view_cost` permission — widgets render-if-present.
+ */
+export type DashboardSummary = Record<string, unknown>;
+
+/** Resolve one dot-separated path ("assets.byStatus") against the payload. */
+function summaryPath(summary: DashboardSummary, path: string): unknown {
+  let current: unknown = summary;
+  for (const segment of path.split('.')) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+/** First numeric hit across candidate paths; numeric strings count. */
+export function summaryCount(
+  summary: DashboardSummary | undefined,
+  ...paths: string[]
+): number | null {
+  if (!summary) return null;
+  for (const path of paths) {
+    const value = summaryPath(summary, path);
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value !== '' && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+/** First money hit across candidate paths (kept as DecimalString for display). */
+export function summaryMoney(
+  summary: DashboardSummary | undefined,
+  ...paths: string[]
+): DecimalString | null {
+  if (!summary) return null;
+  for (const path of paths) {
+    const value = summaryPath(summary, path);
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value !== '' && Number.isFinite(Number(value))) return value;
+  }
+  return null;
+}
+
+/**
+ * Status/condition breakdown — accepts `{ AVAILABLE: 3, … }` records or
+ * `[{ status, count }]` arrays (with `label`/`name` and `total`/`value`
+ * aliases). Returns entries in payload order with non-numeric rows dropped.
+ */
+export function summaryStatusCounts(
+  summary: DashboardSummary | undefined,
+  ...paths: string[]
+): Array<{ status: string; count: number }> {
+  if (!summary) return [];
+  for (const path of paths) {
+    const value = summaryPath(summary, path);
+    if (Array.isArray(value)) {
+      const rows: Array<{ status: string; count: number }> = [];
+      for (const entry of value) {
+        if (!entry || typeof entry !== 'object') continue;
+        const record = entry as Record<string, unknown>;
+        const status = [record['status'], record['label'], record['name'], record['key']].find(
+          (candidate): candidate is string => typeof candidate === 'string' && candidate !== '',
+        );
+        const rawCount = [record['count'], record['total'], record['value']].find(
+          (candidate) => typeof candidate === 'number' || typeof candidate === 'string',
+        );
+        const count = typeof rawCount === 'number' ? rawCount : Number(rawCount);
+        if (status && Number.isFinite(count)) rows.push({ status, count });
+      }
+      if (rows.length > 0) return rows;
+    } else if (value && typeof value === 'object') {
+      const rows: Array<{ status: string; count: number }> = [];
+      for (const [status, raw] of Object.entries(value as Record<string, unknown>)) {
+        const count = typeof raw === 'number' ? raw : Number(raw);
+        if (Number.isFinite(count)) rows.push({ status, count });
+      }
+      if (rows.length > 0) return rows;
+    }
+  }
+  return [];
+}
+
+/** Recent-transactions block — an array of stock-transaction-shaped rows. */
+export function summaryRecentTransactions(
+  summary: DashboardSummary | undefined,
+): StockTransaction[] {
+  if (!summary) return [];
+  for (const path of [
+    'recentTransactions',
+    'recent.transactions',
+    'transactions.recent',
+    'inventory.recentTransactions',
+  ]) {
+    const value = summaryPath(summary, path);
+    if (Array.isArray(value)) {
+      return value.filter(
+        (row): row is StockTransaction =>
+          !!row && typeof row === 'object' && typeof (row as { id?: unknown }).id === 'string',
+      );
+    }
+  }
+  return [];
+}
+
+/* ------------------------- Report catalog (contract §8) -------------------- */
+
+/** One runnable report from GET /reports (the caller's subset). */
+export interface ReportCatalogEntry {
+  key?: string;
+  reportKey?: string;
+  id?: string;
+  title?: string | null;
+  name?: string | null;
+  description?: string | null;
+  /** Grouping area (Assets, Inventory, Procurement, Maintenance, Admin). */
+  area?: string | null;
+  group?: string | null;
+  category?: string | null;
+  permissions?: string[];
+}
+
+export function reportCatalogKey(entry: ReportCatalogEntry): string | null {
+  return entry.key ?? entry.reportKey ?? entry.id ?? null;
+}
+
+/** Normalize GET /reports — array, {reports}, or {data} envelope. */
+export function normalizeReportCatalog(payload: unknown): ReportCatalogEntry[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === 'object'
+      ? (['reports', 'data', 'catalog'] as const)
+          .map((key) => (payload as Record<string, unknown>)[key])
+          .find(Array.isArray) ?? []
+      : [];
+  return (rows as unknown[]).filter(
+    (row): row is ReportCatalogEntry => !!row && typeof row === 'object',
+  );
+}
+
+/* --------------------------- Report rows (contract §8) --------------------- */
+
+/**
+ * One row of a report result. Every report serializes its own natural fields,
+ * so rows are read through the tolerant helpers below (first-hit-wins across
+ * aliases, dot paths supported). Cost columns exist only for cost-permitted
+ * sessions — the table hides a column when no row carries its value.
+ */
+export type ReportRow = Record<string, unknown>;
+
+/** First defined value across candidate dot-paths. */
+export function rowValue(row: ReportRow, ...paths: string[]): unknown {
+  for (const path of paths) {
+    const value = summaryPath(row, path);
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+export function rowString(row: ReportRow, ...paths: string[]): string | null {
+  const value = rowValue(row, ...paths);
+  if (typeof value === 'string' && value !== '') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+/** Numeric/decimal value (kept as DecimalString for quantity formatting). */
+export function rowNumber(row: ReportRow, ...paths: string[]): DecimalString | null {
+  const value = rowValue(row, ...paths);
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value !== '' && Number.isFinite(Number(value))) return value;
+  return null;
+}
+
+/** Boolean-ish value ("true"/"false" strings included). */
+export function rowBoolean(row: ReportRow, ...paths: string[]): boolean | null {
+  const value = rowValue(row, ...paths);
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return null;
+}
+
+/** Label for a value that may be a {code,name} ref object or a plain string. */
+export function rowRefLabel(row: ReportRow, ...paths: string[]): string | null {
+  const value = rowValue(row, ...paths);
+  if (typeof value === 'string' && value !== '') return value;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['name', 'displayName', 'legalName', 'tradeName', 'code', 'sku']) {
+      const label = record[key];
+      if (typeof label === 'string' && label !== '') return label;
+    }
+    const first = record['firstName'];
+    const last = record['lastName'];
+    if (typeof first === 'string' || typeof last === 'string') {
+      const joined = [first, last].filter((part) => typeof part === 'string' && part).join(' ');
+      if (joined) return joined;
+    }
+  }
+  return null;
+}
+
+/** Stable-ish React key for a report row. */
+export function reportRowKey(row: ReportRow, index: number): string {
+  const id = row['id'];
+  if (typeof id === 'string' && id) return id;
+  return `row-${index}`;
+}
+
+/** Normalize a report page — Paginated envelope, bare array, or {rows,total}. */
+export function normalizeReportPage(
+  payload: unknown,
+  page: number,
+  pageSize: number,
+): Paginated<ReportRow> {
+  const paginate = (rows: ReportRow[], total: number): Paginated<ReportRow> => ({
+    data: rows,
+    meta: {
+      page,
+      pageSize,
+      total,
+      totalPages: pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1,
+    },
+  });
+  if (Array.isArray(payload)) {
+    return paginate(payload as ReportRow[], (payload as ReportRow[]).length);
+  }
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    const meta = record['meta'];
+    const rows = (['data', 'rows', 'results'] as const)
+      .map((key) => record[key])
+      .find(Array.isArray) as ReportRow[] | undefined;
+    if (rows && meta && typeof meta === 'object') {
+      return { data: rows, meta: meta as Paginated<ReportRow>['meta'] };
+    }
+    if (rows) {
+      const total = typeof record['total'] === 'number' ? (record['total'] as number) : rows.length;
+      return paginate(rows, total);
+    }
+  }
+  return paginate([], 0);
+}
+
+/* --------------------------- Export jobs (contract §8) --------------------- */
+
+/** Background export job (own jobs only; contract §8 POST/GET /exports). */
+export interface ExportJob {
+  id: string;
+  /** Report key or resource the export runs (aliases per serializer). */
+  reportKey?: string | null;
+  report?: string | null;
+  resource?: string | null;
+  /** csv | xlsx | pdf. */
+  format?: string | null;
+  /** QUEUED | PROCESSING | READY | FAILED (tolerant of synonyms/case). */
+  status: string;
+  filters?: Record<string, unknown> | null;
+  params?: Record<string, unknown> | null;
+  fileName?: string | null;
+  filename?: string | null;
+  contentType?: string | null;
+  rowCount?: number | null;
+  sizeBytes?: number | null;
+  /** True when the export hit the row cap and the file is incomplete. */
+  truncated?: boolean | null;
+  error?: string | null;
+  errorMessage?: string | null;
+  failureReason?: string | null;
+  requestedById?: string;
+  requestedBy?: UserRef | null;
+  requestedAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  finishedAt?: string | null;
+  expiresAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function exportJobReportKey(job: ExportJob): string | null {
+  return job.reportKey ?? job.report ?? job.resource ?? null;
+}
+
+export function exportJobFileName(job: ExportJob): string {
+  if (job.fileName) return job.fileName;
+  if (job.filename) return job.filename;
+  const key = exportJobReportKey(job) ?? 'export';
+  const format = (job.format ?? 'csv').toLowerCase();
+  return `${key}.${format}`;
+}
+
+export function exportJobError(job: ExportJob): string | null {
+  return job.error ?? job.errorMessage ?? job.failureReason ?? null;
+}
+
+export function exportJobRequestedAt(job: ExportJob): string | null {
+  return job.requestedAt ?? job.createdAt ?? null;
+}
+
+export function exportJobCompletedAt(job: ExportJob): string | null {
+  return job.completedAt ?? job.finishedAt ?? null;
 }

@@ -24,6 +24,7 @@ import {
   ATTACHMENT_RESOURCE_TYPES,
   cancelPurchaseOrder,
   closePurchaseOrder,
+  fetchPurchaseOrderPdf,
   getPurchaseOrder,
   listPurchaseOrderReceipts,
   rejectPurchaseOrder,
@@ -72,6 +73,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/toast';
 import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { poStatusBadge, receiptStatusBadge } from '@/components/procurement/badges';
+import { PrintDocumentButton } from '@/components/reports/print-document-button';
 
 function PoStepper({ po }: { po: PurchaseOrder }) {
   const terminalBad = po.status === PurchaseOrderStatus.CANCELED || po.status === 'REJECTED';
@@ -309,6 +311,10 @@ export function PurchaseOrderDetail({ poId }: { poId: string }) {
             <Link href="/procurement/purchase-orders" className={buttonVariants({ variant: 'ghost' })}>
               <ArrowLeft aria-hidden /> All POs
             </Link>
+            <PrintDocumentButton
+              fetchDocument={() => fetchPurchaseOrderPdf(po.id)}
+              fileName={`${purchaseOrderNumber(po)}.pdf`}
+            />
             {actions.includes('edit') ? (
               <Link
                 href={`/procurement/purchase-orders/${po.id}/edit`}

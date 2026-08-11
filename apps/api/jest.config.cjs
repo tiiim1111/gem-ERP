@@ -18,6 +18,7 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@gemerp/shared$': '<rootDir>/../../packages/shared/src/index.ts',
+    '^@gemerp/reports$': '<rootDir>/../../packages/reports/src/index.ts',
   },
   clearMocks: true,
   verbose: false,

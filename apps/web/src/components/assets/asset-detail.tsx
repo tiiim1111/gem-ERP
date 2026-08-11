@@ -8,6 +8,7 @@ import { getErrorMessage } from '@/lib/api';
 import {
   acknowledgeAsset,
   ATTACHMENT_RESOURCE_TYPES,
+  fetchAssetAcknowledgmentForm,
   getAsset,
   listAssetAssignments,
   listAssetHistory,
@@ -52,6 +53,7 @@ import { useToast } from '@/components/ui/toast';
 import { assetStatusBadge } from '@/components/inventory/badges';
 import { AssetMaintenanceSection } from '@/components/maintenance/asset-maintenance-section';
 import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
+import { PrintDocumentButton } from '@/components/reports/print-document-button';
 import { AssetActionDialogs } from './asset-action-dialogs';
 import { AssetEditDialog } from './asset-edit-dialog';
 import { AssetLabelPanel } from './asset-label-panel';
@@ -231,6 +233,11 @@ export function AssetDetail({
             <Link href="/assets" className={buttonVariants({ variant: 'ghost' })}>
               <ArrowLeft aria-hidden /> All assets
             </Link>
+            <PrintDocumentButton
+              fetchDocument={() => fetchAssetAcknowledgmentForm(asset.id)}
+              fileName={`${assetTag(asset)}-acknowledgment.pdf`}
+              label="Acknowledgment form"
+            />
             {canEdit ? (
               <Button variant="outline" onClick={() => setEditOpen(true)}>
                 <Pencil aria-hidden /> Edit

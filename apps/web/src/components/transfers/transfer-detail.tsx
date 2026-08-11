@@ -21,6 +21,7 @@ import {
   approveTransfer,
   cancelTransfer,
   dispatchTransfer,
+  fetchTransferPdf,
   getTransfer,
   receiveTransfer,
   rejectTransfer,
@@ -64,6 +65,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { transferStatusBadge } from '@/components/inventory/badges';
+import { PrintDocumentButton } from '@/components/reports/print-document-button';
 
 function lineLabel(line: TransferLine): string {
   if (line.asset) return assetTag(line.asset);
@@ -322,6 +324,10 @@ export function TransferDetail({ transferId }: { transferId: string }) {
             <Link href="/inventory/transfers" className={buttonVariants({ variant: 'ghost' })}>
               <ArrowLeft aria-hidden /> All transfers
             </Link>
+            <PrintDocumentButton
+              fetchDocument={() => fetchTransferPdf(transfer.id)}
+              fileName={`${transferNumber(transfer)}.pdf`}
+            />
             {actions.includes('submit') ? (
               <Button onClick={() => setConfirmAction('submit')}>
                 <Send aria-hidden /> Submit

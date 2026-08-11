@@ -803,3 +803,62 @@ export function approvalDocumentTypeLabel(value: string): string {
   const spaced = value.replace(/[_.-]+/g, ' ').trim();
   return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase() : value;
 }
+
+/* ============ Phase 7 — Dashboard, reports, exports (contract §8) ========== */
+
+/**
+ * Run reports / see the dashboard summary. The shared catalog spells it
+ * `report.view`; api-outline Appendix A pluralizes to `reports.view` —
+ * tolerate both.
+ */
+export const REPORTS_VIEW_PERMISSIONS = [PERMISSIONS.report.view, 'reports.view'];
+
+/** Queue exports and use the Export center (`report.export` / `reports.export`). */
+export const REPORTS_EXPORT_PERMISSIONS = [PERMISSIONS.report.export, 'reports.export'];
+
+/* -------------------------- Export job lifecycle --------------------------- */
+
+/** Canonical lifecycle buckets the UI cares about. */
+export type ExportJobStatusKind = 'queued' | 'processing' | 'ready' | 'failed' | 'other';
+
+/** Server status → lifecycle bucket (tolerant of synonyms; case-insensitive). */
+export function exportJobStatusKind(status: string): ExportJobStatusKind {
+  switch (status.toUpperCase()) {
+    case 'QUEUED':
+    case 'PENDING':
+      return 'queued';
+    case 'PROCESSING':
+    case 'RUNNING':
+    case 'IN_PROGRESS':
+      return 'processing';
+    case 'READY':
+    case 'COMPLETED':
+    case 'DONE':
+    case 'SUCCESS':
+      return 'ready';
+    case 'FAILED':
+    case 'ERROR':
+      return 'failed';
+    default:
+      return 'other';
+  }
+}
+
+const EXPORT_JOB_STATUS_LABELS: Record<ExportJobStatusKind, string> = {
+  queued: 'Queued',
+  processing: 'Processing',
+  ready: 'Ready',
+  failed: 'Failed',
+  other: '',
+};
+
+export function exportJobStatusLabel(status: string): string {
+  const label = EXPORT_JOB_STATUS_LABELS[exportJobStatusKind(status)];
+  return label || status;
+}
+
+/** Jobs still moving — drives the Export center auto-refresh. */
+export function exportJobIsActive(status: string): boolean {
+  const kind = exportJobStatusKind(status);
+  return kind === 'queued' || kind === 'processing';
+}

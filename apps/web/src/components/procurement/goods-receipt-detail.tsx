@@ -9,6 +9,7 @@ import { getErrorMessage, isApiClientError } from '@/lib/api';
 import {
   ATTACHMENT_RESOURCE_TYPES,
   cancelGoodsReceipt,
+  fetchGoodsReceiptPdf,
   getGoodsReceipt,
   postGoodsReceipt,
   reverseGoodsReceipt,
@@ -46,6 +47,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/components/ui/toast';
 import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
 import { receiptStatusBadge } from '@/components/procurement/badges';
+import { PrintDocumentButton } from '@/components/reports/print-document-button';
 
 export function GoodsReceiptDetail({ receiptId }: { receiptId: string }) {
   const queryClient = useQueryClient();
@@ -145,6 +147,10 @@ export function GoodsReceiptDetail({ receiptId }: { receiptId: string }) {
                 <ArrowLeft aria-hidden /> Purchase order
               </Link>
             ) : null}
+            <PrintDocumentButton
+              fetchDocument={() => fetchGoodsReceiptPdf(receipt.id)}
+              fileName={`${goodsReceiptNumber(receipt)}.pdf`}
+            />
             {actions.includes('post') ? (
               <Button onClick={() => setConfirmPost(true)}>
                 <UploadCloud aria-hidden /> Post

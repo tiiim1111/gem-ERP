@@ -1,0 +1,40 @@
+{
+  "name": "@gemerp/reports",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase 7 report registry for GEM ERP — one definition per report (permissions, filters, columns, Prisma query builder) plus CSV/XLSX/PDF renderers, shared by @gemerp/api (report endpoints) and @gemerp/worker (background exports)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@gemerp/shared": "workspace:*",
+    "@prisma/client": "^6.5.0",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.15.2"
+  },
+  "devDependencies": {
+    "@gemerp/config": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@types/pdfkit": "^0.13.9",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

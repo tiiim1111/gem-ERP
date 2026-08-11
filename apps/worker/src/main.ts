@@ -19,9 +19,11 @@ import {
   notifyUsersOnce,
   superAdminUserIds,
 } from "./jobs/notification-helpers";
+import { processQueuedExports } from "./jobs/report-exports";
 import { logger } from "./logger";
 import {
   DEFAULT_JOB_OPTIONS,
+  EXPORT_POLL_INTERVAL_MS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_JOB_OPTIONS,
   MAINTENANCE_GENERATION_INTERVAL_MS,
@@ -190,14 +192,34 @@ registerWorker(QUEUE_NAMES.NOTIFICATIONS, async (job) => {
   }
 });
 
-// "report-exports" — STUB until Phase 7 (Analytics and reports): the real
-// processor will run heavy CSV/XLSX/PDF exports, upload the result to object
-// storage, and notify the requesting user. Until then it only logs receipt
-// and completes.
-registerQueue(QUEUE_NAMES.REPORT_EXPORTS);
-registerWorker(QUEUE_NAMES.REPORT_EXPORTS, (job) =>
-  acknowledgeStub(job, "Phase 7 (Reports)"),
-);
+// "report-exports" — Phase 7: the repeatable "process-queued-exports" job
+// drains QUEUED export_jobs rows enqueued by the API (POST /exports).
+// Each row is claimed atomically (QUEUED→PROCESSING updateMany, safe across
+// replicas), rendered with the SAME @gemerp/reports registry the API report
+// endpoints use (csv / exceljs xlsx / pdfkit pdf), stored in S3/MinIO, and
+// the requester is notified (EXPORT_READY / EXPORT_FAILED). Failures —
+// including S3_ENABLED=false — mark the job FAILED with a clear error and
+// never crash the worker. Requires DATABASE_URL — without it the processor
+// warns and skips.
+const exportsQueue = registerQueue(QUEUE_NAMES.REPORT_EXPORTS);
+registerWorker(QUEUE_NAMES.REPORT_EXPORTS, async (job) => {
+  if (job.name !== "process-queued-exports") {
+    await acknowledgeStub(job, "Phase 7 (Reports)");
+    return;
+  }
+  const prisma = getPrisma();
+  if (!prisma) {
+    logger.warn(
+      { queue: job.queueName, jobId: job.id },
+      "DATABASE_URL is not configured — skipping export processing",
+    );
+    return;
+  }
+  const summary = await processQueuedExports(prisma, logger);
+  if (summary.processed > 0) {
+    logger.info({ jobId: job.id, ...summary }, "export processing done");
+  }
+});
 
 // "worker-heartbeat" — fully implemented: a repeatable job (every 5 minutes)
 // that logs worker liveness so operators can confirm the worker is alive and
@@ -292,6 +314,14 @@ async function main(): Promise<void> {
     "notification-detectors-every-15m",
     { every: NOTIFICATION_DETECTOR_INTERVAL_MS },
     { name: "run-detectors" },
+  );
+
+  // Phase 7: export drain. Atomic per-row claims make re-runs and replica
+  // overlap safe; the cadence only bounds how fast a queued export starts.
+  await exportsQueue.upsertJobScheduler(
+    "report-exports-every-30s",
+    { every: EXPORT_POLL_INTERVAL_MS },
+    { name: "process-queued-exports" },
   );
 
   const redisTarget = new URL(env.REDIS_URL);

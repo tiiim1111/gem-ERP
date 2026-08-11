@@ -39,6 +39,15 @@ export const MAINTENANCE_GENERATION_INTERVAL_MS = 60 * 60 * 1000;
 export const NOTIFICATION_DETECTOR_INTERVAL_MS = 15 * 60 * 1000;
 
 /**
+ * Export-drain cadence (Phase 7). Every 30 seconds the repeatable
+ * "process-queued-exports" job claims QUEUED export_jobs rows (atomic
+ * QUEUED→PROCESSING updateMany — replica-safe without advisory locks) and
+ * renders them. The interval only bounds pickup latency; re-runs never
+ * double-process a job.
+ */
+export const EXPORT_POLL_INTERVAL_MS = 30 * 1000;
+
+/**
  * Retry/backoff defaults applied to every business queue. Individual jobs can
  * override these when enqueued. Failed jobs are retried 3 times with
  * exponential backoff (5s, 10s, 20s); completed jobs are kept for a day (max

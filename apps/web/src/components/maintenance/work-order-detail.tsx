@@ -27,6 +27,7 @@ import {
   ATTACHMENT_RESOURCE_TYPES,
   cancelWorkOrder,
   completeWorkOrderTask,
+  fetchWorkOrderPdf,
   getWorkOrder,
   listWorkOrderParts,
   resumeWorkOrder,
@@ -93,6 +94,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { assetStatusBadge, stockTransactionStatusBadge } from '@/components/inventory/badges';
 import { woPriorityBadge, woStatusBadge } from '@/components/maintenance/badges';
+import { PrintDocumentButton } from '@/components/reports/print-document-button';
 import {
   AddPartsDialog,
   AssignWorkOrderDialog,
@@ -801,6 +803,10 @@ export function WorkOrderDetail({ workOrderId }: { workOrderId: string }) {
             <Link href="/maintenance/work-orders" className={buttonVariants({ variant: 'ghost' })}>
               <ArrowLeft aria-hidden /> All work orders
             </Link>
+            <PrintDocumentButton
+              fetchDocument={() => fetchWorkOrderPdf(wo.id)}
+              fileName={`${workOrderNumber(wo)}.pdf`}
+            />
             {actions.includes('assign') ? (
               <Button onClick={() => setDialog('assign')}>
                 <UserRound aria-hidden /> {woAssigneeLabel(wo) ? 'Reassign' : 'Assign'}

@@ -24,6 +24,10 @@ export const NOTIFICATION_TYPES = {
   transferUnreceived: 'TRANSFER_UNRECEIVED',
   separationOutstandingAssets: 'SEPARATION_OUTSTANDING_ASSETS',
   jobFailed: 'JOB_FAILED',
+  /** Phase 7: a queued report export finished and is ready to download. */
+  exportReady: 'EXPORT_READY',
+  /** Phase 7: a queued report export failed (storage disabled, render error). */
+  exportFailed: 'EXPORT_FAILED',
 } as const;
 
 export type NotificationType =
@@ -69,4 +73,6 @@ export const NOTIFICATION_LINKS = {
   lots: () => `/inventory/lots`,
   lowStock: () => `/inventory/low-stock`,
   employees: () => `/employees`,
+  /** Phase 7 export center (deep link target of EXPORT_READY/EXPORT_FAILED). */
+  exports: () => `/exports`,
 } as const;

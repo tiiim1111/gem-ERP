@@ -12,6 +12,8 @@ import {
   ClipboardCheck,
   ClipboardList,
   Factory,
+  FileChartColumn,
+  FileDown,
   FileUp,
   History,
   IdCard,
@@ -36,6 +38,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { PERMISSIONS } from '@gemerp/shared';
+import { REPORTS_EXPORT_PERMISSIONS, REPORTS_VIEW_PERMISSIONS } from '@/lib/status-maps';
 import { cn, initials } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
 import { ChangePasswordDialog } from '@/components/auth/change-password-dialog';
@@ -166,6 +169,26 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Workflows',
         icon: Workflow,
         permission: PERMISSIONS.approval.manage,
+      },
+    ],
+  },
+  {
+    label: 'Reports',
+    items: [
+      // Exact match: report pages live under /reports/[key] with their own
+      // back links, and /reports/exports is the Export center entry below.
+      {
+        href: '/reports',
+        label: 'Reports',
+        icon: FileChartColumn,
+        permission: REPORTS_VIEW_PERMISSIONS,
+        exact: true,
+      },
+      {
+        href: '/reports/exports',
+        label: 'Export center',
+        icon: FileDown,
+        permission: REPORTS_EXPORT_PERMISSIONS,
       },
     ],
   },

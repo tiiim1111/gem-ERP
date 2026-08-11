@@ -15,7 +15,13 @@ import type {
   TransferStatus,
 } from '@gemerp/shared';
 import { api, fetchBinary, postBinary, type QueryParams } from './api';
-import { normalizeSearchResults, normalizeUnreadCount, type GlobalSearchGroup } from './types';
+import {
+  normalizeReportCatalog,
+  normalizeReportPage,
+  normalizeSearchResults,
+  normalizeUnreadCount,
+  type GlobalSearchGroup,
+} from './types';
 import type {
   AppNotification,
   ApprovalDelegation,
@@ -25,6 +31,10 @@ import type {
   Attachment,
   CountLine,
   CountSession,
+  DashboardSummary,
+  ExportJob,
+  ReportCatalogEntry,
+  ReportRow,
   AssetAssignment,
   AssetHistoryEntry,
   AssetMeterReading,
@@ -2285,4 +2295,118 @@ export function markNotificationRead(id: string): Promise<AppNotification | void
 
 export function markAllNotificationsRead(): Promise<void> {
   return api.post<void>('/notifications/read-all');
+}
+
+/* ========================================================================== */
+/* Phase 7 — Dashboard, reports, exports (docs/api-outline.md §8)             */
+/* ========================================================================== */
+
+/* --------------------------- Dashboard summary ----------------------------- */
+
+/** Single-call KPI payload (requires reports.view; values cost-gated). */
+export function getDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
+  return api.get<DashboardSummary>('/dashboard/summary', undefined, signal);
+}
+
+/* ------------------------------ Reports ------------------------------------ */
+
+/** GET /reports — the caller's runnable subset of the report catalog. */
+export async function listReportCatalog(signal?: AbortSignal): Promise<ReportCatalogEntry[]> {
+  const payload = await api.get<unknown>('/reports', undefined, signal);
+  return normalizeReportCatalog(payload);
+}
+
+/**
+ * Report-parameter filters per contract §1.4 conventions. The API validates
+ * with forbidNonWhitelisted — never send keys beyond these plus pagination.
+ */
+export interface ReportQueryParams extends ListParams {
+  branchId?: string;
+  warehouseId?: string;
+  categoryId?: string;
+  itemId?: string;
+  employeeId?: string;
+  departmentId?: string;
+  supplierId?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+}
+
+/** GET /reports/:key — server-paginated rows, normalized to a Paginated page. */
+export async function runReport(
+  key: string,
+  params: ReportQueryParams,
+  signal?: AbortSignal,
+): Promise<Paginated<ReportRow>> {
+  const payload = await api.get<unknown>(`/reports/${key}`, params, signal);
+  return normalizeReportPage(payload, params.page ?? 1, params.pageSize ?? 25);
+}
+
+/* ------------------------------ Export jobs -------------------------------- */
+
+export type ExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+/** Queue a background export (contract §8 POST /exports → 201 {id, status}). */
+export function createExport(body: {
+  reportKey: string;
+  format: ExportFormat;
+  filters?: Record<string, string>;
+}): Promise<ExportJob> {
+  return api.post<ExportJob>('/exports', body);
+}
+
+/** Own export jobs (self-scoped server-side). */
+export function listExports(
+  params: ListParams = {},
+  signal?: AbortSignal,
+): Promise<Paginated<ExportJob> | ExportJob[]> {
+  return api.get<Paginated<ExportJob> | ExportJob[]>('/exports', params, signal);
+}
+
+export function getExport(id: string, signal?: AbortSignal): Promise<ExportJob> {
+  return api.get<ExportJob>(`/exports/${id}`, undefined, signal);
+}
+
+/** Download path for the authenticated downloadFile helper (owner only). */
+export function exportDownloadPath(id: string): string {
+  return `/exports/${id}/download`;
+}
+
+/* ------------------------ Printable documents ------------------------------ */
+
+/** GET /purchase-orders/:id/pdf — printable purchase order. */
+export function fetchPurchaseOrderPdf(
+  id: string,
+): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/purchase-orders/${id}/pdf`);
+}
+
+/** GET /goods-receipts/:id/pdf — printable receiving report. */
+export function fetchGoodsReceiptPdf(
+  id: string,
+): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/goods-receipts/${id}/pdf`);
+}
+
+/** GET /transfers/:id/pdf — printable transfer document. */
+export function fetchTransferPdf(id: string): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/transfers/${id}/pdf`);
+}
+
+/** GET /maintenance-work-orders/:id/pdf — printable work order. */
+export function fetchWorkOrderPdf(id: string): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/maintenance-work-orders/${id}/pdf`);
+}
+
+/** GET /assets/:id/acknowledgment-form — custody/acknowledgment form. */
+export function fetchAssetAcknowledgmentForm(
+  id: string,
+): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/assets/${id}/acknowledgment-form`);
+}
+
+/** GET /count-sessions/:id/sheet — printable inventory count sheet. */
+export function fetchCountSheet(id: string): Promise<{ blob: Blob; contentType: string }> {
+  return fetchBinary(`/count-sessions/${id}/sheet`);
 }

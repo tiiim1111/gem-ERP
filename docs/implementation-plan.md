@@ -33,7 +33,7 @@ register.
 | 4 | Procurement | ✅ Delivered (2026-08-05) |
 | 5 | Maintenance | ✅ Delivered (2026-08-05) |
 | 6 | Counts, approvals, and notifications | ✅ Delivered (2026-08-06; parameterized approver types ROLE/POSITION/DEPT_HEAD/USER; external channels on hold per GemCor) |
-| 7 | Analytics and reports | 📋 Planned |
+| 7 | Analytics and reports | ✅ Delivered (2026-08-11; @gemerp/reports registry, queued exports w/ worker + MinIO, pdfkit printables) |
 | 8 | Hardening and deployment | 📋 Planned |
 
 Phases are vertical slices: each phase ships migrations, backend services,
