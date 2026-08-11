@@ -16,7 +16,10 @@
 
 ## Accounts
 
-**Lahat ng accounts, iisa ang password:** `ChangeMe!123`
+**Lahat ng accounts, iisa ang password:** `ChangeMe!123` — **LOCAL DEV LANG ITO.**
+
+> ⚠️ **PRODUCTION (gem-erp.vercel.app): iba na ang passwords** — rotated 2026-08-11.
+> Nasa `user_access_prod.md` (local file, naka-gitignore, hindi kailanman iko-commit).
 
 | Email | Role | Branch access | Ano ang kaya niya |
 | --- | --- | --- | --- |

@@ -44,3 +44,4 @@ Thumbs.db
 .vscode/
 .claude/settings.local.json
 .vercel
+user_access_prod.md

@@ -17,6 +17,25 @@ Entry format:
 
 ---
 
+## 2026-08-11 (later) — 🚀 FULL DEPLOYMENT: Phases 4–7 live sa production + password rotation
+
+Tim gave the go. Everything executed same day:
+
+**Done:**
+- **GitHub push**: 6 commits (e0e7757 P4, 4595746 P5, 7393453 P3.5, bbab751 P6, 8e74a07 P7, 9956081 Dockerfile fixes).
+- **Railway API redeploy**: first attempt FAILED — Dockerfile hindi kasama ang bagong `packages/reports` (fixed: COPY + build step; commit 9956081). Second deploy SUCCESS, healthcheck pass, migrations auto-applied (9 total). Verified live: /reports → 401 unauthed (bagong code).
+- **Vercel web redeploy**: Ready. (Vercel project ni-link ulit sa repo root — ang CLI deploy ay dapat mula ROOT, hindi apps/web, dahil rootDirectory=apps/web na ang project setting.)
+- **NEW: worker service sa Railway** (`worker`, Dockerfile: bagong apps/worker/Dockerfile): DATABASE_URL/REDIS_URL references, NODE_ENV=production, S3_ENABLED=false. Deploy trick: per-upload ang railway.json kaya pinalitan ito pansamantala ng worker build config para sa `railway up --service worker`, tapos ibinalik (ang committed railway.json ay para sa api). Worker verified live sa prod: 4 queues running; unang detector run nakahanap ng lowStock=8, lotExpiry=4, maintenanceOverdue=2, warrantyExpiry=2, overdueReturns=3, unreceivedTransfers=1 — notifications flowing na sa prod.
+- **Prod seed**: idempotent full seed via `railway ssh --service api` — permissions synced (report.*/count.*/approval.* atbp.), Phase 4–6 sample data nalikha (3 suppliers/3 POs/2 GRs, 2 plans/3 WOs, 2 approval workflows kasama ang 4-approver-type demo, count session).
+- **🔐 PASSWORD ROTATION (prod)**: lahat ng 7 accounts — strong random passwords, argon2id hashes generated locally, inapply via PrismaClient script sa loob ng api container (railway ssh). Verified: lumang `ChangeMe!123` → 401 INVALID_CREDENTIALS; bagong passwords → 200. **Credentials nasa `user_access_prod.md` (LOCAL ONLY, gitignored)** — ibigay kay Tim, huwag i-commit. Local dev unchanged (ChangeMe!123, dev only).
+- **Prod smoke (all passed)**: new-password login ✅, dashboard summary totoong data ✅, 16 runnable reports ✅, notifications endpoint ✅, seeded workflows ✅.
+
+**Decisions:** S3_ENABLED=false pa rin sa prod (attachments UI nagde-degrade gracefully; export jobs magfa-FAIL nang malinaw na may dahilan) — pag-uusapan kay Tim ang S3/R2 bucket kung kailangan ang attachments/exports sa prod. mustChangePassword hindi in-set sa rotation (strong passwords na, si Tim ang mamamahagi).
+
+**Pending / Next:** S3 storage decision para sa prod attachments/exports; Phase 8 hardening remainder (e2e passes, security review); palitan ang sample/demo data ng totoong GemCor data kapag handa na si Tim mag-onboard ng users.
+
+---
+
 ## 2026-08-11 — ✅ Phase 7 complete: dashboard, 16 reports, queued exports, printable PDFs
 
 Both agents hit session limits mid-build (resumed via SendMessage; disk verified first). **Local commit only — no push/deploy per Tim.**
