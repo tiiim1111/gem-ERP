@@ -1,6 +1,6 @@
-# GEM ERP API — production image (Railway or any Docker host).
-# Build from the REPO ROOT: docker build -f apps/api/Dockerfile .
-# (Railway: set Root Directory to the repo root and Dockerfile path to apps/api/Dockerfile.)
+# GEM ERP worker — BullMQ job runner (maintenance, notifications, report exports).
+# Build from the REPO ROOT: docker build -f apps/worker/Dockerfile .
+# (Railway: Root Directory = repo root, Dockerfile path = apps/worker/Dockerfile.)
 
 # ---------- Build stage ----------
 FROM node:22-slim AS build
@@ -14,22 +14,22 @@ COPY packages/config/package.json packages/config/
 COPY packages/shared/package.json packages/shared/
 COPY packages/database/package.json packages/database/
 COPY packages/reports/package.json packages/reports/
-COPY apps/api/package.json apps/api/
-RUN pnpm install --frozen-lockfile --filter @gemerp/api... --filter @gemerp/database...
+COPY apps/worker/package.json apps/worker/
+RUN pnpm install --frozen-lockfile --filter @gemerp/worker... --filter @gemerp/database...
 
 # Sources
 COPY packages/config packages/config
 COPY packages/shared packages/shared
 COPY packages/database packages/database
 COPY packages/reports packages/reports
-COPY apps/api apps/api
+COPY apps/worker apps/worker
 COPY tsconfig.base.json ./
 
 # Prisma client + builds
 RUN pnpm --filter @gemerp/database generate \
   && pnpm --filter @gemerp/shared build \
   && pnpm --filter @gemerp/reports build \
-  && pnpm --filter @gemerp/api build
+  && pnpm --filter @gemerp/worker build
 
 # ---------- Runtime stage ----------
 FROM node:22-slim
@@ -37,10 +37,8 @@ RUN corepack enable && apt-get update && apt-get install -y --no-install-recomme
 ENV NODE_ENV=production
 WORKDIR /repo
 
-# Workspace with production node_modules + built output + prisma schema/migrations.
 COPY --from=build /repo /repo
-EXPOSE 3001
 
-# Apply pending migrations, then boot. Seeding is a manual one-time step:
-#   pnpm --filter @gemerp/database seed
-CMD ["sh", "-c", "pnpm --filter @gemerp/database migrate:deploy && node apps/api/dist/main.js"]
+# Env comes from the platform (DATABASE_URL, REDIS_URL, S3_* when enabled).
+# Migrations are the API service's job; the worker just runs.
+CMD ["node", "apps/worker/dist/main.js"]
