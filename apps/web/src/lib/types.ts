@@ -407,13 +407,19 @@ export function barcodeIsActive(barcode: ItemBarcode): boolean {
 export interface ItemWarehouseSetting {
   id?: string;
   itemId?: string;
-  warehouseId: string;
-  warehouse?: (Warehouse & { branch?: BranchSummary | null }) | null;
+  /** The API list view omits this and only nests warehouse.id — use settingWarehouseId(). */
+  warehouseId?: string;
+  warehouse?: (Warehouse & { branch?: BranchSummary | null; branchId?: string }) | null;
   reorderLevel?: string | number | null;
   reorderQuantity?: string | number | null;
   minQuantity?: string | number | null;
   maxQuantity?: string | number | null;
   updatedAt?: string;
+}
+
+/** Warehouse id of a setting regardless of response shape (top-level or nested). */
+export function settingWarehouseId(setting: ItemWarehouseSetting): string {
+  return setting.warehouseId ?? setting.warehouse?.id ?? '';
 }
 
 export interface Item {

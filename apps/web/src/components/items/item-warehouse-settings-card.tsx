@@ -11,7 +11,7 @@ import {
   unwrapList,
   upsertItemWarehouseSetting,
 } from '@/lib/endpoints';
-import type { Item, ItemWarehouseSetting } from '@/lib/types';
+import { settingWarehouseId, type Item, type ItemWarehouseSetting } from '@/lib/types';
 import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -94,8 +94,9 @@ export function ItemWarehouseSettingsCard({ item, canManage }: { item: Item; can
   // Merge accessible warehouses with any settings rows the API returned.
   const rows = React.useMemo<GridRow[]>(() => {
     const byWarehouse = new Map<string, ItemWarehouseSetting>();
-    for (const setting of settings) byWarehouse.set(setting.warehouseId, setting);
+    for (const setting of settings) byWarehouse.set(settingWarehouseId(setting), setting);
 
+    const branchCodeById = new Map(accessibleBranches.map((branch) => [branch.id, branch.code]));
     const merged: GridRow[] = [];
     const seen = new Set<string>();
     accessibleBranches.forEach((branch, index) => {
@@ -112,13 +113,16 @@ export function ItemWarehouseSettingsCard({ item, canManage }: { item: Item; can
     });
     // Settings for warehouses we could not enumerate (defensive).
     for (const setting of settings) {
-      if (seen.has(setting.warehouseId)) continue;
+      const warehouseId = settingWarehouseId(setting);
+      if (!warehouseId || seen.has(warehouseId)) continue;
       merged.push({
-        warehouseId: setting.warehouseId,
+        warehouseId,
         warehouseLabel: setting.warehouse
           ? `${setting.warehouse.name} (${setting.warehouse.code})`
-          : setting.warehouseId,
-        branchLabel: setting.warehouse?.branch?.code ?? '—',
+          : warehouseId,
+        branchLabel:
+          setting.warehouse?.branch?.code ??
+          (setting.warehouse?.branchId ? (branchCodeById.get(setting.warehouse.branchId) ?? '—') : '—'),
         setting,
       });
     }
