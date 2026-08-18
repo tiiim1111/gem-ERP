@@ -17,6 +17,16 @@ Entry format:
 
 ---
 
+## 2026-08-11 (gabi) — fix: warehouse settings rows nagdodoble sa item page
+
+Tim reported: pag-save sa Warehouse settings, nag-a-append ang rows (parehong warehouse dalawang beses — blangko ang isa, may values ang isa na "—" ang branch).
+
+**Root cause:** ang `GET /items/:id/warehouse-settings` view ay walang top-level `warehouseId` (nested `warehouse.id` lang), pero ang UI merge sa `item-warehouse-settings-card.tsx` ay nagma-match sa `setting.warehouseId` → laging `undefined` → hindi nakakabit ang settings sa warehouse rows (blangkong inputs) at ina-append ng defensive loop bilang "unknown warehouse" rows. **Display bug lang — walang duplicate sa database** (unique constraint sa itemId+warehouseId).
+
+**Fix:** bagong `settingWarehouseId()` helper sa types.ts (tolerant: top-level o nested); merge + defensive loop gumagamit na nito; branch label fallback via branchId→code map. Verified: web typecheck/lint/build green. Committed 2c56662, pushed, **redeployed sa Vercel — live na sa prod**.
+
+---
+
 ## 2026-08-11 (later) — 🚀 FULL DEPLOYMENT: Phases 4–7 live sa production + password rotation
 
 Tim gave the go. Everything executed same day:
