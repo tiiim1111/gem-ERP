@@ -88,6 +88,25 @@ async function bootstrap(): Promise<void> {
     swaggerOptions: { persistAuthorization: true },
   });
 
+  // Cookie-scheme sanity check. A mismatch here surfaces to users as "login
+  // does nothing" (the browser silently discards a Secure cookie on http://),
+  // which is near-impossible to diagnose from the UI — so say it at boot.
+  const primaryOrigin = config.webOrigins[0] ?? '';
+  if (config.sessionCookieSecure && primaryOrigin.startsWith('http://')) {
+    logger.error(
+      `SESSION_COOKIE_SECURE=true but WEB_ORIGIN is ${primaryOrigin} (plain HTTP). ` +
+        'Browsers discard Secure cookies over HTTP, so NOBODY WILL BE ABLE TO SIGN IN. ' +
+        'Set SESSION_COOKIE_SECURE=false, or serve the app over HTTPS.',
+      'Bootstrap',
+    );
+  } else if (!config.sessionCookieSecure && primaryOrigin.startsWith('https://')) {
+    logger.warn(
+      `SESSION_COOKIE_SECURE=false but WEB_ORIGIN is ${primaryOrigin} (HTTPS). ` +
+        'Session cookies will not be marked Secure — set SESSION_COOKIE_SECURE=true.',
+      'Bootstrap',
+    );
+  }
+
   // '::' = dual-stack bind (IPv4 + IPv6). Container networks and health probes
   // may reach the service over either family; an IPv4-only bind drops the rest.
   await app.listen(config.apiPort, '::');

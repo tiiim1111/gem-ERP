@@ -44,9 +44,14 @@ export class AppConfigService {
     return this.env.SESSION_TTL_HOURS * 60 * 60 * 1000;
   }
 
-  /** Secure cookies are forced on in production regardless of the flag. */
+  /**
+   * Authoritative — never inferred from NODE_ENV. A `Secure` cookie is dropped
+   * by the browser over plain HTTP, so forcing it on in production locks every
+   * user out of an HTTP-only LAN deployment. Bootstrap warns when this setting
+   * disagrees with the WEB_ORIGIN scheme.
+   */
   get sessionCookieSecure(): boolean {
-    return this.env.SESSION_COOKIE_SECURE || this.isProduction;
+    return this.env.SESSION_COOKIE_SECURE;
   }
 
   get redisUrl(): string {

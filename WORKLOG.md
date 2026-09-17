@@ -17,6 +17,27 @@ Entry format:
 
 ---
 
+## 2026-09-17 (gabi 2) — 🐛 REAL BUG: production sapilitang nag-fo-force ng Secure cookie
+
+Tim sa on-prem server: "pag tama ang uname and pw, walang nangyayari. pag mali nadedetect na mali."
+
+**Diagnosis (ang maling password na na-detect ang susi):** kung tama ang error sa maling password, gumagana ang buong request pipeline — ang cookie lang ang naiiba kapag successful. Hiningi ko ang runtime data, hindi ang laman ng file:
+- `printenv SESSION_COOKIE_SECURE` sa container → **`false`** (tama ang config ni Tim)
+- pero ang totoong response header → **`Secure`** pa rin! ← ang bug
+
+**Root cause (`app-config.service.ts`):** `return this.env.SESSION_COOKIE_SECURE || this.isProduction;` — may `NODE_ENV=production` ang compose, kaya **sapilitang naka-on ang Secure kahit tahasang naka-false**. Tama ito noong Vercel/Railway lang (HTTPS palagi); nakamamatay ito sa HTTP LAN: tahimik na binabasura ng browser ang Secure cookie sa `http://` → wala nang session ang middleware → balik sa /login nang walang error = "walang nangyayari".
+
+**Fix:**
+1. Ang env var na lang ang awtoridad — `return this.env.SESSION_COOKIE_SECURE;`. Ang tahasang config ay hindi dapat tahimik na binabaligtad.
+2. Bagong **bootstrap sanity check** sa `main.ts`: kapag `secure=true` pero `http://` ang WEB_ORIGIN → **error log**: "NOBODY WILL BE ABLE TO SIGN IN"; kapag `secure=false` pero `https://` → warning. Sana ay nahuli nito agad ito.
+3. Bagong `app-config.service.spec.ts` (3 tests, mocked loadEnv dahil naka-cache ito) — regression guard laban sa pagbabalik ng `|| isProduction`.
+
+**Verification:** 41 suites / **499 tests** ✅ (dating 496, +3), build/typecheck/lint ✅. Sa totoong Docker stack na `NODE_ENV=production` + `SESSION_COOKIE_SECURE=false` + http: **`set-cookie: gemerp_session=...; Path=/; HttpOnly; SameSite=Lax` — wala nang `Secure`** ✅. Pinatunayan ding pumuputok ang bagong error log kapag `secure=true` + http. Buong smoke muli: lahat pumasa.
+
+**Napansin din sa `.env.prod` ni Tim:** (a) `WEB_ORIGIN=http://192.168.1.50:3000` pero ang totoong IP ay **192.168.0.50** (kinopya ang halimbawa) — sisira sa QR scan URLs; (b) **hindi pa napapalitan ang tatlong password** (`CHANGEME_generate_a_long_random_value` pa rin). Naituro na sa kanya, kasama ang gotcha na ang `POSTGRES_PASSWORD` ay binabasa lang sa unang init ng database kaya kailangan ng `down -v` para magkabisa.
+
+---
+
 ## 2026-09-17 (gabi) — fix: nawala ang MinIO sa Docker Hub → lumipat sa quay.io
 
 Sa unang `docker compose up` ni Tim sa on-prem server: `pull access denied for minio/minio, repository does not exist or may require 'docker login'`. Ang postgres/redis ay "Interrupted" lang (kinansela ng compose nang pumalya ang minio), kaya mukhang server-side ang problema.
