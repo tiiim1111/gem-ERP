@@ -248,8 +248,9 @@ ilalagay ko ang buong config.
 
 | Sintomas | Dahilan at ayos |
 |---|---|
-| "Invalid email or password" kahit tama | (a) Hindi pa na-seed — §6. (b) Naka-`SESSION_COOKIE_SECURE=true` pero `http://` ang site — gawing `false`, tapos `gemeni up -d`. |
-| Naka-login pero agad na-logout | Pareho ng taas — `SESSION_COOKIE_SECURE`. |
+| **Tama ang password pero "walang nangyayari"** (na-detect naman ang mali) | **Ito ang pinakamadalas.** `SESSION_COOKIE_SECURE=true` habang `http://` ang site → may `Secure` flag ang login cookie → tahimik itong binabasura ng browser → balik sa login, walang error. Ayos: gawing `false` sa `.env.prod`, tapos `gemeni up -d` (hindi kailangan ng `--build`). Paliwanag: kung na-detect ang maling password, gumagana ang buong pipeline — ang cookie lang ang problema. |
+| "Invalid email or password" kahit tama | Hindi pa na-seed ang database — §6. |
+| Naka-login pero agad na-logout | Pareho ng una sa itaas — `SESSION_COOKIE_SECURE`. |
 | Hindi ma-open mula sa ibang PC | Firewall (§7), o maling IP. Test sa server mismo: `curl -I http://localhost:3000/login`. |
 | Blangko ang QR scan / mali ang link | Mali ang `WEB_ORIGIN` — dapat eksakto sa tina-type ng users. Ayusin, `gemeni up -d`, tapos i-print ulit ang labels. |
 | "storage disabled" sa attachments | `S3_ENABLED=false` sa `.env.prod` — gawing `true` (dapat `true` sa on-prem). |
