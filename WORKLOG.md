@@ -17,6 +17,18 @@ Entry format:
 
 ---
 
+## 2026-09-17 (gabi) — fix: nawala ang MinIO sa Docker Hub → lumipat sa quay.io
+
+Sa unang `docker compose up` ni Tim sa on-prem server: `pull access denied for minio/minio, repository does not exist or may require 'docker login'`. Ang postgres/redis ay "Interrupted" lang (kinansela ng compose nang pumalya ang minio), kaya mukhang server-side ang problema.
+
+**Diagnosis:** hindi server ni Tim. Sinubukan ko dito — **parehong error** sa `minio/minio:latest` at `minio/mc:latest`, habang **maayos** ang `postgres:16-alpine` at `redis:7-alpine`. Tumigil ang Docker Hub mirror ng MinIO sa public pulls; ang opisyal nilang registry ay **quay.io**. (Gumana ang dating test ko dahil naka-cache na ang image mula sa dev compose — hindi ito fresh pull.)
+
+**Fix:** `quay.io/minio/minio` at `quay.io/minio/mc` sa **tatlong lugar** — `docker-compose.prod.yml`, `docker-compose.yml` (dev — tatamaan din ang bagong dev machine), at `scripts/backup-gemeni.sh`. **Pinned** ang minio server sa `RELEASE.2025-09-07T16-13-09Z` — ang floating tag na biglang nawawala ang mismong sanhi nito; naiwang `latest` ang `mc` (ephemeral CLI, mababa ang risk). Dinagdagan ng troubleshooting row ang guide §11.
+
+**Verification:** buong prod stack muli — 6 services healthy, nagawa ang bucket, seed, at **lahat ng smoke steps pumasa** (attachment upload/download byte-identical, export job queue→worker→MinIO→download, PO PDF). Nilinis ang test stack; hindi ginalaw ang dev containers.
+
+---
+
 ## 2026-09-17 (later) — ☁️→🏢 Tinanggal ang cloud deployment; on-premise na lang
 
 Tim: "Remove na natin yung railway na yan, focus tayo sa pag run prod natin sa server."

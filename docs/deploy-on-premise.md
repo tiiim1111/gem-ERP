@@ -255,6 +255,7 @@ ilalagay ko ang buong config.
 | "storage disabled" sa attachments | `S3_ENABLED=false` sa `.env.prod` — gawing `true` (dapat `true` sa on-prem). |
 | Hindi natatapos ang exports | Patay ang worker: `gemeni logs worker`. Karaniwan ay maling `REDIS_PASSWORD`. |
 | Ayaw mag-start ng `api`, may migration error | `gemeni logs api`. Kung nasira ang database, i-restore (§9). |
+| `pull access denied ... repository does not exist` | Nawala o lumipat ng registry ang isang image — hindi ito problema ng server mo. Kumpirmahin sa ibang makina: `docker pull <image>`. Ganito ang nangyari sa MinIO noong Sept 2026 (lumipat sa `quay.io/minio/minio`). Ayos: `git pull` para makuha ang na-update na compose file. |
 | Puno ang disk | `docker system prune -a` (mag-iingat: binubura ang unused images), at tignan ang laki ng backups. |
 | Ayaw mag-build, "no space left" | Kulang ang disk sa `/var/lib/docker` — palakihin o ilipat. |
 

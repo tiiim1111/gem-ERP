@@ -38,7 +38,7 @@ NETWORK="${COMPOSE_NETWORK:-gemeni_default}"
 docker run --rm \
   --network "$NETWORK" \
   -v "$FILES_DIR:/backup" \
-  --entrypoint /bin/sh minio/mc:latest -c "
+  --entrypoint /bin/sh quay.io/minio/mc:latest -c "
     mc alias set src http://minio:9000 '${S3_ACCESS_KEY}' '${S3_SECRET_KEY}' >/dev/null &&
     mc mirror --overwrite src/${S3_BUCKET:-gemerp-attachments} /backup >/dev/null &&
     echo '      mirrored'" \
