@@ -7,7 +7,7 @@
 
 | What | URL |
 | --- | --- |
-| **🌐 LIVE (production)** | <https://gem-erp.vercel.app> ← **ito ang i-share sa users** |
+| **🏢 PRODUCTION (on-premise server)** | `http://<server-ip>:3000` — tingnan ang [docs/deploy-on-premise.md](docs/deploy-on-premise.md) |
 | Web app (local dev) | <http://localhost:3000> |
 | API base | <http://localhost:3001/api/v1> |
 | Swagger (API docs) | <http://localhost:3001/api/docs> |
@@ -18,8 +18,9 @@
 
 **Lahat ng accounts, iisa ang password:** `ChangeMe!123` — **LOCAL DEV LANG ITO.**
 
-> ⚠️ **PRODUCTION (gem-erp.vercel.app): iba na ang passwords** — rotated 2026-08-11.
-> Nasa `user_access_prod.md` (local file, naka-gitignore, hindi kailanman iko-commit).
+> ⚠️ **Sa production (on-premise), palitan agad ang mga password na ito** pagkatapos
+> mag-seed — Users → Reset password, o gumawa ng totoong accounts at i-deactivate
+> ang mga demo. Tingnan ang §6 ng [docs/deploy-on-premise.md](docs/deploy-on-premise.md).
 
 | Email | Role | Branch access | Ano ang kaya niya |
 | --- | --- | --- | --- |

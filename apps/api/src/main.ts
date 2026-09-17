@@ -88,8 +88,8 @@ async function bootstrap(): Promise<void> {
     swaggerOptions: { persistAuthorization: true },
   });
 
-  // '::' = dual-stack bind (IPv4 + IPv6). Railway probes health over its
-  // IPv6 private network; an IPv4-only bind fails those probes.
+  // '::' = dual-stack bind (IPv4 + IPv6). Container networks and health probes
+  // may reach the service over either family; an IPv4-only bind drops the rest.
   await app.listen(config.apiPort, '::');
   logger.log(
     `GEM-ENI API listening on port ${config.apiPort} ` +

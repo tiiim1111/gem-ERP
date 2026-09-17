@@ -17,6 +17,29 @@ Entry format:
 
 ---
 
+## 2026-09-17 (later) — ☁️→🏢 Tinanggal ang cloud deployment; on-premise na lang
+
+Tim: "Remove na natin yung railway na yan, focus tayo sa pag run prod natin sa server."
+Tinanong ko ang saklaw (masisira ang Vercel kapag wala nang API) — sagot: **burahin pareho**.
+
+**Bago bumura — backup:** walang public endpoint ang Railway Postgres, kaya `railway ssh --service Postgres -- pg_dump | gzip | base64` → dinecode locally. Nasa **`/home/tim-sinag/gemeni-backups/railway-prod-20260917.sql`** (419 KB, 71 tables). Laman: halos pawang seed data pero may sariling data si Tim (13 items imbes na 12, dagdag na stock transactions), kaya mabuting naitabi.
+
+**Tinanggal:**
+- Railway project `gem-erp` (api, worker, Postgres, Redis) — `railway delete`; scheduled ng Railway, 404 na agad ang api domain. **Hindi pa naka-cancel ang Hobby plan ($5/buwan) — si Tim ang gagawa niyan sa dashboard.**
+- Vercel project `gem-erp` — `vercel project rm`; 404 na ang gem-erp.vercel.app.
+- Repo: `railway.json`, `apps/web/vercel.json`, `docs/deploy-vercel-railway.md`, `.vercel/` (local link artifact), at ang lokal na `user_access_prod.md` (patay na ang mga password — burado ang database na kinaroroonan nila).
+
+**Inayos, hindi tinanggal (tama pa rin ang behavior, platform-neutral na ang comments):**
+- `main.ts` dual-stack bind `'::'` — kailangan pa rin sa container networks.
+- `health.service.ts` Redis AUTH bago PING — **mas kailangan pa nga ngayon**: may `requirepass` ang on-prem Redis natin.
+- `user_access.md` at `docs/deploy-on-premise.md` — inalis ang mga patay na URL, on-prem na ang itinuturo.
+
+**Verification pagkatapos linisin:** build 5/5 ✅, typecheck 7/7 ✅, lint 4/4 ✅, **496 tests ✅** — walang nasira sa pagtanggal ng cloud config (deployment-platform files lang sila, hindi bahagi ng app).
+
+**Pending:** i-cancel ni Tim ang Railway Hobby subscription; i-setup ang on-prem server gamit ang `docs/deploy-on-premise.md`.
+
+---
+
 ## 2026-09-17 — 🏢 On-premise deployment stack (Docker Compose) — tested end-to-end
 
 Tim: "deploy natin to sa on premise linux server namin, bigyan mo ko ng guide."

@@ -1,8 +1,11 @@
 # Deploying GEM-ENI on an on-premise Linux server
 
 Runbook para ilagay ang buong sistema sa sariling server ng GemCor — walang
-cloud, walang buwanang bayad, at gumagana ang attachments at exports (hindi
-katulad ng Railway setup kung saan naka-off ang file storage).
+cloud, walang buwanang bayad, at gumagana ang lahat kasama ang attachments at
+report exports (may kasamang MinIO file storage ang stack).
+
+Ito na ang **tanging** paraan ng pag-deploy ng GEM-ENI — natanggal na ang dating
+Vercel + Railway setup noong 2026-09-17.
 
 ```
 Mga PC / phone sa office
@@ -20,8 +23,10 @@ Mga PC / phone sa office
 Isang container lang ang nakalabas (`web`); ang lahat ng iba ay nasa loob ng
 private Docker network — hindi sila abot mula sa LAN.
 
-> **Tandaan:** hiwalay ang on-premise na ito sa https://gem-erp.vercel.app.
-> Magkaibang database, magkaibang data. Hindi sila nagsi-sync.
+> **Tandaan:** ang data ng dating cloud deployment ay naka-save bilang SQL dump
+> (`/home/tim-sinag/gemeni-backups/railway-prod-20260917.sql` sa laptop ni Tim).
+> Kung may dadalhin doon, tingnan ang §9 "Restore mula sa backup" — pero
+> karaniwan mas malinis ang bagong seed sa on-prem.
 
 ---
 

@@ -109,8 +109,8 @@ export class HealthService {
         }
       };
       socket.on('connect', () => {
-        // Managed Redis (e.g. Railway) requires AUTH before PING; local dev
-        // Redis has no password and takes the bare PING.
+        // A password-protected Redis (the on-premise stack sets requirepass)
+        // needs AUTH before PING; local dev Redis takes the bare PING.
         const password = decodeURIComponent(url.password ?? '');
         const username = decodeURIComponent(url.username ?? '') || 'default';
         socket.write(
