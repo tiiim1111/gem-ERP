@@ -46,6 +46,48 @@ function asPrismaKnownError(exception: unknown): PrismaKnownErrorLike | null {
   return null;
 }
 
+interface UploadFailure {
+  status: number;
+  code: string;
+  message: string;
+}
+
+/**
+ * Multipart upload failures. Multer rejects an over-limit file by stopping the
+ * read, which surfaces either as a MulterError or — when the client is still
+ * sending — as a bare "Request aborted". Both are client-side problems, so
+ * they must not be reported as a 500 with no explanation.
+ */
+function asUploadFailure(exception: unknown): UploadFailure | null {
+  if (!(exception instanceof Error)) {
+    return null;
+  }
+  if (exception.name === 'MulterError') {
+    const code = (exception as Error & { code?: unknown }).code;
+    if (code === 'LIMIT_FILE_SIZE') {
+      return {
+        status: 413,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'The file is larger than the upload limit.',
+      };
+    }
+    return {
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'The upload was rejected. Check the file field and try again.',
+    };
+  }
+  if (exception.message === 'Request aborted') {
+    return {
+      status: 413,
+      code: 'PAYLOAD_TOO_LARGE',
+      message:
+        'The upload did not finish. If the file is large, check that it is within the upload limit and try again.',
+    };
+  }
+  return null;
+}
+
 function isErrorEnvelope(value: unknown): value is ApiError {
   return (
     typeof value === 'object' &&
@@ -118,7 +160,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return this.prismaEnvelope(prismaError);
     }
 
-    // 3. Body-parser JSON syntax errors surface as SyntaxError with a body.
+    // 3. Multipart upload failures (over the size limit, bad field).
+    const uploadFailure = asUploadFailure(exception);
+    if (uploadFailure) {
+      return {
+        status: uploadFailure.status,
+        body: {
+          error: { code: uploadFailure.code, message: uploadFailure.message },
+        },
+      };
+    }
+
+    // 4. Body-parser JSON syntax errors surface as SyntaxError with a body.
     if (exception instanceof SyntaxError && 'body' in exception) {
       return {
         status: 400,
@@ -131,7 +184,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
     }
 
-    // 4. Anything else: opaque 500.
+    // 5. Anything else: opaque 500.
     return {
       status: 500,
       body: {

@@ -9,19 +9,25 @@ Vercel + Railway setup noong 2026-09-17.
 
 ```
 Mga PC / phone sa office
-        │  http://<server-ip>:3000
+        │  http://<server-ip>        ← walang port number
         ▼
-┌──────────────────── Linux server (Docker) ────────────────────┐
-│  web (Next.js)  ──same-origin proxy /api/v1──►  api (NestJS)  │
-│                                                   │            │
-│                            worker (background jobs)│           │
-│                                                   ▼            │
-│              postgres        redis        minio (files)        │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────── Linux server (Docker) ─────────────────────┐
+│  nginx :80                                                      │
+│     └─► web (Next.js) ──same-origin /api/v1──► api (NestJS)     │
+│                                                   │             │
+│                            worker (background jobs)│            │
+│                                                   ▼             │
+│              postgres        redis        minio (files)         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Isang container lang ang nakalabas (`web`); ang lahat ng iba ay nasa loob ng
-private Docker network — hindi sila abot mula sa LAN.
+Isang container lang ang nakalabas sa LAN (`nginx` sa port 80); ang lahat ng iba
+ay nasa loob ng private Docker network. Ang `web` ay naka-bind sa `127.0.0.1:3000`
+para sa diagnostics sa server mismo — hindi ito abot mula sa ibang PC.
+
+Awtomatikong bumabalik ang lahat kapag pumalya o nag-reboot ang server
+(`restart: unless-stopped` + naka-enable na Docker service) — hindi na kailangan
+ng hiwalay na process manager tulad ng pm2.
 
 > **Tandaan:** ang data ng dating cloud deployment ay naka-save bilang SQL dump
 > (`/home/tim-sinag/gemeni-backups/railway-prod-20260917.sql` sa laptop ni Tim).
@@ -95,8 +101,8 @@ Apat ang **talagang mahalaga**:
 
 | Setting | Ano ang ilalagay |
 |---|---|
-| `WEB_ORIGIN` | Ang **eksaktong** ita-type ng users sa browser, kasama ang port — hal. `http://192.168.1.50:3000`. Ito rin ang ginagamit sa QR scan URLs, kaya dapat ito ang address na kayang buksan ng mga phone sa office Wi-Fi. |
-| `WEB_PORT` | `3000` (default) o `80` para mawala ang `:3000` sa URL. |
+| `WEB_ORIGIN` | Ang **eksaktong** ita-type ng users sa browser — hal. `http://192.168.0.50` (walang port, dahil port 80 ang nginx). Ito rin ang ginagamit sa QR scan URLs, kaya dapat ito ang address na kayang buksan ng mga phone sa office Wi-Fi. |
+| `HTTP_PORT` | `80` (default) — palitan lang kung may ibang gumagamit na ng port 80 sa server. |
 | `SESSION_COOKIE_SECURE` | `false` kapag `http://` ang WEB_ORIGIN. **`true` lang kung `https://`.** Mali dito = walang makaka-login (tahimik na binabasura ng browser ang cookie). |
 | `POSTGRES_PASSWORD` / `REDIS_PASSWORD` / `S3_SECRET_KEY` | Tig-iisang random na 24-character. Letters at numbers lang — pumapasok sila sa connection URLs. |
 
@@ -175,13 +181,13 @@ account na umiiral na.
 ## 7. Payagan ang ibang PC na maka-access
 
 ```bash
-sudo ufw allow 3000/tcp     # palitan ng 80 kung WEB_PORT=80 ang ginamit
+sudo ufw allow 80/tcp       # ang port ng nginx (tingnan ang HTTP_PORT)
 sudo ufw reload
 ```
 
-RHEL: `sudo firewall-cmd --permanent --add-port=3000/tcp && sudo firewall-cmd --reload`
+RHEL: `sudo firewall-cmd --permanent --add-port=80/tcp && sudo firewall-cmd --reload`
 
-Subukan mula sa ibang PC: `http://192.168.1.50:3000` — dapat lumabas ang login
+Subukan mula sa ibang PC: `http://192.168.0.50` — dapat lumabas ang login
 page ng GEM-ENI.
 
 Gusto mo ng pangalan imbes na IP (hal. `http://gemeni.gemcor.local`)? Magdagdag
@@ -252,20 +258,32 @@ gemeni start api worker
 
 ---
 
-## 10. Opsyonal: HTTPS at domain
+## 10. Ang proxy (nginx)
 
-Kailangan lang kung ipapalabas sa internet, o kung gusto ng padlock icon sa LAN.
-Pinakamadali ang Caddy (kusang kumukuha ng certificate):
+Nasa `deploy/nginx/gemeni.conf` ang config; naka-mount itong read-only sa
+`proxy` container. Bukod sa pag-alis ng port number sa URL, ito rin ang:
 
-1. Dagdagan ang `docker-compose.prod.yml` ng `caddy` service na naka-forward sa
-   `web:3000`, ports 80 at 443.
-2. Palitan sa `.env.prod`: `WEB_ORIGIN=https://gemeni.gemcor.com.ph` at
-   **`SESSION_COOKIE_SECURE=true`**.
-3. Alisin ang `ports` ng `web` para dumaan lahat sa Caddy.
+- **nagpapayagan ng malalaking upload** — `client_max_body_size 25m`. Ang default
+  na 1 MB ng nginx ay magtatanggi sa mga attachment na may kaunting laki (413).
+- **nagpapasa ng tamang headers** — `X-Forwarded-Host`/`Proto`, na ginagamit ng
+  CSRF guard ng API. Mali ito = hindi makakapag-login.
+- **hindi nagbu-buffer ng downloads** — dumidiretso sa browser ang attachments,
+  exports, at PDF habang binubuo.
 
-Para sa totoong certificate kailangan ng public DNS name at bukas na port 80/443
-mula sa labas. Sa LAN-only, internal CA o self-signed — sabihan mo lang ako at
-ilalagay ko ang buong config.
+Pagkatapos baguhin ang config: `gemeni restart proxy` (walang rebuild).
+
+### Kung gusto ng HTTPS
+
+Kailangan lang kung ipapalabas sa internet, o kung gusto ng padlock sa LAN:
+
+1. Kumuha ng certificate (Let's Encrypt kung may public DNS name; internal CA o
+   self-signed kung LAN lang).
+2. I-mount ang cert sa `proxy`, dagdagan ng `listen 443 ssl;` server block ang
+   `gemeni.conf`, at i-redirect ang port 80 papuntang 443.
+3. Sa `.env.prod`: `WEB_ORIGIN=https://...` at **`SESSION_COOKIE_SECURE=true`**
+   (sasabihin ng API sa log kung magkasalungat sila).
+
+Sabihan mo lang ako kapag kailangan na — ilalagay ko ang buong config.
 
 ---
 
@@ -276,12 +294,13 @@ ilalagay ko ang buong config.
 | **Tama ang password pero "walang nangyayari"** (na-detect naman ang mali) | **Ito ang pinakamadalas.** `SESSION_COOKIE_SECURE=true` habang `http://` ang site → may `Secure` flag ang login cookie → tahimik itong binabasura ng browser → balik sa login, walang error. Ayos: gawing `false` sa `.env.prod`, tapos `gemeni up -d` (hindi kailangan ng `--build`). Paliwanag: kung na-detect ang maling password, gumagana ang buong pipeline — ang cookie lang ang problema. |
 | "Invalid email or password" kahit tama | Hindi pa na-seed ang database — §6. |
 | Naka-login pero agad na-logout | Pareho ng una sa itaas — `SESSION_COOKIE_SECURE`. |
-| Hindi ma-open mula sa ibang PC | Firewall (§7), o maling IP. Test sa server mismo: `curl -I http://localhost:3000/login`. |
+| Hindi ma-open mula sa ibang PC | Firewall (§7), o maling IP. Test sa server mismo: `curl -I http://localhost/login` (dumadaan sa nginx) at `curl -I http://localhost:3000/login` (diretso sa web container) — kung gumagana ang pangalawa pero hindi ang una, nginx ang problema: `gemeni logs proxy`. |
 | Blangko ang QR scan / mali ang link | Mali ang `WEB_ORIGIN` — dapat eksakto sa tina-type ng users. Ayusin, `gemeni up -d`, tapos i-print ulit ang labels. |
 | "storage disabled" sa attachments | `S3_ENABLED=false` sa `.env.prod` — gawing `true` (dapat `true` sa on-prem). |
 | Hindi natatapos ang exports | Patay ang worker: `gemeni logs worker`. Karaniwan ay maling `REDIS_PASSWORD`. |
 | Ayaw mag-start ng `api`, may migration error | `gemeni logs api`. Kung nasira ang database, i-restore (§9). |
 | `pull access denied ... repository does not exist` | Nawala o lumipat ng registry ang isang image — hindi ito problema ng server mo. Kumpirmahin sa ibang makina: `docker pull <image>`. Ganito ang nangyari sa MinIO noong Sept 2026 (lumipat sa `quay.io/minio/minio`). Ayos: `git pull` para makuha ang na-update na compose file. |
+| 413 / "file too large" sa attachments | `client_max_body_size` sa `deploy/nginx/gemeni.conf`. Nakatakda sa 25m (API cap: 20 MB). Pagkatapos baguhin: `gemeni restart proxy`. |
 | Puno ang disk | `docker system prune -a` (mag-iingat: binubura ang unused images), at tignan ang laki ng backups. |
 | Ayaw mag-build, "no space left" | Kulang ang disk sa `/var/lib/docker` — palakihin o ilipat. |
 

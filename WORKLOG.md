@@ -17,6 +17,25 @@ Entry format:
 
 ---
 
+## 2026-09-17 (gabi 5) — 🔀 nginx reverse proxy: walang port number sa URL
+
+Tim: "paano natin sya gawin na nakaproxy na at wala ng port number tsaka laging nakarun using pm2." Tinanong ko ang runtime (pm2 ay ibang process manager — ilalabas nito ang 3 apps sa Docker; ang auto-restart at auto-boot ay ginagawa na ng Docker). Pinili niya ang **Docker + nginx proxy**, walang pm2.
+
+**Bago:**
+- **`deploy/nginx/gemeni.conf`** + `proxy` service (nginx:1.27-alpine) sa compose, naka-mount read-only. Isang upstream lang (`web:3000`) dahil ang Next.js na mismo ang nagfo-forward ng `/api/v1`. Mahahalagang setting: **`client_max_body_size 25m`** (ang 1 MB default ay magtatanggi ng attachments — 413), **`X-Forwarded-Host`/`Proto`** (ginagamit ng CSRF guard ng API — mali ito = walang makaka-login), **`proxy_buffering off`** (dumidiretso ang streamed downloads/PDF), 300s timeouts para sa mabibigat na report queries, gzip.
+- **Topology binago:** `proxy` lang ang nakalabas sa LAN (`${HTTP_PORT:-80}:80`); ang `web` ay `127.0.0.1:3000` na lang — hindi abot mula sa ibang PC pero gumagana pa rin ang lahat ng diagnostic curl sa server mismo.
+- `.env.prod.example`: `WEB_PORT` → **`HTTP_PORT=80`**, at `WEB_ORIGIN` na walang port.
+
+**Verification (totoong stack, proxy sa 8090):** 7 services up, `proxy` healthy → **buong smoke sa pamamagitan ng nginx** lahat pumasa: login (cookie at CSRF nakadaan sa proxy), dashboard, attachment upload+download byte-identical, export job end-to-end, PO PDF. Dagdag na pagsubok sa laki: **5 MB upload = 201** (dating imposible sa 1 MB default ng nginx).
+
+**Nadiskubre habang nagte-test — pre-existing na bug, inayos:** ang upload na lampas sa 20 MB cap ng API ay lumalabas na **"Unhandled exception … Request aborted" → 500** sa log. Hindi ito kagagawan ng nginx. Ang `AllExceptionsFilter` ay walang alam sa multipart failures, kaya ang pagkakamali ng client ay naitatala bilang server fault. Dinagdagan ng `asUploadFailure()` (MulterError `LIMIT_FILE_SIZE` → 413 PAYLOAD_TOO_LARGE, ibang MulterError → 400, `"Request aborted"` → 413 na may malinaw na mensahe). Verified live: **wala nang "Unhandled exception" sa log**. Tala: ang browser ay nakakakuha pa rin ng generic failure sa ganitong kaso dahil sinisira na ng multer ang socket bago makasagot ang Express — pero **hindi ito naaabot ng totoong users**: may sariling 20 MB check ang `attachments-panel.tsx` bago pa mag-upload.
+
+**Guide:** bagong architecture diagram na may nginx, §7 firewall → port 80, §10 pinalitan ng "Ang proxy (nginx)" (ano ang ginagawa nito, paano mag-HTTPS), dagdag na troubleshooting rows para sa 413 at para sa nginx-vs-web na paghihiwalay (`curl http://localhost/login` vs `curl http://localhost:3000/login`).
+
+**Verification:** api build ✅, **499 tests** ✅, lint ✅.
+
+---
+
 ## 2026-09-17 (gabi 4) — 🎨 UI pass: sidebar, login page, splash, skeletons
 
 Apat na hiling ni Tim: (1) rework ang side nav at scrollbar — professional at minimalist; (2) redesign ang login — blue na bg, logo+pangalan sa kaliwa, sign-in box sa kanan; (3) `user@gemcor.ph` ang email placeholder; (4) splash screen, skeletons, at loaders para interactive ang pakiramdam.
