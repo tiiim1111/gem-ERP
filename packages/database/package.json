@@ -20,7 +20,8 @@
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "seed": "tsx src/seed.ts",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "seed:prod": "tsx src/seed-production.ts"
   },
   "dependencies": {
     "@gemerp/shared": "workspace:*",

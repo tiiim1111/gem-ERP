@@ -127,23 +127,48 @@ Awtomatikong tumatakbo ang database migrations tuwing bubuhayin ang `api`.
 
 ## 6. Unang setup ng data (isang beses lang)
 
+Ilagay ang **totoong email** ng magiging super admin:
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.prod \
-  exec api pnpm --filter @gemerp/database seed
+  exec -e SUPERADMIN_EMAIL=superadmin@gemcor.ph \
+  api pnpm --filter @gemerp/database seed:prod
 ```
 
-Ito ang gumagawa ng permissions, roles, ang dalawang branches (SUB at MKT), at
-sample data para may makita agad. Idempotent — ligtas ulitin.
+Gagawa ito ng **kailangan lang** para gumana ang app:
 
-### 🔐 Agad na palitan ang passwords
+- ang organization row
+- ang permission catalog at ang 7 system roles (nasa code, hindi pwedeng gawin sa UI)
+- **isang** super-admin account
+- ang lookup vocabulary (asset conditions, reasons, maintenance types…) at ang base na units of measure — **lahat ito ay pwede mong baguhin sa app** sa ilalim ng Lookups
 
-Ang seed ay gumagawa ng pitong account na `ChangeMe!123` ang password. **Bago
-ibigay sa mga users**, buksan ang app sa browser, mag-login bilang
-`superadmin@gemcor.dev`, tapos:
+**Walang ginagawang demo data** — walang branches, warehouses, employees, items,
+suppliers, o dokumento. Ikaw ang maglalagay ng totoong data ng GemCor sa app.
 
-1. **Users** → bawat account → Reset password → bagong password
-2. O mas mainam: gumawa ng totoong accounts para sa mga tao mo, tapos
-   i-deactivate ang mga demo account.
+Ipi-print nito ang password **nang isang beses lang** — kopyahin mo agad:
+
+```
+    email:    superadmin@gemcor.ph
+    password: 3NRm7DVi77Yl1HsjutB3XtQi
+```
+
+Sapilitang papalitan ito sa unang pag-login. Kung gusto mong ikaw mismo ang
+pumili ng password, idagdag ang `-e SUPERADMIN_PASSWORD=...` sa command.
+
+Idempotent ang script — ligtas ulitin (ginagamit ito para i-sync ang mga bagong
+permission pagkatapos mag-upgrade). Hindi nito binabago ang password ng
+account na umiiral na.
+
+### Pagkatapos mag-login, sa app na ang lahat
+
+1. Palitan ang password mo
+2. **Branches** → idagdag ang mga branch, warehouse, at storage location mo
+3. **Lookups** → tignan ang vocabulary, dagdagan o alisin ayon sa kailangan
+4. **Items** → ang catalog mo; **Employees**, **Users** → ang team mo
+
+> Ang `pnpm --filter @gemerp/database seed` (walang `:prod`) ay **development
+> lang** — puno ito ng demo data at may mga account na `ChangeMe!123` ang
+> password. Huwag itong patakbuhin sa server.
 
 ---
 
@@ -272,7 +297,7 @@ Dapat `up` ang postgres, redis, **at** minio.
 
 ## 12. Security checklist bago ibigay sa users
 
-- [ ] Napalitan na ang lahat ng seed passwords (§6)
+- [ ] Napalitan na ang password ng super admin sa unang pag-login (§6)
 - [ ] Malalakas at magkakaiba ang `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `S3_SECRET_KEY`
 - [ ] Hindi naka-commit ang `.env.prod` (naka-gitignore na) at may kopya sa ligtas na lugar
 - [ ] Naka-restrict ang MinIO console port 9001 — isara kung hindi kailangan
@@ -283,14 +308,20 @@ Dapat `up` ang postgres, redis, **at** minio.
 
 ---
 
-## Tala: demo data sa totoong rollout
+## Tala: paglilinis ng database na may demo data na
 
-Kasama sa seed ang sample items, suppliers, POs, work orders, at approval
-workflows para may makita agad. Kapag handa na sa totoong data ng GemCor,
-dalawa ang pwede:
+Kung nauna kang nakapagpatakbo ng development seed (`seed` na walang `:prod`) sa
+server, may demo data ka na. Habang **wala pang totoong data**, ito ang
+pinakamalinis na paraan para magsimula ulit:
 
-1. **Simple:** gamitin ang demo bilang training sandbox muna, tapos linisin ang
-   hindi kailangan sa UI (archive/deactivate) bago mag-encode ng totoo.
-2. **Malinis na simula:** sabihan mo lang ako at gagawa ako ng "minimal seed"
-   mode na permissions, roles, branches, at users lang ang gagawin — walang
-   sample data.
+```bash
+cd /opt/gemeni
+docker compose -f docker-compose.prod.yml --env-file .env.prod down -v
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+docker compose -f docker-compose.prod.yml --env-file .env.prod \
+  exec -e SUPERADMIN_EMAIL=superadmin@gemcor.ph \
+  api pnpm --filter @gemerp/database seed:prod
+```
+
+⚠️ **Buburahin ng `down -v` ang buong database.** Huwag na huwag itong gagamitin
+kapag may totoo nang data — mag-backup muna (§9).

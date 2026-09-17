@@ -17,6 +17,25 @@ Entry format:
 
 ---
 
+## 2026-09-17 (gabi 3) — 🧹 Production bootstrap: walang demo data, walang hardcoded credentials
+
+Tim: "Clear na natin data sa prod. Then gawin natin superadmin@gemcor.ph ang username ng superadmin, remove lahat ng mga hardcoded na values sa prod." Follow-up: "Except pala nung lookups, retain mo lang."
+
+**Nasuri muna:** kaya nang gawin sa UI ang branches, warehouses, at storage locations (`branch-form-dialog.tsx`, `warehouse-dialog.tsx`, `location-dialog.tsx` + POST endpoints sa org controllers), kaya hindi na kailangang mag-seed ng imbentong org structure.
+
+**Bago:**
+- **`packages/database/src/baseline.ts`** — ang tunay na *structural* na bahagi, ginagamit ng dev seed AT ng production bootstrap para hindi mag-drift: organization, permission catalog, system roles, lookup vocabulary (§10 + SUPPLIER_CATEGORY/RETURN_REASON), UOMs + conversions, `hashPassword`.
+- **`packages/database/src/seed-production.ts`** (`pnpm db:seed:prod`) — **walang anumang hardcoded na email o password**. `SUPERADMIN_EMAIL` ang tanging required; kung walang `SUPERADMIN_PASSWORD`, gagawa ng 24-char na random, ipi-print nang **isang beses**, at itatakda ang `mustChangePassword=true`. Optional overrides: `SUPERADMIN_NAME`, `ORG_CODE/NAME/TIMEZONE/CURRENCY`. Idempotent; hindi binabago ang password ng account na umiiral na (safe re-run para mag-sync ng bagong permissions pagkatapos ng upgrade).
+- **Retained ang lookups at UOMs** per Tim — kailangan ng app para may laman ang mga dropdown, at nae-edit naman sa Lookups page.
+
+**Refactor:** inalis sa `seed.ts` ang mga kopyang `hashPassword`, `permissionParts`, `seedPermissions`, `seedRoles`, `seedUomsAndConversions`, `seedLookupValues`, `LOOKUP_VALUES`, `UOMS`, `GLOBAL_CONVERSIONS` — mula sa `baseline.ts` na ang lahat. Nanatiling dev-only ang demo data.
+
+**Verification sa totoong container, fresh na database:** bootstrap tumakbo (143 permissions, 7 roles, 51 lookup values, 6 UOMs, 1 super admin) → login gamit ang naka-print na password ✅ → `mustChangePassword: true` ✅ → **branches 0, items 0, employees 0, assets 0, suppliers 0, users 1** ✅ → lookups kompleto (asset-conditions 5, transaction-reasons 5, maintenance-types 5, document-types 6, supplier-categories 5) ✅. Regression: gumagana pa rin ang dev seed (buong Phase 3–6 demo data) ✅. typecheck 7/7, lint 4/4 ✅. (Tala: kebab-case slug ang lookups route — `/lookups/asset-conditions`, hindi ang raw category name.)
+
+**Guide §6 binago:** production bootstrap na ang itinuturo, may babala na dev-only ang `seed` na walang `:prod`. Ang dating "minimal seed" note ay pinalitan ng runbook sa paglilinis ng database na may demo data na.
+
+---
+
 ## 2026-09-17 (gabi 2) — 🐛 REAL BUG: production sapilitang nag-fo-force ng Secure cookie
 
 Tim sa on-prem server: "pag tama ang uname and pw, walang nangyayari. pag mali nadedetect na mali."

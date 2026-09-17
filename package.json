@@ -2,7 +2,7 @@
   "name": "gemerp",
   "version": "0.1.0",
   "private": true,
-  "description": "GEM ERP \u2014 Asset & Inventory Management for GEM Cor (single company, multi-branch)",
+  "description": "GEM ERP — Asset & Inventory Management for GEM Cor (single company, multi-branch)",
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=22"
@@ -19,7 +19,8 @@
     "db:migrate": "pnpm --filter @gemerp/database migrate:deploy",
     "db:seed": "pnpm --filter @gemerp/database seed",
     "db:migrate:dev": "pnpm --filter @gemerp/database migrate:dev",
-    "db:studio": "pnpm --filter @gemerp/database studio"
+    "db:studio": "pnpm --filter @gemerp/database studio",
+    "db:seed:prod": "pnpm --filter @gemerp/database seed:prod"
   },
   "devDependencies": {
     "@gemerp/config": "workspace:*",
