@@ -8,7 +8,7 @@ import { isApiClientError } from '@/lib/api';
 import { fetchMe, logout as logoutRequest } from '@/lib/endpoints';
 import type { Me } from '@/lib/types';
 import { ErrorState } from '@/components/ui/error-state';
-import { LoadingBlock } from '@/components/ui/spinner';
+import { AppSplash } from '@/components/layout/app-splash';
 
 export interface SessionContextValue {
   user: Me;
@@ -89,11 +89,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [user, queryClient, logoutMutation]);
 
   if (meQuery.isPending || unauthenticated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <LoadingBlock label="Checking your session…" />
-      </div>
-    );
+    return <AppSplash label="Checking your session…" />;
   }
 
   if (meQuery.isError) {

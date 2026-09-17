@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { LoginForm } from '@/components/auth/login-form';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingBlock } from '@/components/ui/spinner';
 
 export const metadata: Metadata = {
@@ -10,25 +9,21 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="w-full max-w-sm space-y-6">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <img src="/gem-logo.png" alt="GEM-ENI logo" className="h-16 w-auto" />
-        <div>
-          <h1 className="text-lg font-semibold">GEM-ENI</h1>
-          <p className="text-sm text-muted-foreground">ERP &amp; Inventory Management · GemCor</p>
-        </div>
+    <div className="animate-rise-in space-y-6">
+      <div className="space-y-1.5">
+        <h2 className="text-2xl font-semibold tracking-tight">Sign in</h2>
+        <p className="text-sm text-muted-foreground">
+          Use your GEM-ENI account credentials to continue.
+        </p>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Sign in</CardTitle>
-          <CardDescription>Use your GEM-ENI account credentials.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Suspense fallback={<LoadingBlock />}>
-            <LoginForm />
-          </Suspense>
-        </CardContent>
-      </Card>
+
+      <Suspense fallback={<LoadingBlock />}>
+        <LoginForm />
+      </Suspense>
+
+      <p className="text-xs text-muted-foreground">
+        Forgot your password? Ask an administrator to reset it for you.
+      </p>
     </div>
   );
 }

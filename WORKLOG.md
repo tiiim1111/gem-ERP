@@ -17,6 +17,22 @@ Entry format:
 
 ---
 
+## 2026-09-17 (gabi 4) — 🎨 UI pass: sidebar, login page, splash, skeletons
+
+Apat na hiling ni Tim: (1) rework ang side nav at scrollbar — professional at minimalist; (2) redesign ang login — blue na bg, logo+pangalan sa kaliwa, sign-in box sa kanan; (3) `user@gemcor.ph` ang email placeholder; (4) splash screen, skeletons, at loaders para interactive ang pakiramdam.
+
+**1. Sidebar** (`app-shell.tsx`, `globals.css`): bagong `.nav-scroll` — hairline na 6px scrollbar na lumalabas lang kapag naka-hover/focus (ang default na makapal at maputing scrollbar ang mukhang magaspang sa madilim na rail; hinahayaan ang overlay-scrollbar na platforms sa native nila). Mas magaan na rows: 13px na text, `space-y-px`, inactive icons na naka-55% opacity, at **active marker na maliit na primary-blue tick sa rail** imbes na buong bukol na background sa bawat row. Section headers: 10px, 0.12em tracking, 45% opacity. Dinagdagan ng `border-r` ang aside at ginawang `bg-background/85 backdrop-blur` ang topbar.
+
+**2. Login** (`(auth)/layout.tsx`, `login/page.tsx`, `globals.css`): split layout — kaliwa ay `.auth-brand` (radial highlights sa ibabaw ng diagonal gradient: `hsl(221 83% 40%)` → `hsl(224 62% 17%)`, may lalim kahit walang image asset) na may logo, GEM-ENI, GemCor, "ERP & Inventory Management", tatlong highlight, at audit-log notice sa ibaba; kanan ay ang sign-in box sa light background. Nagsa-stack sa phone (nagiging banner ang brand panel, nakatago ang highlights). Nasa layout ito, hindi sa page, kaya makukuha rin ng future auth pages.
+
+**3. Placeholder** → `user@gemcor.ph` (ito lang ang natitirang `gemcor.dev` sa web).
+
+**4. Splash + loaders**: bagong `AppSplash` (logo, wordmark, indeterminate sweep bar) na gumagamit ng parehong blue ng login — kaya tuloy-tuloy ang daloy mula sign-in papasok sa app imbes na kumislap na blangkong page. Ginagamit sa Suspense fallback ng dashboard layout at sa session check (dating maliit na spinner). **Ni-upgrade ang `Skeleton` mismo** ng sweeping shimmer (`motion-reduce` → pulse) — **awtomatikong nakikinabang ang lahat ng existing skeleton sa buong app**. Bagong `TableSkeleton` at `PageSkeleton`, at `(dashboard)/loading.tsx` para sa route transitions — may istraktura nang dinadatnan ang navigation.
+
+**Verification:** web typecheck ✅, lint 0 ✅, build 41/41 pages ✅. Sinilip ang totoong render sa `next start`: nandoon ang `auth-brand` markup, ang tatlong highlight, at ang audit notice; kumpirmadong na-compile ang `.auth-brand` gradient, ang `.nav-scroll` rules, at ang `progress-sweep`/`shimmer` animations; nasa client bundle ang `user@gemcor.ph`. (Walang browser tooling dito — kailangan ng biswal na tingin ni Tim.)
+
+---
+
 ## 2026-09-17 (gabi 3) — 🧹 Production bootstrap: walang demo data, walang hardcoded credentials
 
 Tim: "Clear na natin data sa prod. Then gawin natin superadmin@gemcor.ph ang username ng superadmin, remove lahat ng mga hardcoded na values sa prod." Follow-up: "Except pala nung lookups, retain mo lang."

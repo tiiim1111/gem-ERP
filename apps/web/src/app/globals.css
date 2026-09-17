@@ -56,6 +56,60 @@
   }
 }
 
+@layer components {
+  /*
+   * Sign-in brand panel. Layered radial highlights over a diagonal gradient
+   * give the flat blue some depth without needing an image asset.
+   */
+  .auth-brand {
+    background-color: hsl(var(--primary));
+    background-image:
+      radial-gradient(55rem 55rem at 10% 6%, hsl(212 92% 58% / 0.5), transparent 62%),
+      radial-gradient(40rem 40rem at 92% 94%, hsl(196 90% 50% / 0.3), transparent 58%),
+      linear-gradient(158deg, hsl(221 83% 40%) 0%, hsl(224 62% 17%) 100%);
+  }
+
+  /*
+   * Sidebar scroll area. The platform scrollbar is heavy and light-coloured
+   * against the dark rail, so it is replaced with a hairline that only
+   * appears while the pointer is over the nav. Overlay-scrollbar platforms
+   * (macOS, mobile) ignore these rules and keep their native behaviour.
+   */
+  .nav-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 200ms ease;
+  }
+
+  .nav-scroll:hover,
+  .nav-scroll:focus-within {
+    scrollbar-color: hsl(0 0% 100% / 0.22) transparent;
+  }
+
+  .nav-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .nav-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .nav-scroll::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+    transition: background-color 200ms ease;
+  }
+
+  .nav-scroll:hover::-webkit-scrollbar-thumb,
+  .nav-scroll:focus-within::-webkit-scrollbar-thumb {
+    background-color: hsl(0 0% 100% / 0.2);
+  }
+
+  .nav-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(0 0% 100% / 0.34);
+  }
+}
+
 /*
  * Label printing: window.print() on the asset detail page prints ONLY the
  * label preview (.asset-label-print-area), full size at the top-left corner.

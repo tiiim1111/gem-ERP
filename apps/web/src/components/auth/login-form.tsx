@@ -67,7 +67,7 @@ export function LoginForm() {
           id="login-email"
           type="email"
           autoComplete="email"
-          placeholder="you@gemcor.dev"
+          placeholder="user@gemcor.ph"
           aria-invalid={!!errors.email}
           aria-describedby={errors.email ? 'login-email-error' : undefined}
           {...form.register('email')}

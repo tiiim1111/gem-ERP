@@ -89,12 +89,27 @@ const config: Config = {
           from: { opacity: '0', transform: 'translateY(0.5rem)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        'rise-in': {
+          from: { opacity: '0', transform: 'translateY(0.75rem)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        // Indeterminate bar: no percentage is knowable, so it sweeps.
+        'progress-sweep': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(300%)' },
+        },
+        shimmer: {
+          '100%': { transform: 'translateX(100%)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 120ms ease-out',
         'zoom-in': 'zoom-in 120ms ease-out',
         'slide-in-right': 'slide-in-right 180ms ease-out',
         'toast-in': 'toast-in 150ms ease-out',
+        'rise-in': 'rise-in 400ms cubic-bezier(0.22, 1, 0.36, 1) both',
+        'progress-sweep': 'progress-sweep 1.4s ease-in-out infinite',
+        shimmer: 'shimmer 1.6s infinite',
       },
     },
   },

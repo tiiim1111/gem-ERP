@@ -240,46 +240,70 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 items-center gap-2 px-5">
-        <img src="/gem-logo.png" alt="GEM-ENI logo" className="h-8 w-auto" />
+      <div className="flex h-16 shrink-0 items-center gap-2.5 px-5">
+        <img src="/gem-logo.png" alt="" className="h-8 w-auto" aria-hidden />
         <div className="leading-tight">
-          <p className="text-sm font-semibold text-white">GEM-ENI</p>
-          <p className="text-[11px] text-sidebar-foreground">ERP &amp; Inventory</p>
+          <p className="text-[15px] font-semibold tracking-tight text-white">GEM-ENI</p>
+          <p className="text-[11px] text-sidebar-foreground/70">ERP &amp; Inventory</p>
         </div>
       </div>
-      <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-label="Main navigation">
+
+      <nav
+        className="nav-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4"
+        aria-label="Main navigation"
+      >
         {visibleSections.map((section, index) => (
-          <div key={section.label ?? `section-${index}`} className="space-y-0.5">
+          <div key={section.label ?? `section-${index}`} className={index === 0 ? '' : 'mt-6'}>
             {section.label ? (
-              <p className="px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+              <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/45">
                 {section.label}
               </p>
             ) : null}
-            {section.items.map((item) => {
-              const active = isActivePath(pathname, item.href, item.exact);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    active
-                      ? 'bg-sidebar-accent text-white'
-                      : 'text-sidebar-foreground hover:bg-white/10 hover:text-white',
-                  )}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" aria-hidden />
-                  {item.label}
-                </Link>
-              );
-            })}
+            <div className="space-y-px">
+              {section.items.map((item) => {
+                const active = isActivePath(pathname, item.href, item.exact);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'group relative flex items-center gap-3 rounded-md py-2 pl-3 pr-2.5 text-[13px] transition-colors duration-150',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
+                      active
+                        ? 'bg-white/[0.07] font-medium text-white'
+                        : 'font-normal text-sidebar-foreground/80 hover:bg-white/[0.04] hover:text-white',
+                    )}
+                  >
+                    {/* Active marker: a rail tick reads as "you are here" without
+                        the visual weight of a filled block on every row. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary transition-opacity duration-150',
+                        active ? 'opacity-100' : 'opacity-0',
+                      )}
+                    />
+                    <item.icon
+                      className={cn(
+                        'h-[17px] w-[17px] shrink-0 transition-colors duration-150',
+                        active
+                          ? 'text-white'
+                          : 'text-sidebar-foreground/55 group-hover:text-white',
+                      )}
+                      aria-hidden
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         ))}
       </nav>
-      <div className="px-5 py-4 text-[11px] text-sidebar-foreground/70">
+
+      <div className="shrink-0 border-t border-white/[0.06] px-5 py-3.5 text-[11px] text-sidebar-foreground/50">
         GemCor · Asia/Manila
       </div>
     </div>
@@ -333,7 +357,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 bg-sidebar lg:block">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-white/[0.06] bg-sidebar lg:block">
         <SidebarContent />
       </aside>
 
@@ -361,7 +385,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="lg:pl-60">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b bg-background px-4 sm:px-6">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70 sm:px-6">
           <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="ghost"
