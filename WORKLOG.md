@@ -17,6 +17,27 @@ Entry format:
 
 ---
 
+## 2026-09-17 — 🏢 On-premise deployment stack (Docker Compose) — tested end-to-end
+
+Tim: "deploy natin to sa on premise linux server namin, bigyan mo ko ng guide."
+
+**Bago (lahat tested locally sa totoong Docker, hindi lang isinulat):**
+- **`apps/web/Dockerfile`** (wala pa dati — Vercel lang ang nagbi-build ng web). Mahalagang detalye: **build ARG ang `API_PROXY_TARGET`, hindi runtime env** — binabaked ng Next.js ang rewrite destination sa `.next/routes-manifest.json` habang nagbi-build, kaya walang epekto kung runtime lang. Default `http://api:3001` (compose service name, hindi nagbabago kahit anong deployment). Verified sa loob ng image: `destination: "http://api:3001/api/v1/:path*"`.
+- **`docker-compose.prod.yml`** — buong stack: postgres + redis (requirepass + appendonly) + minio + minio-init + api + worker + web. `web` lang ang may nakalabas na host port; lahat ng iba ay internal network. Healthchecks + `depends_on: service_healthy` kaya tama ang boot order; `restart: unless-stopped` kaya bumabalik pagka-reboot.
+- **`.env.prod.example`** — may malinaw na babala sa dalawang pinaka-madaling mapagkamalan: `SESSION_COOKIE_SECURE` (true sa http = walang makaka-login) at `WEB_ORIGIN` (ito ang napupunta sa QR scan URLs).
+- **`scripts/backup-gemeni.sh`** — pg_dump (custom format) + `mc mirror` ng MinIO bucket, may 30-day pruning. Network name hardcoded `gemeni_default` (galing sa `name: gemeni` sa compose) — mas matibay kaysa sa pag-parse ng `docker compose ps`.
+- **`docs/deploy-on-premise.md`** — 12-section runbook: server specs, Docker install, clone, config, launch, seed + **password rotation**, firewall, auto-start, day-2 ops (update/backup/restore/logs), optional HTTPS, troubleshooting table, security checklist.
+- **`.dockerignore` fix**: dati may `apps/web` na excluded (tama noon — api/worker lang ang naka-Docker), kaya imposibleng ma-build ang web image. Inalis; dinagdag ang `user_access_prod.md` para hindi mapunta sa image.
+- **`.gitignore`**: `!.env.prod.example` exception (nahuhuli ito ng `.env.*` rule).
+
+**Verification (totoong Docker stack, project `gemeni`, ports 3100/9101 para hindi mag-conflict sa dev):** 6 containers up at healthy → 9 migrations auto-applied sa unang boot ng api → seed tumakbo sa loob ng container → **live smoke lahat pumasa**: health (**minio "up"**, hindi "disabled" — ito ang bentahe kumpara sa Railway), login through the web proxy, dashboard KPIs, **attachment upload → download byte-identical**, **export job end-to-end** (queue → worker → MinIO → download, XLSX magic verified), printable PO PDF. Tapos **na-test din ang backup + restore**: pg_dump → `pg_restore --clean --if-exists` → login OK, 12 items at 10 assets buo. Nilinis ang test stack (`down -v`); hindi ginalaw ang dev stack.
+
+**Decisions:** S3_ENABLED=true sa on-prem (may MinIO na sa stack — gumagana ang attachments at exports, hindi tulad ng Railway kung saan naka-off); MinIO console port nakalabas by default para may admin access, may tala kung paano isara; walang Caddy/TLS na isinama sa compose (LAN-first; naka-dokumento ang hakbang kung kailanganin).
+
+**Pending / Next:** kung ilalabas sa internet o gustong HTTPS — dagdag na Caddy service + `SESSION_COOKIE_SECURE=true`. Para sa totoong rollout: "minimal seed" mode (permissions/roles/branches/users lang, walang demo data) — naka-dokumento bilang opsyon, gagawin kapag hiniling ni Tim.
+
+---
+
 ## 2026-08-11 (gabi) — fix: warehouse settings rows nagdodoble sa item page
 
 Tim reported: pag-save sa Warehouse settings, nag-a-append ang rows (parehong warehouse dalawang beses — blangko ang isa, may values ang isa na "—" ang branch).

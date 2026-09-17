@@ -7,7 +7,7 @@ node_modules
 .env
 .env.*
 !.env.example
-apps/web
 docs
 *.md
 gem_logo.png
+user_access_prod.md
