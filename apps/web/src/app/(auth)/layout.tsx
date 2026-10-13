@@ -9,25 +9,26 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div className="flex min-h-screen flex-col lg:flex-row">
       {/* Brand panel — full height beside the form on desktop, a banner above it on phones. */}
       <div className="auth-brand relative flex shrink-0 flex-col justify-center px-6 py-10 text-white lg:w-[45%] lg:px-14 lg:py-0">
-        <div className="animate-rise-in mx-auto w-full max-w-md lg:mx-0">
-          <div className="flex items-center gap-3">
+        <div className="animate-rise-in mx-auto w-full max-w-md">
+          {/* Hero: centred, logo stacked above the wordmark so it can run large. */}
+          <div className="flex flex-col items-center text-center">
             <img
               src="/gem-logo.png"
               alt=""
               aria-hidden
-              className="h-12 w-auto drop-shadow-sm lg:h-16"
+              className="h-24 w-auto drop-shadow-sm sm:h-28 lg:h-36"
             />
-            <div className="leading-tight">
-              <p className="text-2xl font-semibold tracking-tight lg:text-3xl">GEM-ENI</p>
-              <p className="text-sm text-white/70">GemCor</p>
-            </div>
+            <p className="mt-4 text-4xl font-semibold tracking-tight lg:mt-6 lg:text-5xl">
+              GEM-ENI
+            </p>
+            <h1 className="mt-2.5 text-sm font-medium leading-snug text-white/80 lg:mt-3 lg:text-base">
+              Green Energy Machineries ERP &amp; Inventory Systems
+            </h1>
           </div>
 
-          <h1 className="mt-6 text-lg font-medium leading-snug text-white/95 lg:mt-10 lg:text-2xl">
-            ERP &amp; Inventory Management
-          </h1>
-
-          <ul className="mt-6 hidden space-y-3 lg:block">
+          {/* Supporting copy stays left-aligned; the block itself is centred so
+              the ragged right edge still sits square under the hero. */}
+          <ul className="mx-auto mt-10 hidden w-fit space-y-3 text-left lg:block">
             {HIGHLIGHTS.map((highlight) => (
               <li key={highlight} className="flex items-start gap-3 text-sm text-white/75">
                 <span aria-hidden className="mt-2 h-1 w-1 shrink-0 rounded-full bg-white/50" />
@@ -37,7 +38,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           </ul>
         </div>
 
-        <p className="absolute inset-x-14 bottom-8 hidden text-xs text-white/45 lg:block">
+        <p className="absolute inset-x-14 bottom-8 hidden text-center text-xs text-white/45 lg:block">
           Authorized users only. Activity is recorded in the audit log.
         </p>
       </div>

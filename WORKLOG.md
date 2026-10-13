@@ -17,6 +17,20 @@ Entry format:
 
 ---
 
+## 2026-10-13 — Login brand panel: centered hero, mas malaking logo/title, bagong pangalan
+
+Tim: "Ganda na ng login page, pwede mo center yung mga contents tas lakihan si logo at Title? yung GemCor sa baba palitan mo ng Green Energy Machineries ERP & Inventory Systems. Tapos the rest nasa left side nalang."
+
+- **Hero centered at naka-stack** (dating magkatabi ang logo at wordmark): logo `h-24 → sm:h-28 → lg:h-36` (dating `h-12/h-16`), "GEM-ENI" `text-4xl → lg:text-5xl` (dating `text-2xl/3xl`).
+- **"GemCor" → "Green Energy Machineries ERP & Inventory Systems"**. Tinanggal ang dating `<h1>ERP & Inventory Management</h1>` — doble na ito sa bagong pangalan.
+- **Ang natitira ay nasa kaliwa pa rin**: left-aligned ang highlights list, pero ang block ay naka-center kaya pantay ang kaliwang gilid nito sa ilalim ng hero. Ang footer notice ay ginawang centered para tumugma sa hero.
+
+**Verification:** web typecheck ✅, lint ✅, build ✅. Sinilip ang totoong render sa `next start`: nandoon ang bagong pangalan, **wala nang "GemCor"** at **wala nang dobleng "ERP & Inventory Management"** sa brand panel, at tama ang bagong laki ng logo/title.
+
+**Tala:** hindi pa na-deploy ni Tim ang mga nauna — noong huling check (2026-09-22) ay luma pa ang tumatakbo sa 192.168.0.50 (port 3000 bukas, 80 sarado, lumang login page). Isang `git pull` + rebuild ang kukuha ng UI pass, ng nginx proxy, at nito.
+
+---
+
 ## 2026-09-17 (gabi 5) — 🔀 nginx reverse proxy: walang port number sa URL
 
 Tim: "paano natin sya gawin na nakaproxy na at wala ng port number tsaka laging nakarun using pm2." Tinanong ko ang runtime (pm2 ay ibang process manager — ilalabas nito ang 3 apps sa Docker; ang auto-restart at auto-boot ay ginagawa na ng Docker). Pinili niya ang **Docker + nginx proxy**, walang pm2.
