@@ -17,6 +17,22 @@ Entry format:
 
 ---
 
+## 2026-10-13 (later) — 🐛 502 Bad Gateway sa prod: naka-cache na upstream IP ng nginx
+
+Tim pagkatapos ng unang deploy na may proxy: "nag bad gateway pre after this?"
+
+**Diagnosis:** nasilip ko mula sa laptop — `http://192.168.0.50/login` → **502 na may nginx error page** (buhay ang nginx), port 3000 sarado mula sa LAN (tama — localhost-only na ito ngayon). Ang container status niya ang nagturo sa sagot: **`proxy` Up 13 minutes, `web` Up 5 minutes** — na-recreate ang web matapos mag-start ang nginx. Malusog ang web logs ("Ready in 382ms"), sagana ang RAM at disk.
+
+**Root cause:** sa static na `upstream { server web:3000; }` block, **minsan lang nagre-resolve ng DNS ang nginx — sa startup**. Bawat `up -d --build` ay nagbibigay ng bagong IP sa web container; patuloy na kinakausap ng nginx ang patay na IP → 502 hanggang i-restart nang manu-mano ang proxy. Hindi ito lumabas sa unang pagsubok ko dahil sabay silang binuhay noon.
+
+**Fix:** tinanggal ang `upstream` block; `resolver 127.0.0.11 valid=10s ipv6=off;` (embedded DNS ng Docker) + variable sa proxy_pass (`set $gemeni_web "http://web:3000"; proxy_pass $gemeni_web$request_uri;`). Ang variable ang pumupwersa ng per-request resolution; kailangan ang tahasang `$request_uri` dahil hindi na awtomatikong idinudugtong ng nginx ang URI kapag may variable ang proxy_pass. Kapalit: nawala ang upstream keepalive — tinanggap ko ito, mas mahalaga ang tama kaysa sa micro-optimization sa LAN app.
+
+**Verification (tunay na sinubukan ang pagpalya):** binuhay ang stack (proxy 200 ✅) → **pinilit lumipat ng IP ang web** (`rm -sf web`, pinaupo ang isang squatter container sa lumang `172.21.0.8`, binalik ang web → nakakuha ng `172.21.0.9`) → **200 pa rin ang proxy nang hindi ito ginagalaw** (3 sunod-sunod na request). Dating 502 ito. Dahil nagbago ang URI handling, pinatakbo ang bagong `smoke-proxy.mjs`: static page, POST + JSON body, **query string (`?pageSize=3` → eksaktong 3 rows**, patunay na hindi nalalaglag ang query), path params, multipart upload, byte-identical binary download, PDF — lahat pumasa. Naging `healthy` ang proxy healthcheck.
+
+Dinagdagan ng **502 row** ang troubleshooting table ng guide (mabilis na ayos + permanenteng ayos).
+
+---
+
 ## 2026-10-13 — Login brand panel: centered hero, mas malaking logo/title, bagong pangalan
 
 Tim: "Ganda na ng login page, pwede mo center yung mga contents tas lakihan si logo at Title? yung GemCor sa baba palitan mo ng Green Energy Machineries ERP & Inventory Systems. Tapos the rest nasa left side nalang."

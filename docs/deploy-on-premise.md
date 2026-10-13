@@ -300,6 +300,7 @@ Sabihan mo lang ako kapag kailangan na — ilalagay ko ang buong config.
 | Hindi natatapos ang exports | Patay ang worker: `gemeni logs worker`. Karaniwan ay maling `REDIS_PASSWORD`. |
 | Ayaw mag-start ng `api`, may migration error | `gemeni logs api`. Kung nasira ang database, i-restore (§9). |
 | `pull access denied ... repository does not exist` | Nawala o lumipat ng registry ang isang image — hindi ito problema ng server mo. Kumpirmahin sa ibang makina: `docker pull <image>`. Ganito ang nangyari sa MinIO noong Sept 2026 (lumipat sa `quay.io/minio/minio`). Ayos: `git pull` para makuha ang na-update na compose file. |
+| **502 Bad Gateway** | Buhay ang nginx pero hindi nito maabot ang `web`. Tingnan ang `gemeni ps`: kung mas matagal nang tumatakbo ang `proxy` kaysa sa `web`, naabutan ng recreate ang nginx. Mabilis na ayos: `gemeni restart proxy`. Permanenteng ayos: naka-`resolver 127.0.0.11` na ang config (mula 2026-10-13) kaya nireresolba nito ang `web` bawat request — siguraduhing updated ang `deploy/nginx/gemeni.conf`. Kung patay talaga ang `web`: `gemeni logs web`. |
 | 413 / "file too large" sa attachments | `client_max_body_size` sa `deploy/nginx/gemeni.conf`. Nakatakda sa 25m (API cap: 20 MB). Pagkatapos baguhin: `gemeni restart proxy`. |
 | Puno ang disk | `docker system prune -a` (mag-iingat: binubura ang unused images), at tignan ang laki ng backups. |
 | Ayaw mag-build, "no space left" | Kulang ang disk sa `/var/lib/docker` — palakihin o ilipat. |
