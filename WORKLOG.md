@@ -17,6 +17,24 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 3) — SKU: tinanggal ang prefix, tapos pinalitan ng business category; quick-add sa lookups
+
+Tatlong magkakasunod na hiling ni Tim sa SKU, tapos ang "Add new" sa dropdowns.
+
+**1. Branch sa SKU — hindi itinuloy (validated).** Mungkahi ni Tim: `BRANCH-CAT-SEQ`. Tinanggihan ko ito nang may dahilan: **walang `branchId` ang Item** — iisang catalog entry na ginagamit ng lahat ng branch. Ang `StockBalance` ay `(item, warehouse, location, lot)`, at ang transfers ay paglilipat ng parehong item sa pagitan ng branch. Ang branch sa SKU ay magsisinungaling o magpipilit ng dobleng catalog kada branch. Tanggap ni Tim; **nasa asset tag na ang branch** (`AST-{BRANCH}-{CAT}-{YYYY}-{SEQ6}`), na siyang tamang lugar nito.
+
+**2. Tinanggal ang `SKU-` prefix** → `{CAT}-{SEQ5}`. Pinanatili ang pangalan ng sequence counter (`SKU-{CAT}`) para **hindi mag-reset sa 1** ang numbering. Verified live: `LAP-00003`.
+
+**3. Business-category prefix** → `{BIZ}-{CAT}-{SEQ5}`. Hiling ni Tim ang `AST/CON/BLK`; **pinalitan ang AST ng SRL** dahil sa `scan.service.ts:122` — anumang `AST-` ay dinadala muna sa asset-tag lookup. Hindi naman ito nasisira (dumadaloy pababa sa SKU resolution), pero magkapareho ang simula ng item SKU at asset tag sa lahat ng listahan at report. Pumili si Tim ng `SRL`. May `GEN` fallback kung may madagdag na bagong business category. Verified live: **SRL-LAP-00003, CON-OFC-00004, BLK-FUR-00002**. Tala: nababago ang `businessCategory` hangga't walang stock/asset pero permanente ang SKU — naituro kay Tim ang makitid na bintanang ito.
+
+**4. Quick-add sa lookup dropdowns** (`components/lookups/quick-add-lookup.tsx`): `CreatableSelect` + `QuickAddLookupDialog`. Dahil hindi makapaglagay ng button ang `<select>`, isang sentinel na option (`__add_new__`) ang hinaharang ng change handler at ibinabalik ang dating halaga bago buksan ang modal — kaya walang naitatalang basurang halaga. Pagkatapos mag-save: ini-invalidate ang query ng listahang yun at **awtomatikong pinipili ang bagong halaga**; buo ang form state dahil nasa parehong page lang. Naka-gate sa `lookup.manage` (itinatago ang option kung wala) at sa parent category para sa subcategory. **Espesyal ang UOM**: may opsyonal na conversion factor papunta sa base UOM — ang bagong unit na walang conversion ay hindi makakapag-compute ng quantity; kung pumalya ang conversion, nananatili pa rin ang unit at may babala.
+
+Naka-wire sa pitong dropdown ng Item form: Category, Subcategory, Brand, Manufacturer, at tatlong UOM.
+
+**Verification:** api build ✅, **502 tests** ✅ (+2 bago: walang AST collision, GEN fallback), web typecheck/lint/build ✅, kumpirmadong nasa bundle ang bagong UI. **Hindi pa na-click-through** — walang browser tooling dito, kailangan ng biswal na pagsubok ni Tim.
+
+---
+
 ## 2026-10-14 (gabi 2) — 🐛 Na-stuck ang update script sa "Waiting" — hindi na-reload ang proxy config
 
 Tim: na-stuck sa `[3/4] Waiting for the app to answer...`. Nasilip ko ang prod: **502 ulit**.

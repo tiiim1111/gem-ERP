@@ -40,6 +40,7 @@ import { ErrorState, FormError } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { CreatableSelect } from '@/components/lookups/quick-add-lookup';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
@@ -213,6 +214,12 @@ export function ItemForm({ itemId }: { itemId?: string }) {
   const businessCategory = form.watch('businessCategory');
   const trackingMethod = form.watch('trackingMethod');
   const categoryId = form.watch('categoryId');
+  const subcategoryId = form.watch('subcategoryId');
+  const brandId = form.watch('brandId');
+  const manufacturerId = form.watch('manufacturerId');
+  const baseUomId = form.watch('baseUomId');
+  const purchaseUomId = form.watch('purchaseUomId');
+  const issueUomId = form.watch('issueUomId');
   const isLotTracked = form.watch('isLotTracked');
 
   const subcategoriesQuery = useQuery({
@@ -566,21 +573,35 @@ export function ItemForm({ itemId }: { itemId?: string }) {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField label="Category" htmlFor="item-category" error={errors.categoryId?.message}>
-                  <Select id="item-category" {...form.register('categoryId')}>
+                  <CreatableSelect
+                    id="item-category"
+                    kind="item-category"
+                    registration={form.register('categoryId')}
+                    value={categoryId ?? ''}
+                    onCreated={(id) => form.setValue('categoryId', id, { shouldDirty: true })}
+                  >
                     <option value="">No category</option>
                     {(categoriesQuery.data?.data ?? []).map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name} ({category.code})
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
                 <FormField
                   label="Subcategory"
                   htmlFor="item-subcategory"
                   error={errors.subcategoryId?.message}
                 >
-                  <Select id="item-subcategory" disabled={!categoryId} {...form.register('subcategoryId')}>
+                  <CreatableSelect
+                    id="item-subcategory"
+                    kind="item-subcategory"
+                    context={{ categoryId: categoryId || undefined }}
+                    registration={form.register('subcategoryId')}
+                    value={subcategoryId ?? ''}
+                    disabled={!categoryId}
+                    onCreated={(id) => form.setValue('subcategoryId', id, { shouldDirty: true })}
+                  >
                     <option value="">
                       {categoryId ? 'No subcategory' : 'Select a category first'}
                     </option>
@@ -589,33 +610,45 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                         {subcategory.name}
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <FormField label="Brand" htmlFor="item-brand" error={errors.brandId?.message}>
-                  <Select id="item-brand" {...form.register('brandId')}>
+                  <CreatableSelect
+                    id="item-brand"
+                    kind="brand"
+                    registration={form.register('brandId')}
+                    value={brandId ?? ''}
+                    onCreated={(id) => form.setValue('brandId', id, { shouldDirty: true })}
+                  >
                     <option value="">No brand</option>
                     {(brandsQuery.data?.data ?? []).map((brand) => (
                       <option key={brand.id} value={brand.id}>
                         {brand.name}
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
                 <FormField
                   label="Manufacturer"
                   htmlFor="item-manufacturer"
                   error={errors.manufacturerId?.message}
                 >
-                  <Select id="item-manufacturer" {...form.register('manufacturerId')}>
+                  <CreatableSelect
+                    id="item-manufacturer"
+                    kind="manufacturer"
+                    registration={form.register('manufacturerId')}
+                    value={manufacturerId ?? ''}
+                    onCreated={(id) => form.setValue('manufacturerId', id, { shouldDirty: true })}
+                  >
                     <option value="">No manufacturer</option>
                     {(manufacturersQuery.data?.data ?? []).map((manufacturer) => (
                       <option key={manufacturer.id} value={manufacturer.id}>
                         {manufacturer.name}
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
                 <FormField label="Model" htmlFor="item-model" error={errors.model?.message}>
                   <Input id="item-model" {...form.register('model')} />
@@ -635,34 +668,55 @@ export function ItemForm({ itemId }: { itemId?: string }) {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <FormField label="Base UOM" htmlFor="item-baseuom" error={errors.baseUomId?.message} required>
-                  <Select id="item-baseuom" aria-invalid={!!errors.baseUomId} {...form.register('baseUomId')}>
+                  <CreatableSelect
+                    id="item-baseuom"
+                    kind="uom"
+                    registration={form.register('baseUomId')}
+                    value={baseUomId ?? ''}
+                    ariaInvalid={!!errors.baseUomId}
+                    onCreated={(id) => form.setValue('baseUomId', id, { shouldDirty: true })}
+                  >
                     <option value="">Select…</option>
                     {uoms.map((uom) => (
                       <option key={uom.id} value={uom.id}>
                         {uom.code} — {uom.name}
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
                 <FormField label="Purchase UOM" htmlFor="item-purchaseuom" error={errors.purchaseUomId?.message}>
-                  <Select id="item-purchaseuom" {...form.register('purchaseUomId')}>
+                  <CreatableSelect
+                    id="item-purchaseuom"
+                    kind="uom"
+                    context={{ baseUom: uoms.find((uom) => uom.id === baseUomId) ?? null }}
+                    registration={form.register('purchaseUomId')}
+                    value={purchaseUomId ?? ''}
+                    onCreated={(id) => form.setValue('purchaseUomId', id, { shouldDirty: true })}
+                  >
                     <option value="">Same as base</option>
                     {uoms.map((uom) => (
                       <option key={uom.id} value={uom.id}>
                         {uom.code} — {uom.name}
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
                 <FormField label="Issue UOM" htmlFor="item-issueuom" error={errors.issueUomId?.message}>
-                  <Select id="item-issueuom" {...form.register('issueUomId')}>
+                  <CreatableSelect
+                    id="item-issueuom"
+                    kind="uom"
+                    context={{ baseUom: uoms.find((uom) => uom.id === baseUomId) ?? null }}
+                    registration={form.register('issueUomId')}
+                    value={issueUomId ?? ''}
+                    onCreated={(id) => form.setValue('issueUomId', id, { shouldDirty: true })}
+                  >
                     <option value="">Same as base</option>
                     {uoms.map((uom) => (
                       <option key={uom.id} value={uom.id}>
                         {uom.code} — {uom.name}
                       </option>
                     ))}
-                  </Select>
+                  </CreatableSelect>
                 </FormField>
               </div>
 
