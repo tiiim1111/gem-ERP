@@ -68,10 +68,16 @@ Equipment". Ito ang lalabas sa asset tag.
 
 ---
 
-## 4. Bulk import: employees, tapos items
+## 4. Employees at items
 
-Dalawa lang sa tatlo ang pwedeng i-import — **walang asset import**, kaya ang
-mga asset ay isa-isang ire-register (§5).
+Dalawang paraan — pareho lang ang kinalalabasan:
+
+- **Isa-isa sa app** (mas mainam kapag natututo pa lang, o kaunti lang ang
+  ilalagay): Employees → New, at Items → New. Nakalista sa ibaba ang eksaktong
+  field.
+- **Bulk import** (Imports module): CSV/XLSX, mabilis kapag marami.
+
+Walang asset import — **isa-isang ire-register ang mga asset** (§5).
 
 ### Employees
 
@@ -118,19 +124,24 @@ Assets → **Register**. Para sa bawat row ng
 **Ang shortcut:** ang `Quantity` ay gumagawa ng maraming asset nang sabay, na
 tig-iisa ang asset tag. Ang limang CCTV row mo ay **isang** registration lang.
 
-### Draft muna o Available agad?
+### Laging Draft ang bagong rehistro
 
-Dito papasok ang serial numbers:
+Hindi ito pinipili — **lahat ng bagong asset ay Draft**. Tatlong estado ang
+dadaanan:
 
-- **Available** — kailangan ng warehouse + condition + **serial number bawat
-  unit**. Ito ang target na estado.
-- **Draft** — walang kailangan. Mailalagay mo agad ang lahat.
+```
+Register ──► DRAFT ──Activate──► AVAILABLE ──Assign──► ASSIGNED
+```
+
+Para maka-**Activate**, kailangang kumpleto ang tatlo: **warehouse**,
+**condition**, at **serial number** (kung SERIAL-tracked ang item). Kung kulang,
+sasabihin mismo ng error kung alin ang kulang.
 
 Walang serial number ang Excel mo, kaya ito ang praktikal na daan:
 
-1. I-register lahat bilang **Draft** ngayon (mabilis, walang hinahanap)
+1. I-register lahat bilang Draft ngayon (mabilis — walang hinahanap)
 2. Maglakad-lakad na dala ang listahan, basahin ang serial sa likod ng bawat
-   device, i-edit ang asset at ilagay ito
+   device, **Edit** ang asset at ilagay ito
 3. **Activate** → nagiging Available
 
 Ito mismo ang dahilan kung bakit may serial requirement — ang serial ang tanging
