@@ -252,7 +252,7 @@ export class ItemsService {
       throw AppException.validation([
         {
           field: 'categoryId',
-          message: 'categoryId is required when sku is omitted (SKU-{CATEGORY}-{SEQ}).',
+          message: 'categoryId is required when sku is omitted ({CATEGORY}-{SEQ}).',
         },
       ]);
     }

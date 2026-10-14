@@ -21,7 +21,7 @@ const MONEY_PATTERN = /^\d{1,12}(\.\d{1,2})?$/;
 export class CreateItemDto {
   @ApiPropertyOptional({
     description:
-      'Internal SKU. Generated as SKU-{CATEGORY_CODE}-{SEQ} when omitted (categoryId required in that case).',
+      'Internal SKU. Generated as {CATEGORY_CODE}-{SEQ} when omitted (categoryId required in that case).',
     example: 'SKU-LAP-00001',
   })
   @IsOptional()

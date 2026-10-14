@@ -17,15 +17,24 @@ export function formatEmployeeNumber(sequence: number | bigint): string {
   return `EMP-${formatSequence(sequence, 6)}`;
 }
 
-/** Sequence-counter key for SKUs of a category (per-category counters). */
+/**
+ * Sequence-counter key for SKUs of a category (per-category counters).
+ * The `SKU-` prefix here is an internal counter name, deliberately unchanged
+ * when the printed format dropped its prefix — renaming it would restart every
+ * category's numbering at 1.
+ */
 export function skuSequenceKey(categoryCode: string): string {
   return `SKU-${categoryCode.toUpperCase()}`;
 }
 
-/** Item SKU pattern: SKU-{CATEGORY_CODE}-{SEQ5} (e.g. SKU-PPR-00017). */
+/**
+ * Item SKU pattern: {CATEGORY_CODE}-{SEQ5} (e.g. PPR-00017).
+ * Items are shared by every branch, so no branch code appears here — that
+ * belongs to the asset tag, which identifies one physical unit.
+ */
 export function formatSku(
   categoryCode: string,
   sequence: number | bigint,
 ): string {
-  return `SKU-${categoryCode.toUpperCase()}-${formatSequence(sequence, 5)}`;
+  return `${categoryCode.toUpperCase()}-${formatSequence(sequence, 5)}`;
 }

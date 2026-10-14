@@ -202,7 +202,7 @@ erDiagram
 
   items {
     uuid id PK
-    string sku UK "SKU-{CATEGORY}-{SEQ}"
+    string sku UK "{CATEGORY}-{SEQ}"
     string name
     enum business_category "BusinessCategory"
     enum tracking_method "TrackingMethod"

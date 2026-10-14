@@ -29,13 +29,19 @@ describe('sequence.util', () => {
   });
 
   describe('formatSku', () => {
-    it('produces SKU-{CATEGORY}-{SEQ5}', () => {
-      expect(formatSku('PPR', 17)).toBe('SKU-PPR-00017');
-      expect(formatSku('LAP', 1)).toBe('SKU-LAP-00001');
+    it('produces {CATEGORY}-{SEQ5}', () => {
+      expect(formatSku('PPR', 17)).toBe('PPR-00017');
+      expect(formatSku('LAP', 1)).toBe('LAP-00001');
     });
 
     it('uppercases the category code', () => {
-      expect(formatSku('lap', 2)).toBe('SKU-LAP-00002');
+      expect(formatSku('lap', 2)).toBe('LAP-00002');
+    });
+
+    // Items are shared across branches; a branch code here would either lie or
+    // force a duplicate catalog per branch. Branch lives in the asset tag.
+    it('carries no branch segment', () => {
+      expect(formatSku('LAP', 1)).not.toMatch(/MAIN|SUB|MKT/);
     });
   });
 

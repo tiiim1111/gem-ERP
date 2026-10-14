@@ -75,7 +75,7 @@ export class ItemsController {
   @RequirePermissions(PERMISSIONS.item.create)
   @ApiOperation({
     summary:
-      'Create an item (SKU auto-generated as SKU-{CATEGORY}-{SEQ} when omitted; combos validated per spec §4).',
+      'Create an item (SKU auto-generated as {CATEGORY}-{SEQ} when omitted; combos validated per spec §4).',
   })
   create(
     @CurrentUser() user: AuthUser,

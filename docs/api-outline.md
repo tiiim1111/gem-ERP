@@ -120,7 +120,7 @@ State changes are **explicit action endpoints** (`submit`, `approve`, `reject`, 
 | Document | Pattern | Example |
 |---|---|---|
 | Asset tag | `AST-{BRANCH}-{CAT}-{YYYY}-{SEQ6}` | `AST-SUB-LAP-2026-000123` |
-| Item SKU | `SKU-{CAT}-{SEQ}` | `SKU-PPR-00017` |
+| Item SKU | `{CAT}-{SEQ}` | `PPR-00017` |
 | Lot | `LOT-{SKU}-{YYYYMMDD}-{SEQ}` | `LOT-PPR-00017-20260301-01` |
 | Bin/location | `BIN-{BRANCH}-{WH}-{LOC}` | `BIN-SUB-WH1-A01` |
 | Stock transaction | `STK-{YYYY}-{SEQ6}` | `STK-2026-000482` |
@@ -130,6 +130,14 @@ State changes are **explicit action endpoints** (`submit`, `approve`, `reject`, 
 | Transfer | `TRF-{YYYY}-{SEQ5}` | `TRF-2026-00021` |
 | Work order | `WO-{YYYY}-{SEQ5}` | `WO-2026-00077` |
 | Count session | `CNT-{YYYY}-{SEQ5}` | `CNT-2026-00004` |
+
+SKU supersedes the master prompt's `SKU-{CATEGORY_CODE}-{SEQUENCE}` (dropped the
+redundant `SKU-` prefix, 2026-10-14). It carries **no branch segment on
+purpose**: one item is shared by every branch — the same product can hold stock
+in two branches and be transferred between them — so a branch code would either
+be wrong or force a duplicate catalogue per branch. Branch identity lives in the
+asset tag, which names one physical unit. Auto-generation only applies when the
+caller omits `sku`; any SKU matching `^[A-Z0-9][A-Z0-9_-]{0,63}$` is accepted.
 
 ---
 
