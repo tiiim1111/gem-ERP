@@ -17,6 +17,18 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi) — `update-gemeni.sh`: isang command na pang-update ng prod
+
+Tim: "Pahingi ng pang update sa prod if may changes."
+
+**Nasilip muna ang prod:** live na ang bagong brand panel (a4ad386), pero **kulang pa ng 4 na commit** — kasama ang `a1870d0` (ang permanenteng 502 fix). Ibig sabihin `restart proxy` lang ang ginawa niya noon, kaya luma pa ang nginx config doon at **babalik sana ang 502 sa susunod niyang rebuild**. Ang script ay nagpu-pull bago mag-build, kaya naaayos ito sa parehong takbo.
+
+**Bago:** `scripts/update-gemeni.sh` — git pull (`--ff-only`), **ipinapakita kung anong commit ang ide-deploy**, build + up, **naghihintay hanggang sumagot ang app sa pamamagitan ng proxy** (hanggang 3 min, may malinaw na error at `ps` kung bigo), tapos status + ang URL mula mismo sa `.env.prod`. Overrides: `REPO_DIR`, `ENV_FILE`, `SKIP_PULL=1`.
+
+**Verification:** `bash -n` ✅, tapos **totoong pinatakbo laban sa test stack** — nag-build, nagsimula, "Up after 2 check(s)", tamang status table, at tamang URL sa dulo; pagkatapos kumpirmadong HTTP 200 at bagong UI ang sinisilbi. Na-update ang day-2 table ng guide para ituro ang script.
+
+---
+
 ## 2026-10-14 (later) — Locations per branch: sinuri, may meron na; dinagdagan ng room types
 
 Tim: gusto ng per-branch locations (ADMIN, CONFERENCE, WAREHOUSE) at humingi ng pitch muna — "make sure na di masisira ang system".

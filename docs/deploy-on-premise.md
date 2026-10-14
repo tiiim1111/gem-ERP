@@ -223,7 +223,7 @@ source ~/.bashrc
 | Restart | `gemeni restart` |
 | Stop | `gemeni down` (nananatili ang data) |
 | Start ulit | `gemeni up -d` |
-| **Update sa bagong version** | `git pull && gemeni up -d --build` — awtomatikong mag-a-apply ang migrations |
+| **Update sa bagong version** | `/opt/gemeni/scripts/update-gemeni.sh` — nagpu-pull, nagbi-build, naghihintay na sumagot ang app, at nag-uulat ng status. Migrations ay awtomatiko. |
 | Linisin ang lumang images | `docker image prune -f` |
 
 ### Backup (gawin araw-araw)
