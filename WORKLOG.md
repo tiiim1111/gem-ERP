@@ -17,6 +17,24 @@ Entry format:
 
 ---
 
+## 2026-10-14 — 📋 Guide: paglalagay ng totoong asset register sa sistema
+
+Nagpadala si Tim ng screenshot ng totoong Excel asset register ng GemCor (20 row ng office equipment: aircon, printers, laptops, CCTV, server, UPS — may PHP values, LOCATION, at END-USER) at humingi ng guide para makapag-practice.
+
+**Sinuri muna sa code bago sumulat:**
+- Import types: **employees, items, lookups lang — WALANG asset import**, kaya isa-isa ang assets.
+- `POST /assets` (register-asset.dto) ay may **`quantity` + `serialNumbers[]`** — maramihang asset sa isang entry. Nasa UI ito (`asset-register-dialog.tsx`).
+- `registerAssets()` ay **tumatanggi sa item na hindi `trackingMethod = SERIAL`** — kaya dapat SERIALIZED_ASSET + SERIAL ang items.
+- `assertActivatable()`: ang serial ay kailangan **lang kapag AVAILABLE ang initial status**; ang DRAFT ay walang hinihingi. Ito ang susi sa praktikal na daloy dahil walang serial ang Excel ni Tim.
+
+**Ginawa:**
+- `docs/encoding-asset-register.md` — column mapping (CONTROL NO → auto asset tag, LOCATION → storage location, END-USER → employee assignment), ang dependency chain (branch → warehouse → locations → category → employees → items → assets → assign), bulk import steps, register-with-quantity shortcut, **Draft-ngayon-serial-mamaya** na daloy, at 3-row na practice plan.
+- `Desktop/gemeni-practice/` (hindi naka-commit — totoong pangalan at halaga): `1-employees.csv` (7 end-user), `2-items.csv` (15 item — pinagsama ang 5 CCTV row at 3 UPS), `3-asset-register-worksheet.csv` (checklist kada row). **Na-verify na byte-exact ang headers** laban sa `IMPORT_TYPES`.
+
+**Nilinaw kay Tim ang tatlong hindi ko masasagot:** kabuuan ba o bawat isa ang ₱12,500 sa 5 memory card (at ₱4,350 sa 3 UPS) — per-unit ang acquisition cost sa sistema; "2 Toner" ba ay "2 Tons"; at kung ang `HOUSE` ay dapat storage location o hiwalay na branch.
+
+---
+
 ## 2026-10-13 (later) — 🐛 502 Bad Gateway sa prod: naka-cache na upstream IP ng nginx
 
 Tim pagkatapos ng unang deploy na may proxy: "nag bad gateway pre after this?"
