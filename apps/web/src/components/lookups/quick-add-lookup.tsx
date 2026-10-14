@@ -173,7 +173,21 @@ export function QuickAddLookupDialog({
     },
   });
 
-  const onSubmit = form.handleSubmit((values) => mutation.mutate(values));
+  const submit = form.handleSubmit((values) => mutation.mutate(values));
+
+  /**
+   * This dialog is rendered from inside another form. The portal moves it out
+   * of that form in the DOM, but React still propagates events up the
+   * component tree — so without stopping it here, saving a lookup also submits
+   * the form that owns the dropdown.
+   */
+  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void submit(event);
+  };
+
+  const codeRegistration = form.register('code');
   const { errors } = form.formState;
 
   return (
@@ -193,10 +207,10 @@ export function QuickAddLookupDialog({
                 id="quick-code"
                 autoFocus
                 className="font-mono uppercase"
-                {...form.register('code')}
+                {...codeRegistration}
                 onChange={(event) => {
                   event.target.value = event.target.value.toUpperCase();
-                  void form.register('code').onChange(event);
+                  void codeRegistration.onChange(event);
                 }}
               />
             </FormField>

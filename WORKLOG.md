@@ -17,6 +17,22 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 4) — 🐛 Quick-add: nagti-trigger ng submit sa Item form ang pag-save ng lookup
+
+Tim: pagka-save ng bagong category/UOM sa modal, **nagti-trigger din ang save ng Create Item** — lumalabas ang validation errors sa mga blangkong field.
+
+**Root cause:** may sariling `<form>` ang `QuickAddLookupDialog`, at ito ay nire-render mula sa LOOB ng form ng Item. Naka-`createPortal` ang Dialog, kaya tama ang DOM (hiwalay na ang inner form sa `document.body`) — **pero pinapadaloy ng React ang synthetic events paakyat sa COMPONENT tree, hindi sa DOM tree**. Kaya umaabot pa rin sa `onSubmit` ng item form ang submit ng modal. Klasikong portal gotcha.
+
+**Fix:** `event.stopPropagation()` (kasama ang `preventDefault`) sa submit handler ng dialog. Tugma ito sa umiiral nang pattern ng repo — ganito rin ang ginagawa ng `dialog.tsx`, `sheet.tsx`, at `combobox.tsx` para sa Escape. Napanatili ang `<form>` kaya gumagana pa rin ang Enter-to-submit sa loob ng modal.
+
+**Dagdag na linis:** tinatawag ang `form.register('code')` sa loob mismo ng `onChange` (re-register kada keystroke) — iniahon sa isang `codeRegistration` const.
+
+**Sinuri rin:** ang quick-add lang ang may nested `<form>`; ang `ConfirmDialog` sa item form ay buttons lang, walang form, kaya walang parehong sakit.
+
+**Verification:** web typecheck ✅, lint ✅, build ✅. **Hindi pa na-click-through** — walang browser tooling at walang frontend test setup ang `apps/web` (walang jest/vitest). Inalok kay Tim ang pagdagdag nito kung gusto niyang mahuli nang awtomatiko ang ganitong klase ng bug.
+
+---
+
 ## 2026-10-14 (gabi 3) — SKU: tinanggal ang prefix, tapos pinalitan ng business category; quick-add sa lookups
 
 Tatlong magkakasunod na hiling ni Tim sa SKU, tapos ang "Add new" sa dropdowns.
