@@ -38,6 +38,12 @@ fi
 echo "[2/4] Building and starting (first build takes a few minutes)..."
 "${COMPOSE[@]}" up -d --build
 
+# nginx reads its config only at startup, and Compose cannot see that a
+# bind-mounted file's CONTENTS changed — so a pulled proxy config would sit
+# unused while the old one keeps serving. Restarting is a second of downtime
+# and makes the deployed config match the file on disk, every time.
+"${COMPOSE[@]}" restart proxy >/dev/null
+
 echo "[3/4] Waiting for the app to answer..."
 # The proxy is the only public entrance, so that is what gets checked.
 for attempt in $(seq 1 60); do
@@ -46,7 +52,9 @@ for attempt in $(seq 1 60); do
     break
   fi
   if [[ "$attempt" == "60" ]]; then
-    echo "      STILL DOWN after 3 minutes. Check: ${COMPOSE[*]} logs web --tail 40" >&2
+    echo "      STILL DOWN after 3 minutes." >&2
+    echo "      Is the app itself up?   ${COMPOSE[*]} logs web --tail 40" >&2
+    echo "      Is the proxy the issue? ${COMPOSE[*]} logs proxy --tail 20" >&2
     "${COMPOSE[@]}" ps
     exit 1
   fi

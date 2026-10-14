@@ -17,6 +17,20 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 2) — 🐛 Na-stuck ang update script sa "Waiting" — hindi na-reload ang proxy config
+
+Tim: na-stuck sa `[3/4] Waiting for the app to answer...`. Nasilip ko ang prod: **502 ulit**.
+
+**Root cause (gap sa script ko, hindi sa nginx config):** sa output niya, `web` ay **Started** (bagong IP) pero `proxy` ay **Running** — hindi ni-recreate. Na-pull nga ang bagong `gemeni.conf`, pero **binabasa lang ng nginx ang config sa startup**, at **hindi nakikita ng Compose na nagbago ang LAMAN ng isang bind-mounted na file** (hindi nagbago ang container spec). Kaya luma pa rin ang config sa memory — ang mismong `resolver` fix na dapat sana ang umaayos nito ay hindi kailanman na-load. Umiikot lang ang health loop ko hanggang 3 minuto.
+
+**Fix:** `restart proxy` pagkatapos ng `up -d --build`, **tuwing update**. Isang segundong downtime, kapalit ang katiyakan na tugma ang na-deploy na config sa file sa disk. Pinaghiwalay din ang failure hint (`logs web` vs `logs proxy`) para malaman agad kung alin ang sira.
+
+**Verification — ginaya ang eksaktong pagkasira:** nilagay ang LUMANG config (`git show a1870d0^`), binuhay ang stack (200 ✅) → ipinalit ang bagong config sa disk (gaya ng git pull) → pinilit lumipat ng IP ang web (squatter container) → **502 ✅ naulit ang bug**. Pinatakbo ang inayos na script → **200** ✅. Tapos pinilit ulit lumipat ng IP nang hindi ginagalaw ang proxy → **200 pa rin** ✅, patunay na aktwal nang naka-load ang resolver config.
+
+**Aral:** ang `docker compose up -d` ay hindi nagre-reload ng config na naka-bind-mount. Anumang serbisyong nagbabasa ng config file sa startup ay kailangang tahasang i-restart tuwing deploy.
+
+---
+
 ## 2026-10-14 (gabi) — `update-gemeni.sh`: isang command na pang-update ng prod
 
 Tim: "Pahingi ng pang update sa prod if may changes."
