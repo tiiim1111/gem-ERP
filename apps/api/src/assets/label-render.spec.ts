@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import bwipjs from 'bwip-js';
 import {
   buildScanUrl,
-  PROPERTY_LINE,
+  DEFAULT_PROPERTY_LINE,
   renderBatchHtml,
   renderLabelPng,
   renderLabelSvg,
@@ -83,15 +83,31 @@ describe('renderLabelSvg', () => {
     expect(qrPayload).not.toContain('Dell');
   });
 
-  it('carries the human-readable lines: tag, item name, Property of GemCor', async () => {
+  it('carries the human-readable lines: tag, item name, ownership line', async () => {
     const svg = await renderLabelSvg(DATA, '2x1');
     expect(svg).toContain(DATA.assetTag);
-    expect(svg).toContain(PROPERTY_LINE);
+    expect(svg).toContain(DEFAULT_PROPERTY_LINE);
     // Item name is truncated to the preset width and XML-escaped (the seed
     // item name contains a double quote).
     expect(svg).toContain('Dell Latitude 5450 14&quot; Lapt…');
     // The raw scan token/URL never appears as visible label text.
     expect(svg).not.toContain(TOKEN);
+  });
+
+  // The company name comes from the organisation record, so renaming it must
+  // reprint correctly without a code change.
+  it('prints the supplied ownership line instead of the fallback', async () => {
+    const svg = await renderLabelSvg(
+      { ...DATA, propertyLine: 'Property of GEM Investment Corp.' },
+      '2x1',
+    );
+    expect(svg).toContain('Property of GEM Investment Corp.');
+    expect(svg).not.toContain(DEFAULT_PROPERTY_LINE);
+  });
+
+  it('falls back when the ownership line is blank', async () => {
+    const svg = await renderLabelSvg({ ...DATA, propertyLine: '   ' }, '2x1');
+    expect(svg).toContain(DEFAULT_PROPERTY_LINE);
   });
 
   it('supports both size presets', async () => {

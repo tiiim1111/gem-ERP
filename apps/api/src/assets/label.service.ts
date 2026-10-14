@@ -117,6 +117,7 @@ export class LabelService {
         item: { select: { name: true } },
       },
     });
+    const propertyLine = await this.propertyLine();
     const byId = new Map(rows.map((row) => [row.id, row]));
     return assetIds.map((id) => {
       const row = byId.get(id);
@@ -128,7 +129,21 @@ export class LabelService {
         itemName: row.item.name,
         // The QR encodes ONLY this opaque URL — never record data.
         scanUrl: buildScanUrl(this.config.webOrigin, row.scanToken),
+        propertyLine,
       };
     });
+  }
+
+  /**
+   * Ownership line from the organisation record, so renaming the company
+   * reprints correctly without a code change. Falls back to the built-in text
+   * if no organisation row exists yet.
+   */
+  private async propertyLine(): Promise<string | undefined> {
+    const organization = await this.prisma.organization.findFirst({
+      select: { name: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return organization ? `Property of ${organization.name}` : undefined;
   }
 }

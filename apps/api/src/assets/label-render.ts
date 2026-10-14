@@ -22,9 +22,20 @@ export interface LabelData {
   itemName: string;
   /** {WEB_ORIGIN}/scan/{token} — the only thing the QR ever encodes. */
   scanUrl: string;
+  /** Ownership line; defaults to {@link DEFAULT_PROPERTY_LINE}. */
+  propertyLine?: string;
 }
 
-export const PROPERTY_LINE = 'Property of GemCor';
+/**
+ * Fallback only. Callers pass the organisation's own name so renaming the
+ * company does not mean editing code — see LabelService.
+ */
+export const DEFAULT_PROPERTY_LINE = 'Property of GemCor';
+
+/** Ownership line for a label, falling back when none was supplied. */
+export function propertyLineOf(data: LabelData): string {
+  return data.propertyLine?.trim() || DEFAULT_PROPERTY_LINE;
+}
 
 export function buildScanUrl(webOrigin: string, scanToken: string): string {
   return `${webOrigin.replace(/\/+$/, '')}/scan/${scanToken}`;
@@ -125,7 +136,7 @@ export async function renderLabelSvg(
     ),
     `<text x="${spec.text.x}" y="${spec.text.tagY}" font-family="monospace" font-size="${spec.text.px}" font-weight="bold" fill="#000">${escapeXml(data.assetTag)}</text>`,
     `<text x="${spec.text.x}" y="${spec.text.itemY}" font-family="sans-serif" font-size="${spec.text.px}" fill="#000">${escapeXml(itemName)}</text>`,
-    `<text x="${spec.text.x}" y="${spec.text.propertyY}" font-family="sans-serif" font-size="${spec.text.px}" fill="#000">${escapeXml(PROPERTY_LINE)}</text>`,
+    `<text x="${spec.text.x}" y="${spec.text.propertyY}" font-family="sans-serif" font-size="${spec.text.px}" fill="#000">${escapeXml(propertyLineOf(data))}</text>`,
     '</svg>',
   ].join('\n');
 }
@@ -304,7 +315,7 @@ export async function renderLabelPng(
     spec.text.itemY,
     textScale,
   );
-  drawText(canvas, PROPERTY_LINE, spec.text.x, spec.text.propertyY, textScale);
+  drawText(canvas, propertyLineOf(data), spec.text.x, spec.text.propertyY, textScale);
 
   return PNG.sync.write(canvas);
 }

@@ -17,6 +17,18 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 8) — Ang ownership line sa label ay galing na sa organization record
+
+Tim: "Baka instead na GemCor, pwede natin palitan ng GEM Investment Corp. May way ba sa frontend?" Sagot: wala — `PROPERTY_LINE` ay hardcoded sa `label-render.ts`, at walang organization settings UI (branches lang ang may CRUD). Binigay ang dalawang opsyon; **pinili ni Tim ang B** (kunin sa database) kaysa sa pagpapalit lang ng nakasulat na teksto.
+
+**Ginawa:** `LabelData` ay may bagong opsyonal na `propertyLine`; ang dating constant ay naging `DEFAULT_PROPERTY_LINE` na fallback na lang, at may `propertyLineOf()` helper (nagfo-fallback din kapag puro espasyo). Parehong gumagamit nito ang SVG at PNG renderer. Sa `LabelService.loadLabelData()`, isang query sa `organization` kada batch → `Property of {name}`; kung walang organization row, babalik sa fallback.
+
+**Verification:** **504 tests** ✅ (+2: sinusunod ang ibinigay na linya; nagfo-fallback kapag blangko). Live sa totoong container: nag-render ng label → **"Property of GemCor"** → pinalitan ang `organizations.name` → nag-render ulit → **"Property of GEM Investment Corp."** nang walang rebuild o restart. Buong typecheck/lint ✅.
+
+**Paano palitan:** `UPDATE organizations SET name = '...'` o `seed:prod` na may `ORG_NAME` — pareho silang gumagana dahil ang database na ang pinagmumulan.
+
+---
+
 ## 2026-10-14 (gabi 7) — Actions dropdown sa asset detail
 
 Tim: masikip ang header ng asset detail — "pasok mo nalang sa dropdown/Action button? para malinis lang tignan". Lehitimo: ang `visibleActions` ay umaabot ng sampu o higit pa (Reserve, Assign, Report damage/loss, Send to inspection/maintenance, Retire, Dispose…), at nabubulok ang mismong detalye ng asset sa ilalim ng hanay ng mga button.
