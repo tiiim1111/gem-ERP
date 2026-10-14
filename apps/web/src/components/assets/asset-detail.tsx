@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BadgeCheck, Pencil } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, Pencil, Printer } from 'lucide-react';
 import { getErrorMessage } from '@/lib/api';
 import {
   acknowledgeAsset,
@@ -53,7 +53,14 @@ import { useToast } from '@/components/ui/toast';
 import { assetStatusBadge } from '@/components/inventory/badges';
 import { AssetMaintenanceSection } from '@/components/maintenance/asset-maintenance-section';
 import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
-import { PrintDocumentButton } from '@/components/reports/print-document-button';
+import { usePrintDocument } from '@/components/reports/print-document-button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { AssetActionDialogs } from './asset-action-dialogs';
 import { AssetEditDialog } from './asset-edit-dialog';
 import { AssetLabelPanel } from './asset-label-panel';
@@ -179,6 +186,13 @@ export function AssetDetail({
     },
   });
 
+  // Declared before the loading/error returns below so the hook order stays
+  // stable; the menu item that triggers it only renders once the asset loaded.
+  const printAcknowledgment = usePrintDocument({
+    fetchDocument: () => fetchAssetAcknowledgmentForm(assetId),
+    fileName: `${asset ? assetTag(asset) : assetId}-acknowledgment.pdf`,
+  });
+
   if (assetQuery.isPending) {
     return (
       <div className="space-y-4">
@@ -233,16 +247,8 @@ export function AssetDetail({
             <Link href="/assets" className={buttonVariants({ variant: 'ghost' })}>
               <ArrowLeft aria-hidden /> All assets
             </Link>
-            <PrintDocumentButton
-              fetchDocument={() => fetchAssetAcknowledgmentForm(asset.id)}
-              fileName={`${assetTag(asset)}-acknowledgment.pdf`}
-              label="Acknowledgment form"
-            />
-            {canEdit ? (
-              <Button variant="outline" onClick={() => setEditOpen(true)}>
-                <Pencil aria-hidden /> Edit
-              </Button>
-            ) : null}
+            {/* Acknowledge is a prompt aimed at one person, so it stays in
+                sight rather than hiding behind the menu. */}
             {canAcknowledge ? (
               <Button
                 variant="outline"
@@ -252,20 +258,33 @@ export function AssetDetail({
                 <BadgeCheck aria-hidden /> Acknowledge receipt
               </Button>
             ) : null}
-            {visibleActions.map((entry) => (
-              <Button
-                key={entry}
-                variant={DESTRUCTIVE_ACTIONS.has(entry) ? 'outline' : 'default'}
-                className={
-                  DESTRUCTIVE_ACTIONS.has(entry)
-                    ? 'text-destructive hover:bg-destructive/10 hover:text-destructive'
-                    : undefined
-                }
-                onClick={() => setOpenAction(entry)}
-              >
-                {ASSET_ACTION_LABELS[entry]}
+            {canEdit ? (
+              <Button variant="outline" onClick={() => setEditOpen(true)}>
+                <Pencil aria-hidden /> Edit
               </Button>
-            ))}
+            ) : null}
+            {/* Lifecycle actions vary with status and can run to a dozen —
+                a row of buttons that wide buries the asset's own details. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger className={buttonVariants()}>
+                Actions <ChevronDown className="h-4 w-4" aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuItem onClick={printAcknowledgment.print}>
+                  <Printer aria-hidden /> Acknowledgment form
+                </DropdownMenuItem>
+                {visibleActions.length > 0 ? <DropdownMenuSeparator /> : null}
+                {visibleActions.map((entry) => (
+                  <DropdownMenuItem
+                    key={entry}
+                    destructive={DESTRUCTIVE_ACTIONS.has(entry)}
+                    onClick={() => setOpenAction(entry)}
+                  >
+                    {ASSET_ACTION_LABELS[entry]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />

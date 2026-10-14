@@ -17,6 +17,20 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 7) — Actions dropdown sa asset detail
+
+Tim: masikip ang header ng asset detail — "pasok mo nalang sa dropdown/Action button? para malinis lang tignan". Lehitimo: ang `visibleActions` ay umaabot ng sampu o higit pa (Reserve, Assign, Report damage/loss, Send to inspection/maintenance, Retire, Dispose…), at nabubulok ang mismong detalye ng asset sa ilalim ng hanay ng mga button.
+
+**Ginawa:** tatlo na lang ang nakikita — `← All assets`, `Edit`, at **`Actions ▾`**. Nasa loob ng dropdown ang Acknowledgment form at lahat ng lifecycle action (destructive ay pula via `destructive` prop ng `DropdownMenuItem`). **Naiwang nakikita ang "Acknowledge receipt"** — prompt ito na nakatutok sa isang tao at lumalabas lang sa kanya, kaya hindi dapat nakatago.
+
+**Dagdag na refactor:** ang `PrintDocumentButton` ay button lang, kaya hindi magamit sa loob ng menu. Hinati sa **`usePrintDocument()` hook** (fetch + popup fallback + error handling) at manipis na button wrapper sa ibabaw nito — walang nabagong behavior sa limang ibang gumagamit (PO, GR, transfer, work order, count sheet). Tinawag ang hook **bago ang loading/error returns** para stable ang hook order.
+
+**Verification:** web typecheck ✅, lint ✅, build ✅.
+
+**Nakabinbin:** tanong ni Tim kung mapapalitan ang "Property of GemCor" sa labels. Nahanap: hardcoded bilang `PROPERTY_LINE` sa `label-render.ts:27`, at **walang organization settings UI** (branches lang ang may CRUD). Naibigay sa kanya ang dalawang opsyon; hinihintay ang pili.
+
+---
+
 ## 2026-10-14 (gabi 6) — Nabuksan ang "Serial number required" para sa kasangkapang walang serial
 
 Habang ini-encode ni Tim ang mga upuan (BLK + SERIAL), nakita kong tatamaan niya ang pader sa Activate: `requiresSerialNumber` ay awtomatikong `true` para sa SERIAL tracking, at **disabled + readOnly ang checkbox sa UI**. Hinihingi ng `assertActivatable()` ang serial bawat unit bago maging Available — pero walang manufacturer serial ang upuan at mesa.

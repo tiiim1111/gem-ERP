@@ -10,19 +10,19 @@ import { useToast } from '@/components/ui/toast';
 /**
  * Fetches a printable document (PDF/HTML) through the authenticated binary
  * helper and opens it in a new tab, falling back to a download when the
- * browser blocks the popup — the batch-labels pattern from Phase 3.5. The
- * server gates each endpoint on the parent resource's view permission and
- * audit-logs every render.
+ * browser blocks the popup. The server gates each endpoint on the parent
+ * resource's view permission and audit-logs every render.
+ *
+ * Exposed as a hook so a caller that is not a button — a dropdown menu item,
+ * say — can trigger it without duplicating the fallback and error handling.
  */
-export function PrintDocumentButton({
+export function usePrintDocument({
   fetchDocument,
   fileName,
-  label = 'Print / PDF',
 }: {
   fetchDocument: () => Promise<{ blob: Blob; contentType: string }>;
   /** Download name (extension adjusted to the returned content type). */
   fileName: string;
-  label?: string;
 }) {
   const { toast } = useToast();
 
@@ -58,12 +58,26 @@ export function PrintDocumentButton({
     },
   });
 
+  return {
+    print: () => printMutation.mutate(),
+    isPending: printMutation.isPending,
+  };
+}
+
+/** Standalone button wrapper around {@link usePrintDocument}. */
+export function PrintDocumentButton({
+  fetchDocument,
+  fileName,
+  label = 'Print / PDF',
+}: {
+  fetchDocument: () => Promise<{ blob: Blob; contentType: string }>;
+  fileName: string;
+  label?: string;
+}) {
+  const { print, isPending } = usePrintDocument({ fetchDocument, fileName });
+
   return (
-    <Button
-      variant="outline"
-      onClick={() => printMutation.mutate()}
-      loading={printMutation.isPending}
-    >
+    <Button variant="outline" onClick={print} loading={isPending}>
       <Printer aria-hidden /> {label}
     </Button>
   );
