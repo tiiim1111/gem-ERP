@@ -1019,9 +1019,24 @@ export function getAsset(id: string, signal?: AbortSignal): Promise<Asset> {
   return api.get<Asset>(`/assets/${id}`, undefined, signal);
 }
 
-/** Register one or more Draft assets; the server may return one or many. */
-export function registerAsset(body: AssetRegisterBody): Promise<Asset | Asset[]> {
-  return api.post<Asset | Asset[]>('/assets', body);
+/**
+ * Register Draft assets. The API answers with the asset itself for a single
+ * unit and `{ assets, count }` for a bulk registration — use
+ * `registeredAssets()` rather than guessing the shape at the call site.
+ */
+export type RegisterAssetResult = Asset | { assets: Asset[]; count: number };
+
+export function registerAsset(body: AssetRegisterBody): Promise<RegisterAssetResult> {
+  return api.post<RegisterAssetResult>('/assets', body);
+}
+
+/** Normalises either registration response shape to a plain list. */
+export function registeredAssets(result: RegisterAssetResult): Asset[] {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === 'object' && 'assets' in result) {
+    return Array.isArray(result.assets) ? result.assets : [];
+  }
+  return [result as Asset];
 }
 
 export function updateAsset(

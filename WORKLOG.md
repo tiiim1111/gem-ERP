@@ -17,6 +17,24 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 5) — 🐛 Register assets: "Cannot read properties of undefined (reading 'slice')"
+
+Tim: pumuputok ang Register assets dialog sa quantity **8**.
+
+**Root cause — mismatch sa response shape, hindi sa logic.** Ang `POST /assets` ay nagbabalik ng **dalawang magkaibang hugis** (`assets.controller.ts:88`): ang asset mismo kapag isa lang, at `{ assets, count }` kapag maramihan. Ang client ay gumagawa ng `Array.isArray(created) ? created : [created]` — kaya ang bulk response ay nababalot bilang **isang** "asset", pumapasok sa single-asset branch, at tumatawag ng `assetTag()` dito. Sa `types.ts:975`: `asset.assetTag ?? asset.tag ?? asset.id.slice(0, 8)` → walang `id` ang wrapper → **`undefined.slice`**.
+
+Hindi ito nahuli ng TypeScript dahil **nagsisinungaling ang return type**: nakadeklara ang `registerAsset` na `Promise<Asset | Asset[]>` samantalang `Asset | {assets, count}` talaga ang ibinabalik.
+
+**Mahalaga:** **matagumpay ang registration sa server** — nalilikha ang mga asset; sa pag-format lang ng success message pumuputok ang client. Kaya ang bawat failed na pagtatangka ni Tim ay **nag-iwan ng totoong draft assets**. Naituro sa kanya na tingnan ang Assets list para sa dobleng entry.
+
+**Fix:** (1) itinama ang return type at nagdagdag ng `registeredAssets()` normalizer sa `endpoints.ts` na kayang hawakan ang lahat ng tatlong hugis; (2) ginagamit na ito ng dialog; (3) pinatibay ang `assetTag()` — `asset?.id?.slice(0, 8) ?? '—'`, para kahit anong hugis ay hindi na magpapaputok habang nagfo-format ng mensahe.
+
+**Verification:** pinatakbo ang totoong API sa loob ng container at ini-inspeksyon ang mismong response — **quantity=1 → `id,assetTag,…`; quantity=3 → `assets,count`**, eksaktong tugma sa diagnosis. Sinubukan ang normalizer laban sa parehong totoong hugis (at sa array) — tama ang count at tag sa lahat. web typecheck/lint/build ✅.
+
+**Aral:** ang endpoint na nagbabalik ng magkaibang hugis ayon sa input ay kailangang may normalizer sa client boundary — huwag hayaang manghula ang bawat call site.
+
+---
+
 ## 2026-10-14 (gabi 4) — 🐛 Quick-add: nagti-trigger ng submit sa Item form ang pag-save ng lookup
 
 Tim: pagka-save ng bagong category/UOM sa modal, **nagti-trigger din ang save ng Create Item** — lumalabas ang validation errors sa mga blangkong field.

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PERMISSIONS, TrackingMethod } from '@gemerp/shared';
 import { getErrorMessage, isApiClientError } from '@/lib/api';
-import { registerAsset, type AssetRegisterBody } from '@/lib/endpoints';
+import { registerAsset, registeredAssets, type AssetRegisterBody } from '@/lib/endpoints';
 import { assetTag, type Item } from '@/lib/types';
 import { useSession } from '@/components/auth/session-provider';
 import { Button } from '@/components/ui/button';
@@ -76,7 +76,7 @@ export function AssetRegisterDialog({
   const registerMutation = useMutation({
     mutationFn: (body: AssetRegisterBody) => registerAsset(body),
     onSuccess: (created) => {
-      const assets = Array.isArray(created) ? created : [created];
+      const assets = registeredAssets(created);
       toast({
         title: assets.length === 1 ? 'Asset registered' : `${assets.length} assets registered`,
         description:

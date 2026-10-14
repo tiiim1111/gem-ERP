@@ -972,7 +972,9 @@ export interface Asset {
 }
 
 export function assetTag(asset: Asset): string {
-  return asset.assetTag ?? asset.tag ?? asset.id.slice(0, 8);
+  // Defensive on id: a response shape that does not carry one must degrade to
+  // a dash, never throw while formatting a success message.
+  return asset?.assetTag ?? asset?.tag ?? asset?.id?.slice(0, 8) ?? '—';
 }
 
 export function assetCustodian(asset: Asset): EmployeeSummary | null {
