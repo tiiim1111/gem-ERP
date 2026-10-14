@@ -17,6 +17,18 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 6) — Nabuksan ang "Serial number required" para sa kasangkapang walang serial
+
+Habang ini-encode ni Tim ang mga upuan (BLK + SERIAL), nakita kong tatamaan niya ang pader sa Activate: `requiresSerialNumber` ay awtomatikong `true` para sa SERIAL tracking, at **disabled + readOnly ang checkbox sa UI**. Hinihingi ng `assertActivatable()` ang serial bawat unit bago maging Available — pero walang manufacturer serial ang upuan at mesa.
+
+Kaya na ito ng API (`update-item.dto.ts:146` ay may `requiresSerialNumber?`), hindi lang nabuksan sa form. Ngayon: nae-edit na ito kapag SERIAL ang tracking (disabled pa rin kung hindi), at sinasabi ng helper text kung kailan ito aalisin — "untick for things with no manufacturer serial — furniture, fixtures". Nananatili ang default na `true` kapag pinili ang Serial; pinipili lang ni Tim kung aalisin.
+
+Mahalaga: **hindi ito nagbabawas ng per-unit tracking** — may sariling asset tag, custody, at QR pa rin ang bawat upuan. Ang serial lang ang hindi hinihingi sa activation.
+
+**Verification:** web typecheck ✅, lint ✅, build ✅.
+
+---
+
 ## 2026-10-14 (gabi 5) — 🐛 Register assets: "Cannot read properties of undefined (reading 'slice')"
 
 Tim: pumuputok ang Register assets dialog sa quantity **8**.

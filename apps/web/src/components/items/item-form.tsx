@@ -860,14 +860,20 @@ export function ItemForm({ itemId }: { itemId?: string }) {
               <label className="flex items-start gap-2.5 text-sm">
                 <Checkbox
                   className="mt-0.5"
-                  disabled
+                  disabled={trackingMethod !== TrackingMethod.SERIAL}
                   checked={form.watch('requiresSerialNumber')}
-                  readOnly
+                  onChange={(event) =>
+                    form.setValue('requiresSerialNumber', event.target.checked, {
+                      shouldDirty: true,
+                    })
+                  }
                 />
                 <span>
                   <span className="block font-medium">Serial number required</span>
                   <span className="block text-xs text-muted-foreground">
-                    Follows the tracking method — “Serial” makes every unit an asset instance.
+                    Each unit is still its own asset with its own tag. Untick for things with
+                    no manufacturer serial — furniture, fixtures — so they can be activated
+                    without one.
                   </span>
                 </span>
               </label>
