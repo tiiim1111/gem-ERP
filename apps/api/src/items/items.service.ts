@@ -252,7 +252,7 @@ export class ItemsService {
       throw AppException.validation([
         {
           field: 'categoryId',
-          message: 'categoryId is required when sku is omitted ({CATEGORY}-{SEQ}).',
+          message: 'categoryId is required when sku is omitted ({BIZ}-{CATEGORY}-{SEQ}).',
         },
       ]);
     }
@@ -273,6 +273,7 @@ export class ItemsService {
       const sku =
         dto.sku ??
         formatSku(
+          dto.businessCategory,
           categoryCode as string,
           await this.sequences.next(tx, skuSequenceKey(categoryCode as string)),
         );

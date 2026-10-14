@@ -308,7 +308,7 @@ export function validateItemRow(
     push(
       'categoryCode',
       'REQUIRED',
-      'categoryCode is required when sku is omitted ({CATEGORY}-{SEQ} generation).',
+      'categoryCode is required when sku is omitted ({BIZ}-{CATEGORY}-{SEQ} generation).',
     );
   }
   const subcategoryCode = get(row, 'subcategoryCode').toUpperCase() || null;

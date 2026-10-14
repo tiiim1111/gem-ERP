@@ -492,7 +492,7 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                   label="SKU"
                   htmlFor="item-sku"
                   error={errors.sku?.message}
-                  hint={isEdit ? undefined : 'Leave blank to auto-generate ({CAT}-{SEQ}).'}
+                  hint={isEdit ? undefined : 'Leave blank to auto-generate (SRL/CON/BLK-{CAT}-{SEQ}).'}
                 >
                   <Input
                     id="item-sku"

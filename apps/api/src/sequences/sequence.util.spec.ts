@@ -29,19 +29,30 @@ describe('sequence.util', () => {
   });
 
   describe('formatSku', () => {
-    it('produces {CATEGORY}-{SEQ5}', () => {
-      expect(formatSku('PPR', 17)).toBe('PPR-00017');
-      expect(formatSku('LAP', 1)).toBe('LAP-00001');
+    it('produces {BIZ}-{CATEGORY}-{SEQ5}', () => {
+      expect(formatSku('SERIALIZED_ASSET', 'LAP', 1)).toBe('SRL-LAP-00001');
+      expect(formatSku('CONSUMABLE', 'PPR', 17)).toBe('CON-PPR-00017');
+      expect(formatSku('BULK_NON_CONSUMABLE', 'FUR', 3)).toBe('BLK-FUR-00003');
     });
 
     it('uppercases the category code', () => {
-      expect(formatSku('lap', 2)).toBe('LAP-00002');
+      expect(formatSku('CONSUMABLE', 'ppr', 2)).toBe('CON-PPR-00002');
+    });
+
+    // Asset tags own the AST- prefix and the scanner routes on it, so a
+    // serialized SKU must not start the same way.
+    it('does not collide with the asset-tag prefix', () => {
+      expect(formatSku('SERIALIZED_ASSET', 'LAP', 1).startsWith('AST-')).toBe(false);
     });
 
     // Items are shared across branches; a branch code here would either lie or
     // force a duplicate catalog per branch. Branch lives in the asset tag.
     it('carries no branch segment', () => {
-      expect(formatSku('LAP', 1)).not.toMatch(/MAIN|SUB|MKT/);
+      expect(formatSku('SERIALIZED_ASSET', 'LAP', 1)).not.toMatch(/MAIN|SUB|MKT/);
+    });
+
+    it('falls back to GEN for an unknown business category', () => {
+      expect(formatSku('SOMETHING_NEW', 'LAP', 1)).toBe('GEN-LAP-00001');
     });
   });
 

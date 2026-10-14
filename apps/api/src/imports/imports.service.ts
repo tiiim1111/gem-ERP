@@ -596,6 +596,7 @@ export class ImportsService {
           const sku =
             data.sku ??
             formatSku(
+              data.businessCategory,
               data.categoryCode as string,
               await this.sequences.next(
                 tx,

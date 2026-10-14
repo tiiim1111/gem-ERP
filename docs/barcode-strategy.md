@@ -78,7 +78,7 @@ Consumables are identified at the SKU level. We do not generate a barcode per in
 Internal primary SKU barcode format:
 
 ```text
-{CATEGORY_CODE}-{SEQ}
+{BIZ}-{CATEGORY_CODE}-{SEQ}
 ```
 
 Example: `SKU-PPR-000042` (6-digit sequence per category, from `sequence_counters`, key e.g. `sku:PPR`). The internal SKU code is generated at item creation **[Phase 2]** and stored on `items`.

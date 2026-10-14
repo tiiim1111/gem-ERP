@@ -120,7 +120,7 @@ State changes are **explicit action endpoints** (`submit`, `approve`, `reject`, 
 | Document | Pattern | Example |
 |---|---|---|
 | Asset tag | `AST-{BRANCH}-{CAT}-{YYYY}-{SEQ6}` | `AST-SUB-LAP-2026-000123` |
-| Item SKU | `{CAT}-{SEQ}` | `PPR-00017` |
+| Item SKU | `{BIZ}-{CAT}-{SEQ}` | `SRL-LAP-00017` |
 | Lot | `LOT-{SKU}-{YYYYMMDD}-{SEQ}` | `LOT-PPR-00017-20260301-01` |
 | Bin/location | `BIN-{BRANCH}-{WH}-{LOC}` | `BIN-SUB-WH1-A01` |
 | Stock transaction | `STK-{YYYY}-{SEQ6}` | `STK-2026-000482` |
@@ -131,8 +131,10 @@ State changes are **explicit action endpoints** (`submit`, `approve`, `reject`, 
 | Work order | `WO-{YYYY}-{SEQ5}` | `WO-2026-00077` |
 | Count session | `CNT-{YYYY}-{SEQ5}` | `CNT-2026-00004` |
 
-SKU supersedes the master prompt's `SKU-{CATEGORY_CODE}-{SEQUENCE}` (dropped the
-redundant `SKU-` prefix, 2026-10-14). It carries **no branch segment on
+SKU supersedes the master prompt's `SKU-{CATEGORY_CODE}-{SEQUENCE}` (2026-10-14).
+`BIZ` is the business category — `SRL` serialized, `CON` consumable, `BLK` bulk
+non-consumable (`GEN` if a new one is ever added). Serialized uses `SRL`, not
+`AST`: asset tags own that prefix and the scanner routes on it. It carries **no branch segment on
 purpose**: one item is shared by every branch — the same product can hold stock
 in two branches and be transferred between them — so a branch code would either
 be wrong or force a duplicate catalogue per branch. Branch identity lives in the

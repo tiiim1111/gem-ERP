@@ -28,13 +28,30 @@ export function skuSequenceKey(categoryCode: string): string {
 }
 
 /**
- * Item SKU pattern: {CATEGORY_CODE}-{SEQ5} (e.g. PPR-00017).
+ * Business-category prefix for generated SKUs. `SRL` rather than `AST` for
+ * serialized items: asset tags already own the `AST-` prefix, and the scanner
+ * routes anything starting with it to an asset-tag lookup first.
+ */
+const SKU_BUSINESS_PREFIX: Record<string, string> = {
+  SERIALIZED_ASSET: 'SRL',
+  CONSUMABLE: 'CON',
+  BULK_NON_CONSUMABLE: 'BLK',
+};
+
+/** Prefix for a business category; `GEN` for anything unrecognised. */
+export function skuBusinessPrefix(businessCategory: string): string {
+  return SKU_BUSINESS_PREFIX[businessCategory.toUpperCase()] ?? 'GEN';
+}
+
+/**
+ * Item SKU pattern: {BIZ}-{CATEGORY_CODE}-{SEQ5} (e.g. SRL-LAP-00017).
  * Items are shared by every branch, so no branch code appears here — that
  * belongs to the asset tag, which identifies one physical unit.
  */
 export function formatSku(
+  businessCategory: string,
   categoryCode: string,
   sequence: number | bigint,
 ): string {
-  return `${categoryCode.toUpperCase()}-${formatSequence(sequence, 5)}`;
+  return `${skuBusinessPrefix(businessCategory)}-${categoryCode.toUpperCase()}-${formatSequence(sequence, 5)}`;
 }
