@@ -25,7 +25,15 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 
-const LOCATION_KINDS = ['ZONE', 'AISLE', 'RACK', 'SHELF', 'BIN', 'RECEIVING', 'STAGING'] as const;
+/**
+ * Two vocabularies share this field: offices track assets by room, warehouses
+ * track stock by bin. Grouped so neither list buries the other. The API stores
+ * the value as a free-form uppercase string, so this list can grow freely.
+ */
+const LOCATION_KIND_GROUPS = [
+  { label: 'Rooms & areas', kinds: ['ROOM', 'OFFICE', 'AREA'] },
+  { label: 'Warehouse', kinds: ['ZONE', 'AISLE', 'RACK', 'SHELF', 'BIN', 'RECEIVING', 'STAGING'] },
+] as const;
 
 const locationSchema = z.object({
   code: z
@@ -151,10 +159,14 @@ export function LocationDialog({
             <FormField label="Type" htmlFor="loc-kind" error={errors.kind?.message}>
               <Select id="loc-kind" {...form.register('kind')}>
                 <option value="">Unspecified</option>
-                {LOCATION_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {humanize(kind)}
-                  </option>
+                {LOCATION_KIND_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.kinds.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {humanize(kind)}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </Select>
             </FormField>

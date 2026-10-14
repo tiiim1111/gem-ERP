@@ -17,6 +17,25 @@ Entry format:
 
 ---
 
+## 2026-10-14 (later) — Locations per branch: sinuri, may meron na; dinagdagan ng room types
+
+Tim: gusto ng per-branch locations (ADMIN, CONFERENCE, WAREHOUSE) at humingi ng pitch muna — "make sure na di masisira ang system".
+
+**Natuklasan sa pagsusuri:**
+- **Meron na**: `Branch → Warehouse → StorageLocation`, at ang StorageLocation ay may **`parentId` (nesting)** at **`barcode`** (para sa scan).
+- **Hadlang sa literal na hinihingi**: `StorageLocation.warehouseId` ay NOT NULL. Ang paggawa nitong nullable ay sisira sa inventory engine — ang `StockBalance` ay naka-key sa **(item, warehouse, storage_location, lot)**, at warehouse-scoped din ang ledger entries, transaction lines, at reservations. Magkakaroon ng balance na walang warehouse at mawawalan ng target ang location resolution ng posting engine. Hindi sulit para sa isang bagay na pangalan lang.
+- **`locationType` ay free-form string sa server** (uppercase, max 30) — ang UI dropdown lang ang naglilimita sa 7 warehouse-ish na halaga.
+
+**Pitch (tinanggap ni Tim):** gamitin ang kasalukuyang modelo — isang "site" warehouse kada branch, ang mga kwarto ay storage locations — at dagdagan lang ang UI type list. **Walang schema change, walang migration.**
+
+**Ginawa:** `LOCATION_KINDS` → `LOCATION_KIND_GROUPS` sa `location-dialog.tsx`, naka-`<optgroup>`: **Rooms & areas** (ROOM/OFFICE/AREA) at **Warehouse** (dating 7). Isang file lang ang nagalaw. Na-update din ang §3 ng encoding guide.
+
+**Verification:** web typecheck ✅, lint ✅, build ✅, at kumpirmadong nasa built bundle ang bagong optgroups.
+
+**Hindi ginawa (sinadya):** ang pagpapalit ng salitang "Warehouse" → "Site" sa UI. Tatama ito sa inventory, transfers, counts, at reports — hiwalay na usapan kung makakalito pa rin pagkatapos subukan.
+
+---
+
 ## 2026-10-14 — 📋 Guide: paglalagay ng totoong asset register sa sistema
 
 Nagpadala si Tim ng screenshot ng totoong Excel asset register ng GemCor (20 row ng office equipment: aircon, printers, laptops, CCTV, server, UPS — may PHP values, LOCATION, at END-USER) at humingi ng guide para makapag-practice.

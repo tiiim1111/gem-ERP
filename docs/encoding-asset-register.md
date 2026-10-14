@@ -55,9 +55,17 @@ LOCATION column mo:
 
 | Code | Name | Type |
 |---|---|---|
-| `WAREHOUSE` | Warehouse / Stockroom | `STORAGE` |
-| `ADMIN` | Admin Office | `STORAGE` |
-| `HOUSE` | Staff House | `STORAGE` |
+| `ADMIN` | Admin Office | Room |
+| `CONFERENCE` | Conference Room | Room |
+| `WAREHOUSE` | Warehouse / Stockroom | Zone |
+| `HOUSE` | Staff House | Area |
+
+Nakahati sa dalawang grupo ang Type dropdown: **Rooms & areas** (Room, Office,
+Area) para sa opisina, at **Warehouse** (Zone, Aisle, Rack, Shelf, Bin,
+Receiving, Staging) para sa bodega. Opsyonal ang field — pwedeng Unspecified.
+
+Kaya ring palalimin ang location (**Parent location** sa dialog): `ADMIN` →
+"Accounting Desk" → atbp., kung kailangan ng mas detalyado mamaya.
 
 **Department at Position.** Kailangan ito ng employees import. Lookups →
 Departments: gumawa ng `ADMIN`. Positions: gumawa ng `STAFF`. (Dagdagan mo
