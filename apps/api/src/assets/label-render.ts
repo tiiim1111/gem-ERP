@@ -46,8 +46,27 @@ interface SizeSpec {
   height: number;
   qr: { x: number; y: number; size: number };
   code128: { x: number; y: number; width: number; height: number };
-  text: { x: number; tagY: number; itemY: number; propertyY: number; px: number };
-  maxItemChars: number;
+  text: {
+    x: number;
+    /** Tag line; the other blocks are placed relative to it. */
+    tagY: number;
+    tagPx: number;
+    bodyPx: number;
+    /** Tag baseline → first body line. */
+    headGap: number;
+    /** Between wrapped lines inside one block. */
+    lineStep: number;
+    /** Last line of a block → first line of the next. */
+    blockGap: number;
+    /**
+     * Characters per line. Budgeted against the PNG's fixed-width bitmap
+     * font, which is wider than the SVG's proportional one — so a line that
+     * fits the PNG fits the SVG too.
+     */
+    maxChars: number;
+    /** Wrapped lines allowed per block before the text is cut. */
+    maxLines: number;
+  };
 }
 
 /** 300-dpi pixel geometry for the two thermal presets. */
@@ -58,8 +77,17 @@ const SIZE_SPECS: Record<LabelSize, SizeSpec> = {
     height: 300,
     qr: { x: 20, y: 60, size: 180 },
     code128: { x: 220, y: 30, width: 360, height: 70 },
-    text: { x: 220, tagY: 140, itemY: 190, propertyY: 240, px: 26 },
-    maxItemChars: 28,
+    text: {
+      x: 220,
+      tagY: 120,
+      tagPx: 24,
+      bodyPx: 20,
+      headGap: 34,
+      lineStep: 26,
+      blockGap: 36,
+      maxChars: 30,
+      maxLines: 2,
+    },
   },
   // 76.2 × 50.8 mm (3" × 2")
   '3x2': {
@@ -67,8 +95,17 @@ const SIZE_SPECS: Record<LabelSize, SizeSpec> = {
     height: 600,
     qr: { x: 40, y: 140, size: 300 },
     code128: { x: 380, y: 60, width: 480, height: 110 },
-    text: { x: 380, tagY: 260, itemY: 340, propertyY: 420, px: 40 },
-    maxItemChars: 24,
+    text: {
+      x: 380,
+      tagY: 250,
+      tagPx: 34,
+      bodyPx: 28,
+      headGap: 48,
+      lineStep: 36,
+      blockGap: 50,
+      maxChars: 27,
+      maxLines: 2,
+    },
   },
 };
 
@@ -83,6 +120,77 @@ function escapeXml(value: string): string {
 
 function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+/**
+ * Greedy word wrap into at most `maxLines`. Anything that still does not fit
+ * is cut with an ellipsis on the last line — a label that overflows its stock
+ * prints the overhanging text onto nothing, so cutting is the safe failure.
+ */
+function wrapLines(value: string, maxChars: number, maxLines: number): string[] {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) {
+    return [''];
+  }
+  const lines: string[] = [];
+  let current = '';
+  let dropped = false;
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxChars) {
+      current = candidate;
+      continue;
+    }
+    if (lines.length + 1 >= maxLines) {
+      // The line in hand is the last one; the rest cannot be shown.
+      dropped = true;
+      break;
+    }
+    if (current) {
+      lines.push(current);
+    }
+    // A single word wider than the line still has to start somewhere.
+    current = word.length > maxChars ? truncate(word, maxChars) : word;
+  }
+  if (current) {
+    lines.push(current);
+  }
+  if (dropped) {
+    const last = lines.length - 1;
+    lines[last] = `${lines[last].slice(0, Math.max(0, maxChars - 1))}…`;
+  }
+  return lines.slice(0, maxLines);
+}
+
+interface TextLine {
+  text: string;
+  y: number;
+  px: number;
+  mono: boolean;
+}
+
+/**
+ * Lays the three blocks out top-down so a wrapped item name pushes the
+ * ownership line down instead of printing over it.
+ */
+function layoutText(data: LabelData, spec: SizeSpec): TextLine[] {
+  const { text } = spec;
+  const lines: TextLine[] = [
+    { text: data.assetTag, y: text.tagY, px: text.tagPx, mono: true },
+  ];
+
+  let y = text.tagY + text.headGap;
+  for (const block of [
+    wrapLines(data.itemName, text.maxChars, text.maxLines),
+    wrapLines(propertyLineOf(data), text.maxChars, text.maxLines),
+  ]) {
+    block.forEach((line, index) => {
+      lines.push({ text: line, y: y + index * text.lineStep, px: text.bodyPx, mono: false });
+    });
+    y += (block.length - 1) * text.lineStep + text.blockGap;
+  }
+  return lines;
 }
 
 /** Re-position a standalone SVG document as a nested element. */
@@ -122,7 +230,6 @@ export async function renderLabelSvg(
     includetext: false,
   });
 
-  const itemName = truncate(data.itemName, spec.maxItemChars);
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${spec.width} ${spec.height}" width="${spec.width}" height="${spec.height}">`,
     `<rect width="${spec.width}" height="${spec.height}" fill="#ffffff"/>`,
@@ -134,9 +241,11 @@ export async function renderLabelSvg(
       spec.code128.width,
       spec.code128.height,
     ),
-    `<text x="${spec.text.x}" y="${spec.text.tagY}" font-family="monospace" font-size="${spec.text.px}" font-weight="bold" fill="#000">${escapeXml(data.assetTag)}</text>`,
-    `<text x="${spec.text.x}" y="${spec.text.itemY}" font-family="sans-serif" font-size="${spec.text.px}" fill="#000">${escapeXml(itemName)}</text>`,
-    `<text x="${spec.text.x}" y="${spec.text.propertyY}" font-family="sans-serif" font-size="${spec.text.px}" fill="#000">${escapeXml(propertyLineOf(data))}</text>`,
+    ...layoutText(data, spec).map((line) =>
+      line.mono
+        ? `<text x="${spec.text.x}" y="${line.y}" font-family="monospace" font-size="${line.px}" font-weight="bold" fill="#000">${escapeXml(line.text)}</text>`
+        : `<text x="${spec.text.x}" y="${line.y}" font-family="sans-serif" font-size="${line.px}" fill="#000">${escapeXml(line.text)}</text>`,
+    ),
     '</svg>',
   ].join('\n');
 }
@@ -307,15 +416,9 @@ export async function renderLabelPng(
   blit(canvas, code128Png, spec.code128.x, spec.code128.y);
 
   const textScale = size === '2x1' ? 2 : 3;
-  drawText(canvas, data.assetTag, spec.text.x, spec.text.tagY, textScale);
-  drawText(
-    canvas,
-    truncate(data.itemName, spec.maxItemChars),
-    spec.text.x,
-    spec.text.itemY,
-    textScale,
-  );
-  drawText(canvas, propertyLineOf(data), spec.text.x, spec.text.propertyY, textScale);
+  for (const line of layoutText(data, spec)) {
+    drawText(canvas, line.text, spec.text.x, line.y, textScale);
+  }
 
   return PNG.sync.write(canvas);
 }

@@ -54,6 +54,18 @@ beforeEach(() => {
   bwipToBuffer.mockResolvedValue(tinyPng(120, 40));
 });
 
+/** Visible text of each <text> element, in document order. */
+function textLines(svg: string): string[] {
+  return [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((match) =>
+    match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+  );
+}
+
+/** Baseline y of each <text> element. */
+function textYs(svg: string): number[] {
+  return [...svg.matchAll(/<text[^>]*\by="(\d+)"/g)].map((match) => Number(match[1]));
+}
+
 describe('buildScanUrl', () => {
   it('is origin + /scan/ + token and nothing else (no record data)', () => {
     expect(buildScanUrl('http://localhost:3000', 'tok')).toBe(
@@ -87,9 +99,8 @@ describe('renderLabelSvg', () => {
     const svg = await renderLabelSvg(DATA, '2x1');
     expect(svg).toContain(DATA.assetTag);
     expect(svg).toContain(DEFAULT_PROPERTY_LINE);
-    // Item name is truncated to the preset width and XML-escaped (the seed
-    // item name contains a double quote).
-    expect(svg).toContain('Dell Latitude 5450 14&quot; Lapt…');
+    // Fits one line within the budget, XML-escaped (the name has a quote).
+    expect(svg).toContain('Dell Latitude 5450 14&quot; Laptop');
     // The raw scan token/URL never appears as visible label text.
     expect(svg).not.toContain(TOKEN);
   });
@@ -101,8 +112,61 @@ describe('renderLabelSvg', () => {
       { ...DATA, propertyLine: 'Property of GEM Investment Corp.' },
       '2x1',
     );
-    expect(svg).toContain('Property of GEM Investment Corp.');
+    // Too wide for one line, so it wraps rather than running off the stock.
+    expect(textLines(svg)).toEqual(
+      expect.arrayContaining(['Property of GEM Investment', 'Corp.']),
+    );
     expect(svg).not.toContain(DEFAULT_PROPERTY_LINE);
+  });
+
+  it('wraps a long item name instead of overflowing the label', async () => {
+    const svg = await renderLabelSvg(
+      { ...DATA, itemName: 'Executive Swivel Chair with Adjustable Lumbar Support' },
+      '2x1',
+    );
+    expect(textLines(svg)).toEqual(
+      expect.arrayContaining(['Executive Swivel Chair with', 'Adjustable Lumbar Support']),
+    );
+  });
+
+  it('cuts with an ellipsis once both lines are used up', async () => {
+    const svg = await renderLabelSvg(
+      {
+        ...DATA,
+        itemName: 'Executive Swivel Chair with Adjustable Lumbar Support and Chrome Base',
+      },
+      '2x1',
+    );
+    expect(textLines(svg).some((line) => line.endsWith('…'))).toBe(true);
+  });
+
+  // Overflowing text prints onto nothing, so every line must stay inside the
+  // character budget both renderers share.
+  it('keeps every line within the width budget', async () => {
+    const svg = await renderLabelSvg(
+      {
+        ...DATA,
+        itemName: 'Executive Swivel Chair with Adjustable Lumbar Support',
+        propertyLine: 'Property of GEM Investment Corporation Philippines',
+      },
+      '2x1',
+    );
+    for (const line of textLines(svg)) {
+      expect(line.length).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it('pushes the ownership line down when the item name wraps', async () => {
+    const oneLine = textYs(await renderLabelSvg(DATA, '2x1'));
+    const twoLines = textYs(
+      await renderLabelSvg(
+        { ...DATA, itemName: 'Executive Swivel Chair with Adjustable Support' },
+        '2x1',
+      ),
+    );
+    // A wrapped name adds a line, so the block after it starts lower.
+    expect(twoLines.length).toBeGreaterThan(oneLine.length);
+    expect(Math.max(...twoLines)).toBeGreaterThan(Math.max(...oneLine));
   });
 
   it('falls back when the ownership line is blank', async () => {

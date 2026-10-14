@@ -17,6 +17,22 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 9) — Label layout: word wrap at mas masikip na spacing
+
+Tim, pagkatapos ng org-name change: lumalampas sa gilid ang "Property of GEM Investment Co" — "Macocompress ba natin yung spacing? Tapos 2 lines ang Asset name pati property?"
+
+**Root cause:** ang item name lang ang may `truncate()`; **walang anumang limitasyon ang ownership line**, kaya ini-render ito nang buo at tumatakbo palabas ng label stock. Hindi ito lumabas noon dahil mas maikli ang "Property of GemCor".
+
+**Ginawa:**
+- **`wrapLines()`** — greedy word wrap na may hangganang bilang ng linya; kapag may natirang teksto, ellipsis sa huling linya (ang lumalampas ay naipi-print sa wala, kaya ang pagputol ang ligtas na pagpalya). Kinakaya ang salitang mas mahaba pa sa linya.
+- **`layoutText()`** — isang top-down na layout na ginagamit ng **parehong** renderer, kaya ang naka-wrap na item name ay **nagtutulak pababa** sa ownership line imbes na magpatong.
+- **Hinigpitan ang spacing**: 2x1 ay 120/154/190/216 (dati 140/190/240 na may tatlong linya lang); mas maliit na font para sa katawan (20px) kaysa sa tag (24px) para may silid sa apat na linya.
+- **Budget ng lapad**: 30 chars (2x1) at 27 (3x2), kinuwenta mula sa **PNG bitmap font** (`6 × scale` kada char) dahil mas malapad ito kaysa sa proporsyonal na font ng SVG — kung kasya sa PNG, kasya sa SVG.
+
+**Verification:** **508 tests** ✅ (+4: wrap ng mahabang pangalan, ellipsis kapag ubos na ang dalawang linya, **bawat linya ay nasa loob ng budget**, at ang naka-wrap na pangalan ay nagtutulak pababa sa susunod na block). Sinilip ang totoong render sa parehong sukat — tama ang posisyon at naghahati na ang mahabang pangalan ng kompanya. Buong typecheck/lint ✅.
+
+---
+
 ## 2026-10-14 (gabi 8) — Ang ownership line sa label ay galing na sa organization record
 
 Tim: "Baka instead na GemCor, pwede natin palitan ng GEM Investment Corp. May way ba sa frontend?" Sagot: wala — `PROPERTY_LINE` ay hardcoded sa `label-render.ts`, at walang organization settings UI (branches lang ang may CRUD). Binigay ang dalawang opsyon; **pinili ni Tim ang B** (kunin sa database) kaysa sa pagpapalit lang ng nakasulat na teksto.
