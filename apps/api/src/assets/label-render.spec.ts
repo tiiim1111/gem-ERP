@@ -61,6 +61,13 @@ function textLines(svg: string): string[] {
   );
 }
 
+/** x/y/width/height of each nested <svg> (the QR, then the barcode). */
+function embeddedBoxes(svg: string): Array<{ y: number; height: number }> {
+  return [...svg.matchAll(/<svg\b(?![^>]*viewBox="0 0 \d+ \d+" width)[^>]*\by="(\d+)"[^>]*\bheight="(\d+)"/g)].map(
+    (match) => ({ y: Number(match[1]), height: Number(match[2]) }),
+  );
+}
+
 /** Baseline y of each <text> element. */
 function textYs(svg: string): number[] {
   return [...svg.matchAll(/<text[^>]*\by="(\d+)"/g)].map((match) => Number(match[1]));
@@ -167,6 +174,23 @@ describe('renderLabelSvg', () => {
     // A wrapped name adds a line, so the block after it starts lower.
     expect(twoLines.length).toBeGreaterThan(oneLine.length);
     expect(Math.max(...twoLines)).toBeGreaterThan(Math.max(...oneLine));
+  });
+
+  // A printed sheet reads as two ragged columns unless the QR and the text
+  // block occupy the same vertical band.
+  it.each(['2x1', '3x2'] as const)('aligns both columns top and bottom (%s)', async (size) => {
+    const svg = await renderLabelSvg(
+      { ...DATA, itemName: 'Staff Chair', propertyLine: 'Property of GEM Investment Corp.' },
+      size,
+    );
+    const [qr, barcode] = embeddedBoxes(svg);
+    // Top to top: the barcode starts level with the QR.
+    expect(barcode.y).toBe(qr.y);
+    // Bottom to bottom: the last line lands on the QR's foot, within the
+    // descender of one line.
+    const lastBaseline = Math.max(...textYs(svg));
+    expect(lastBaseline).toBeLessThanOrEqual(qr.y + qr.height);
+    expect(lastBaseline).toBeGreaterThan(qr.y + qr.height - 24);
   });
 
   it('falls back when the ownership line is blank', async () => {

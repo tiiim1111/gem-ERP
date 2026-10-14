@@ -17,6 +17,22 @@ Entry format:
 
 ---
 
+## 2026-10-14 (gabi 10) — Ipinantay ang dalawang hanay ng label (top-to-top, bottom-to-bottom)
+
+Tim: "Pwede mo ipantay top to top, bottom to bottom para lang malinis tignan sa pagkakaprint?"
+
+**Ang pagkakamali sa geometry:** magkaibang banda ang dalawang hanay. Sa 2×1, ang QR ay y 60–240 pero ang barcode ay nagsisimula sa y 30 at ang huling linya ay natatapos sa ~222 — kaya mas mataas magsimula ang kanan at mas mababa matapos ang kaliwa.
+
+**Ginawa:** iisang banda na ang dalawa, at **naka-center sa stock** — 2×1: y 60–240 (60px margin sa itaas at ibaba); 3×2: y 150–450. Inilipat ang barcode sa parehong `y` ng QR at pinaikli (48px mula 70 sa 2×1), tapos inilaki ang body text (22px mula 20) at hinati ang natitirang taas sa apat na linya para dumapo ang huling linya sa paa ng QR.
+
+Resulta sa karaniwang label ni Tim (1-linyang pangalan + 2-linyang ownership): **2×1 → QR 60–240, barcode top 60, huling text bottom ~240 — eksakto.** 3×2 → ~440 laban sa 450, nasa loob ng isang descender.
+
+**Verification:** **510 tests** ✅ (+2: bagong `it.each` sa parehong sukat na nagbabantay na pantay ang simula ng barcode at QR, at ang huling baseline ay dumadapo sa paa ng QR sa loob ng isang descender). Buong typecheck/lint ✅.
+
+**Tala:** ang mga posisyon ay **naayos, hindi dinamiko** — pare-pareho ang istraktura ng bawat label sa isang print sheet. Ang label na may 1-linyang ownership ay magkakaroon ng kaunting puwang sa ibaba; sinadya ito, dahil ang pabago-bagong posisyon ay mas magugulo sa isang sheet kaysa sa kaunting puwang.
+
+---
+
 ## 2026-10-14 (gabi 9) — Label layout: word wrap at mas masikip na spacing
 
 Tim, pagkatapos ng org-name change: lumalampas sa gilid ang "Property of GEM Investment Co" — "Macocompress ba natin yung spacing? Tapos 2 lines ang Asset name pati property?"

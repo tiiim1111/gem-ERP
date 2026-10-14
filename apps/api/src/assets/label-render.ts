@@ -72,37 +72,41 @@ interface SizeSpec {
 /** 300-dpi pixel geometry for the two thermal presets. */
 const SIZE_SPECS: Record<LabelSize, SizeSpec> = {
   // 50.8 × 25.4 mm (2" × 1")
+  // Both columns share the band y 60–240, centred in the 300-tall stock: the
+  // QR and the barcode start together and the last text line ends level with
+  // the QR's foot, so a printed sheet reads as two tidy columns.
   '2x1': {
     width: 600,
     height: 300,
     qr: { x: 20, y: 60, size: 180 },
-    code128: { x: 220, y: 30, width: 360, height: 70 },
+    code128: { x: 220, y: 60, width: 360, height: 48 },
     text: {
       x: 220,
-      tagY: 120,
+      tagY: 138,
       tagPx: 24,
-      bodyPx: 20,
+      bodyPx: 22,
       headGap: 34,
-      lineStep: 26,
-      blockGap: 36,
+      lineStep: 28,
+      blockGap: 34,
       maxChars: 30,
       maxLines: 2,
     },
   },
   // 76.2 × 50.8 mm (3" × 2")
+  // Same idea at 3" × 2": the shared band is y 150–450.
   '3x2': {
     width: 900,
     height: 600,
-    qr: { x: 40, y: 140, size: 300 },
-    code128: { x: 380, y: 60, width: 480, height: 110 },
+    qr: { x: 40, y: 150, size: 300 },
+    code128: { x: 380, y: 150, width: 480, height: 80 },
     text: {
       x: 380,
-      tagY: 250,
+      tagY: 268,
       tagPx: 34,
-      bodyPx: 28,
-      headGap: 48,
-      lineStep: 36,
-      blockGap: 50,
+      bodyPx: 30,
+      headGap: 58,
+      lineStep: 48,
+      blockGap: 58,
       maxChars: 27,
       maxLines: 2,
     },
