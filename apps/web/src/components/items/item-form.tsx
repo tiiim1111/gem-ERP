@@ -27,6 +27,7 @@ import {
   deactivateItem,
   type ItemWriteBody,
 } from '@/lib/endpoints';
+import { withSaved } from '@/lib/lookup-options';
 import { formatFactor, type Item } from '@/lib/types';
 import { useSession } from '@/components/auth/session-provider';
 import { AttachmentsPanel } from '@/components/attachments/attachments-panel';
@@ -130,36 +131,6 @@ const itemSchema = z.object({
 });
 
 type ItemFormValues = z.infer<typeof itemSchema>;
-
-/** The three fields every lookup `<option>` in this form renders from. */
-type LookupOption = { id: string; code: string; name: string };
-
-/*
- * These dropdowns are uncontrolled `<select>`s: react-hook-form writes the
- * value straight onto the element, and a browser silently discards a value
- * with no matching `<option>` — nothing re-applies it when the options finally
- * arrive. On edit the lookup lists are still in flight when the item lands,
- * and the subcategory list cannot even start loading until the category is
- * known, which comes from the very same `reset()`. So the item's own saved
- * relation is seeded into each list: the value is always selectable on the
- * first paint, whatever order the requests finish in. It also keeps a lookup
- * the list leaves out — deactivated, or past the page limit — visible instead
- * of quietly blanking the field.
- */
-function withSaved<T extends LookupOption>(
-  loaded: T[] | undefined,
-  ...saved: Array<LookupOption | null | undefined>
-): LookupOption[] {
-  const options: LookupOption[] = loaded ?? [];
-  const missing: LookupOption[] = [];
-  for (const candidate of saved) {
-    if (!candidate) continue;
-    if (options.some((option) => option.id === candidate.id)) continue;
-    if (missing.some((option) => option.id === candidate.id)) continue;
-    missing.push(candidate);
-  }
-  return missing.length > 0 ? [...missing, ...options] : options;
-}
 
 function itemToFormValues(item: Item | null): ItemFormValues {
   return {

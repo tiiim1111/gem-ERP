@@ -15,6 +15,7 @@ import {
   updateEmployee,
   type EmployeeWriteBody,
 } from '@/lib/endpoints';
+import { withSaved } from '@/lib/lookup-options';
 import { employeeName, type Employee } from '@/lib/types';
 import { humanize } from '@/lib/utils';
 import { useSession } from '@/components/auth/session-provider';
@@ -108,6 +109,26 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
     queryFn: ({ signal }) => listPositions({ page: 1, pageSize: 100, isActive: true }, signal),
     enabled: open,
   });
+
+  /*
+   * These three lists only start loading when the dialog opens — the same
+   * transition that resets the form from the employee — so on a first open
+   * the values would be written before any matching <option> exists and the
+   * browser would drop all three. Seeding the employee's own saved relations
+   * makes them selectable on the first paint.
+   */
+  const branchOptions = React.useMemo(
+    () => withSaved(branchesQuery.data?.data, employee?.branch),
+    [branchesQuery.data, employee?.branch],
+  );
+  const departmentOptions = React.useMemo(
+    () => withSaved(departmentsQuery.data?.data, employee?.department),
+    [departmentsQuery.data, employee?.department],
+  );
+  const positionOptions = React.useMemo(
+    () => withSaved(positionsQuery.data?.data, employee?.position),
+    [positionsQuery.data, employee?.position],
+  );
 
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
@@ -294,7 +315,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
             <FormField label="Branch" htmlFor="emp-branch" error={errors.branchId?.message} required>
               <Select id="emp-branch" aria-invalid={!!errors.branchId} {...form.register('branchId')}>
                 <option value="">Select a branch…</option>
-                {(branchesQuery.data?.data ?? []).map((branch) => (
+                {branchOptions.map((branch) => (
                   <option key={branch.id} value={branch.id}>
                     {branch.name} ({branch.code})
                   </option>
@@ -304,7 +325,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
             <FormField label="Department" htmlFor="emp-dept" error={errors.departmentId?.message}>
               <Select id="emp-dept" {...form.register('departmentId')}>
                 <option value="">No department</option>
-                {(departmentsQuery.data?.data ?? []).map((department) => (
+                {departmentOptions.map((department) => (
                   <option key={department.id} value={department.id}>
                     {department.name}
                   </option>
@@ -317,7 +338,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
             <FormField label="Position" htmlFor="emp-position" error={errors.positionId?.message}>
               <Select id="emp-position" {...form.register('positionId')}>
                 <option value="">No position</option>
-                {(positionsQuery.data?.data ?? []).map((position) => (
+                {positionOptions.map((position) => (
                   <option key={position.id} value={position.id}>
                     {position.name}
                   </option>

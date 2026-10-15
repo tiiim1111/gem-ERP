@@ -13,6 +13,7 @@ import {
   listUoms,
   updateUomConversion,
 } from '@/lib/endpoints';
+import { withSaved } from '@/lib/lookup-options';
 import { formatFactor, type Uom, type UomConversion } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -72,7 +73,17 @@ export function ConversionsTab({ canManage }: { canManage: boolean }) {
   });
 
   const conversions = conversionsQuery.data?.data ?? [];
-  const uoms = React.useMemo(() => uomsQuery.data?.data ?? [], [uomsQuery.data]);
+  /*
+   * `openEdit` resets the form from a row, and a click can land while the unit
+   * list is still pending — the written value would then have no matching
+   * <option> and the browser would drop it. Seeding the row's own units also
+   * covers one the list leaves out, as the table below already does with its
+   * `fallback` argument.
+   */
+  const uoms = React.useMemo(
+    () => withSaved(uomsQuery.data?.data, editTarget?.fromUom, editTarget?.toUom),
+    [uomsQuery.data, editTarget],
+  );
 
   const form = useForm<ConversionFormValues>({
     resolver: zodResolver(conversionSchema),

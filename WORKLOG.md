@@ -41,8 +41,16 @@ Tim: "nacheck mo ba lahat ng fields sa items/? yung subcategory di talaga nagfef
 - `pnpm test`: **510 API + 4 web = 514 passed**. web typecheck/lint/build ✅.
 - Ibinalik ko ang formatting churn ng prettier sa `item-form.tsx` (95 file sa `apps/web` ang hindi pa prettier-compliant, kaya puro ingay lang iyon) — 76 linya na lang ang diff, puro fix.
 
+**Sinuyod ang buong `apps/web` para sa parehong hugis** (uncontrolled select na `register(...Id)` + lookup list na galing sa query). Dalawa pa ang nakita:
+
+- **`employee-form-dialog.tsx` — tunay na bug, pareho.** `enabled: open` ang branches/departments/positions, kaya sa **unang bukas** ng dialog ay kasabay ng `reset()` ang pag-umpisa ng tatlong list → nagbablangko ang **Branch (required!)**, Department at Position. Gumagana sa pangalawang bukas dahil cached na — kaya pala mukhang pabago-bago. May test; **pumapalya ito kung wala ang ayos**.
+- **`conversions-tab.tsx` — makitid pero tunay.** Sa click handler ang `openEdit` reset, at maaaring tumama habang pending pa ang `uomsQuery`. Hinarang gamit ang parehong helper; sineseed ang `fromUom`/`toUom` ng row (ginagawa na pala ito ng table sa pamamagitan ng `fallback` argument ng `uomLabel` — kumpirmasyon na alam na ang isyu para sa display pero hindi para sa form).
+- **Safe:** `location-dialog.tsx` (prop ang `locations`, nakaload na bago pa makabukas ang dialog), `supplier-form-dialog.tsx` (`taxId` ay `Input`, hindi lookup select). Controlled na ang `businessCategory`/`trackingMethod`/checkboxes ng item form (`value=` + `onChange`), kaya hindi apektado; text/money input ay anumang string ang tanggap.
+
+Inilabas ang helper sa **`apps/web/src/lib/lookup-options.ts`** (`withSaved`), generic sa hugis ng input para hindi maluwagan ang `code: string` na kailangan ng UOM quick-add context.
+
 **Pending / Next:**
-- Wala pang sagot si Tim kung dagdagan pa ng test ang iba pang form (ganito rin ang hugis ng `asset-form`, `purchase-order-editor`).
+- Wala pang sagot si Tim kung dagdagan pa ng test ang iba pang form.
 - Hindi pa rin nakansela ang Railway Hobby subscription (kay Tim ito).
 
 ---
