@@ -17,6 +17,24 @@ Entry format:
 
 ---
 
+## 2026-10-15 — 🐛 Item edit: blangko ang Category, UOM, Brand at conversions
+
+Tim: "upon clicking item, di nafefetch lahat ng info particularly sa Category, UOM."
+
+**Root cause — mismatch sa hugis.** Ang `ITEM_LIST_SELECT` ay gumagamit ng Prisma **`select`**, kaya **nested object lang** ang ibinabalik (`category: {id,code,name}`, `baseUom: {…}`) at **walang flat `categoryId`/`baseUomId`**. Pero ang `toDefaults()` ng item form ay nagbabasa ng `item?.categoryId`, `item?.baseUomId` — laging `undefined`, kaya blangko ang pitong dropdown tuwing mag-e-edit. Ganoon din ang mga conversion row: ibinibigay ang `fromUom: {id,code}` pero hinahanap ang `fromUomId`.
+
+**Bakit hindi nahuli ng TypeScript:** optional na nakadeklara ang mga flat ID (`categoryId?`), at ang `baseUomId: string` ay nakadeklarang **required** gayong hindi naman ito kailanman ipinapadala — kaya tahimik na pumapasa ang maling pagbabasa.
+
+**Hindi apektado** (may nested fallback na): `items-page.tsx` (`if (item.category) …`), `purchase-order-editor.tsx` (`item?.purchaseUom?.id ?? item?.purchaseUomId ?? …`). **Hindi rin apektado ang conversion math**: ang `/uom-conversions` ay gumagamit ng **`include`**, hindi `select`, kaya kasama ang flat IDs doon.
+
+**Fix:** nested-muna ang pagbabasa sa pitong relation field at sa dalawang conversion field; ginawang `baseUomId?: string | null` ang `Item` at `ItemRef` (**agad nitong nahuli ang isang hindi pagkakatugma sa `receive-page.tsx`** na naitama rin), at may komento na nagsasabing nested muna ang tamang pagkakasunod.
+
+**Verification:** sa totoong API — kumpirmadong `undefined` ang `det.categoryId`/`baseUomId`/`brandId`, at pagkatapos ng ayos ay **lahat ng anim na field ay nare-resolve**; gumawa rin ng item-specific na conversion at kumpirmadong `undefined` ang flat `fromUomId` pero tama ang nested. web typecheck/lint/build ✅.
+
+**Posibleng pinsala sa data:** `min(1)` ang `baseUomId` kaya **hinaharangan** ang pag-save — pero **plain `z.string()`** ang `categoryId`/`subcategoryId`/`brandId`/`manufacturerId`, kaya kung nakapag-save si Tim matapos muling piliin ang Base UOM, **tahimik na na-null** ang apat na yun. Binigyan siya ng query para hanapin ang mga item na nawalan ng category.
+
+---
+
 ## 2026-10-14 (gabi 10) — Ipinantay ang dalawang hanay ng label (top-to-top, bottom-to-bottom)
 
 Tim: "Pwede mo ipantay top to top, bottom to bottom para lang malinis tignan sa pagkakaprint?"

@@ -429,6 +429,11 @@ export interface Item {
   description?: string | null;
   businessCategory: ItemBusinessCategory;
   trackingMethod: TrackingMethod;
+  /*
+   * The API returns each relation nested and sends no flat *Id — every one of
+   * these is optional on purpose. Read `category?.id` and fall back to
+   * `categoryId`, never the other way round.
+   */
   categoryId?: string | null;
   category?: ItemCategory | null;
   subcategoryId?: string | null;
@@ -438,7 +443,7 @@ export interface Item {
   manufacturerId?: string | null;
   manufacturer?: Manufacturer | null;
   model?: string | null;
-  baseUomId: string;
+  baseUomId?: string | null;
   baseUom?: Uom | null;
   purchaseUomId?: string | null;
   purchaseUom?: Uom | null;
@@ -606,7 +611,8 @@ export interface ItemRef {
   sku?: string;
   name?: string;
   trackingMethod?: TrackingMethod | string;
-  baseUomId?: string;
+  /** Nested first — see the note on Item's relation fields. */
+  baseUomId?: string | null;
   baseUom?: Uom | null;
   isExpiryTracked?: boolean;
 }
