@@ -9,7 +9,8 @@
     "start": "next start --port 3000",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "rm -rf .next"
+    "clean": "rm -rf .next",
+    "test": "vitest run"
   },
   "dependencies": {
     "@gemerp/shared": "workspace:*",
@@ -27,14 +28,21 @@
   },
   "devDependencies": {
     "@gemerp/config": "workspace:*",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.25.0",
+    "jsdom": "^26.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=22"

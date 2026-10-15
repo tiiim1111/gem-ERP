@@ -131,6 +131,36 @@ const itemSchema = z.object({
 
 type ItemFormValues = z.infer<typeof itemSchema>;
 
+/** The three fields every lookup `<option>` in this form renders from. */
+type LookupOption = { id: string; code: string; name: string };
+
+/*
+ * These dropdowns are uncontrolled `<select>`s: react-hook-form writes the
+ * value straight onto the element, and a browser silently discards a value
+ * with no matching `<option>` — nothing re-applies it when the options finally
+ * arrive. On edit the lookup lists are still in flight when the item lands,
+ * and the subcategory list cannot even start loading until the category is
+ * known, which comes from the very same `reset()`. So the item's own saved
+ * relation is seeded into each list: the value is always selectable on the
+ * first paint, whatever order the requests finish in. It also keeps a lookup
+ * the list leaves out — deactivated, or past the page limit — visible instead
+ * of quietly blanking the field.
+ */
+function withSaved<T extends LookupOption>(
+  loaded: T[] | undefined,
+  ...saved: Array<LookupOption | null | undefined>
+): LookupOption[] {
+  const options: LookupOption[] = loaded ?? [];
+  const missing: LookupOption[] = [];
+  for (const candidate of saved) {
+    if (!candidate) continue;
+    if (options.some((option) => option.id === candidate.id)) continue;
+    if (missing.some((option) => option.id === candidate.id)) continue;
+    missing.push(candidate);
+  }
+  return missing.length > 0 ? [...missing, ...options] : options;
+}
+
 function itemToFormValues(item: Item | null): ItemFormValues {
   return {
     sku: item?.sku ?? '',
@@ -420,7 +450,48 @@ export function ItemForm({ itemId }: { itemId?: string }) {
   });
   const { errors } = form.formState;
   const pending = saveMutation.isPending;
-  const uoms = uomsQuery.data?.data ?? [];
+  /*
+   * The saved subcategory belongs to the saved category, so it stops being
+   * offered once a *different* category is picked; the effect above then
+   * clears the held value. It stays on offer while no category is selected,
+   * because that is the state the form is in on the render that first sees the
+   * item — the option has to reach the DOM before `reset()` writes the value,
+   * not after.
+   */
+  const savedCategoryId = item?.category?.id ?? item?.categoryId ?? null;
+  const savedSubcategory = !categoryId || categoryId === savedCategoryId ? item?.subcategory : null;
+
+  const categoryOptions = React.useMemo(
+    () => withSaved(categoriesQuery.data?.data, item?.category),
+    [categoriesQuery.data, item?.category],
+  );
+  const subcategoryOptions = React.useMemo(
+    () => withSaved(subcategoriesQuery.data?.data, savedSubcategory),
+    [subcategoriesQuery.data, savedSubcategory],
+  );
+  const brandOptions = React.useMemo(
+    () => withSaved(brandsQuery.data?.data, item?.brand),
+    [brandsQuery.data, item?.brand],
+  );
+  const manufacturerOptions = React.useMemo(
+    () => withSaved(manufacturersQuery.data?.data, item?.manufacturer),
+    [manufacturersQuery.data, item?.manufacturer],
+  );
+  // Covers the three unit fields and both ends of every conversion row.
+  const uoms = React.useMemo(
+    () =>
+      withSaved(
+        uomsQuery.data?.data,
+        item?.baseUom,
+        item?.purchaseUom,
+        item?.issueUom,
+        ...(item?.uomConversions ?? []).flatMap((conversion) => [
+          conversion.fromUom,
+          conversion.toUom,
+        ]),
+      ),
+    [uomsQuery.data, item],
+  );
 
   if (isEdit && itemQuery.isPending) {
     return (
@@ -583,7 +654,7 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                     onCreated={(id) => form.setValue('categoryId', id, { shouldDirty: true })}
                   >
                     <option value="">No category</option>
-                    {(categoriesQuery.data?.data ?? []).map((category) => (
+                    {categoryOptions.map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name} ({category.code})
                       </option>
@@ -607,7 +678,7 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                     <option value="">
                       {categoryId ? 'No subcategory' : 'Select a category first'}
                     </option>
-                    {(subcategoriesQuery.data?.data ?? []).map((subcategory) => (
+                    {subcategoryOptions.map((subcategory) => (
                       <option key={subcategory.id} value={subcategory.id}>
                         {subcategory.name}
                       </option>
@@ -625,7 +696,7 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                     onCreated={(id) => form.setValue('brandId', id, { shouldDirty: true })}
                   >
                     <option value="">No brand</option>
-                    {(brandsQuery.data?.data ?? []).map((brand) => (
+                    {brandOptions.map((brand) => (
                       <option key={brand.id} value={brand.id}>
                         {brand.name}
                       </option>
@@ -645,7 +716,7 @@ export function ItemForm({ itemId }: { itemId?: string }) {
                     onCreated={(id) => form.setValue('manufacturerId', id, { shouldDirty: true })}
                   >
                     <option value="">No manufacturer</option>
-                    {(manufacturersQuery.data?.data ?? []).map((manufacturer) => (
+                    {manufacturerOptions.map((manufacturer) => (
                       <option key={manufacturer.id} value={manufacturer.id}>
                         {manufacturer.name}
                       </option>

@@ -17,6 +17,36 @@ Entry format:
 
 ---
 
+## 2026-10-15 (hapon) — 🐛 Subcategory blangko pa rin sa item edit + unang test tooling ng `apps/web`
+
+Tim: "nacheck mo ba lahat ng fields sa items/? yung subcategory di talaga nagfefetch ng data kahit kakasave lang."
+
+**Ibang bug pala ito, hindi dugtong ng nested-id fix kaninang umaga.** Tatlong bagay na sabay:
+
+1. Uncontrolled `<select>` ang `CreatableSelect` — `registration` lang ang ibinibigay, walang `value` prop, kaya diretso sa DOM element isinusulat ng react-hook-form ang value.
+2. `enabled: !!categoryId` ang `subcategoriesQuery`, at ang `categoryId` ay galing sa **kaparehong** `form.reset(itemToFormValues(item))`. Kaya sa sandaling isulat ang `subcategoryId`, placeholder pa lang ang tanging `<option>`.
+3. **Tahimik na binabato ng browser ang value na walang katugmang `<option>`**, at wala nang muling nag-aapply pagdating ng listahan. RHF state tama pa (kaya hindi nawawala sa pag-save), pero blangko ang nakikita — kahit sa item na kakasave lang.
+
+**Fix — `withSaved()`:** ipinapasok ang sariling naka-save na relation ng item sa bawat lookup list, kaya laging may katugmang `<option>` sa unang paint, anuman ang pagkakasunod ng pagdating ng mga request. Sakop nito ang category, subcategory, brand, manufacturer, at ang tatlong UOM field + dalawang dulo ng bawat conversion row. Bonus: nananatiling nakikita ang lookup na wala sa listahan (deactivated, o lampas sa `pageSize: 100`) kaysa tahimik na magblangko.
+
+**Isang detalye na muntik nang makalusot:** ginawa kong `categoryId && categoryId === savedCategoryId` ang guard sa unang pasada — mali, dahil `''` pa ang `categoryId` sa commit na unang nakakita ng item, at **doon** kailangan nang nasa DOM ang option (bago tumakbo ang `reset()` sa passive effect, hindi pagkatapos). Naging `!categoryId || categoryId === savedCategoryId`. Nananatili ang pag-clear kapag ibang category ang pinili.
+
+**Latent din pala ang karera sa Category/Brand/Manufacturer/UOM** — nagkataon lang na nauunang dumating ang maliliit nilang lookup request. Pinatunayan ito ng test: nagbablangko rin ang Category kapag ang item ang nauna.
+
+**Bagong test tooling sa `apps/web`** (vitest + jsdom + @testing-library/react; `pnpm test` sa turbo, 4 na test). Dahil ito sa **pangatlong** bug ng ganitong uri na nakalampas: walang browser at walang test ang `apps/web`, kaya hindi nakikita ng `tsc`/eslint ang value na binabato ng browser sa runtime.
+
+**Verification — pinatunayan talaga, hindi inangkin:**
+- Dalawang beses akong nahuli ng sariling test: (a) `getByRole('option', {name})` ay **hindi** nagre-resolve ng `<option>` sa loob ng collapsed `<select>` sa jsdom → DOM option values na lang ang ini-assert; (b) mas masama — **pumasa ang 3 test dahil lang sa seeded option**, hindi pa dumarating ang listahan bago ang assertion. Hungkag na verification iyon. May `LIST_ONLY_SUBCATEGORY`/`LIST_ONLY_UOM` na lang ngayon na nasa fetched list lamang, at hinihintay ng `waitForListsToLand()` ang aktwal na pagdating — iyon ang sandaling nagbablangko ang luma.
+- **Ni-revert ko ang fix at pinatakbo ang mga test: lahat ng apat pumalya**, eksaktong blangkong `item-subcategory` ang lumabas. Ibinalik ang fix → pumasa lahat.
+- `pnpm test`: **510 API + 4 web = 514 passed**. web typecheck/lint/build ✅.
+- Ibinalik ko ang formatting churn ng prettier sa `item-form.tsx` (95 file sa `apps/web` ang hindi pa prettier-compliant, kaya puro ingay lang iyon) — 76 linya na lang ang diff, puro fix.
+
+**Pending / Next:**
+- Wala pang sagot si Tim kung dagdagan pa ng test ang iba pang form (ganito rin ang hugis ng `asset-form`, `purchase-order-editor`).
+- Hindi pa rin nakansela ang Railway Hobby subscription (kay Tim ito).
+
+---
+
 ## 2026-10-15 — 🐛 Item edit: blangko ang Category, UOM, Brand at conversions
 
 Tim: "upon clicking item, di nafefetch lahat ng info particularly sa Category, UOM."
