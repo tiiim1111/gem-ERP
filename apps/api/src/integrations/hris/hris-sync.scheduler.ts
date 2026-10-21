@@ -25,22 +25,28 @@ export class HrisSyncScheduler implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     const hris = this.config.hris;
-    if (!hris.enabled) {
-      this.logger.log(
-        'HRIS employee sync is disabled (GEMENI_HRIS_SYNC_ENABLED=false) — queued runs will not execute',
-      );
-      return;
-    }
+    /*
+     * Started whenever the feed is CONFIGURED, not when it is enabled.
+     *
+     * GEMENI_HRIS_SYNC_ENABLED means "allowed to write", not "allowed to
+     * run": the whole point of deploying disabled is to dry-run first, and a
+     * poller that only starts once writing is permitted would leave that
+     * rehearsal queued forever. HrisSyncService refuses a real run while the
+     * flag is off.
+     */
     if (!this.config.hrisConfigured) {
-      this.logger.warn(
-        'HRIS employee sync is enabled but not configured — set GEMENI_HRIS_BASE_URL and GEMENI_HRIS_TOKEN',
+      this.logger.log(
+        'HRIS employee feed is not configured — set GEMENI_HRIS_BASE_URL and GEMENI_HRIS_TOKEN',
       );
       return;
     }
     this.timer = setInterval(() => void this.tick(), hris.pollMs);
     // Do not hold the process open on shutdown.
     this.timer.unref?.();
-    this.logger.log(`HRIS sync poller started (every ${hris.pollMs}ms)`);
+    this.logger.log(
+      `HRIS sync poller started (every ${hris.pollMs}ms); writes are ` +
+        `${hris.enabled ? 'enabled' : 'DISABLED — dry runs only'}`,
+    );
   }
 
   onModuleDestroy(): void {

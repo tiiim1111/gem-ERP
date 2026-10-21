@@ -172,6 +172,20 @@ export class HrisSyncService {
       failed: 0,
     };
 
+    /*
+     * Defence in depth behind the scheduler: a real run must not write while
+     * the feed is disabled, however it got queued. Recorded on the run itself
+     * so the reason is visible in the history rather than only in a log.
+     */
+    if (!dryRun && !this.config.hris.enabled) {
+      const message =
+        'Writing is disabled (GEMENI_HRIS_SYNC_ENABLED=false). Nothing was applied — ' +
+        'use a dry run until the mappings and default branch have been reviewed.';
+      await this.finish(runId, HrisSyncStatus.FAILED, counts, issues, { error: message });
+      this.logger.warn(`HRIS sync run ${runId} refused: writing is disabled`);
+      return;
+    }
+
     let snapshot: HrisSnapshot;
     try {
       snapshot = await this.client.fetchSnapshot();

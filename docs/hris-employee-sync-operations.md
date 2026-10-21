@@ -42,7 +42,7 @@ Nasa `.env.prod` sa server. Nakasulat din lahat sa `.env.example`.
 
 | Variable | Dapat |
 |---|---|
-| `GEMENI_HRIS_SYNC_ENABLED` | `false` muna. Huling hakbang ang pag-`true`. |
+| `GEMENI_HRIS_SYNC_ENABLED` | `false` muna. Huling hakbang ang pag-`true`. **Ibig sabihin nito ay "pinapayagang magsulat", hindi "pinapayagang tumakbo"** — tumatakbo pa rin ang dry run kapag `false`, at iyon mismo ang punto ng pag-deploy nang disabled. Tinatanggihan ang tunay na run na may malinaw na dahilan sa run history. |
 | `GEMENI_HRIS_BASE_URL` | `http://192.168.0.60` |
 | `GEMENI_HRIS_EMPLOYEE_PATH` | `/api/v1/integrations/gemeni/employees` |
 | `GEMENI_HRIS_EXPECTED_COMPANY_CODE` | `GEM` |

@@ -22,6 +22,13 @@ export async function enqueueHrisEmployeeSync(
   prisma: PrismaClient,
   logger: Logger,
 ): Promise<HrisSyncEnqueueSummary> {
+  // Writes are off, so a scheduled run would only be refused. Skip quietly
+  // rather than adding a failed row to the history every night.
+  if ((process.env.GEMENI_HRIS_SYNC_ENABLED ?? "").trim() !== "true") {
+    logger.info("HRIS employee sync is disabled — not queueing the nightly run");
+    return { queued: false, reason: "sync disabled" };
+  }
+
   const pending = await prisma.hrisSyncRun.findFirst({
     where: { status: { in: ["QUEUED", "RUNNING"] } },
     select: { id: true, status: true },

@@ -200,7 +200,13 @@ function snapshot(employees: HrisEmployee[] = [feed()]): HrisSnapshot {
 }
 
 function build(
-  options: { snapshot?: HrisSnapshot; fetchError?: Error; fixtures?: EmployeeFixtures } = {},
+  options: {
+    snapshot?: HrisSnapshot;
+    fetchError?: Error;
+    fixtures?: EmployeeFixtures;
+    /** GEMENI_HRIS_SYNC_ENABLED — "allowed to write", not "allowed to run". */
+    enabled?: boolean;
+  } = {},
 ) {
   const prisma = prismaMock(options.fixtures ?? emptyFixtures());
   const client = {
@@ -211,7 +217,7 @@ function build(
   };
   const notifications = { notify: jest.fn(), notifyMany: jest.fn() };
   const config = {
-    hris: { defaultBranchCode: 'MNL', enabled: true },
+    hris: { defaultBranchCode: 'MNL', enabled: options.enabled ?? true },
   };
   const service = new HrisSyncService(
     prisma as unknown as never,
@@ -548,6 +554,48 @@ describe('a dry run', () => {
     expect(prisma.hrisPositionMap.create).not.toHaveBeenCalled();
     // It still reports what it would have done.
     expect(finishData(prisma).created).toBe(1);
+  });
+});
+
+describe('while writing is disabled', () => {
+  function queued(prisma: PrismaMock, dryRun: boolean) {
+    prisma.hrisSyncRun.findFirst.mockImplementation(
+      ({ where }: { where: { status?: unknown } }) =>
+        Promise.resolve(
+          JSON.stringify(where?.status ?? {}).includes('RUNNING')
+            ? null
+            : { id: 'run-1', dryRun },
+        ),
+    );
+  }
+
+  /*
+   * The documented path is: deploy disabled, dry-run, review, then enable. So
+   * a dry run has to execute while writing is off — otherwise the rehearsal
+   * sits queued forever and the whole sequence is impossible.
+   */
+  it('still runs a dry run', async () => {
+    const { service, prisma, client } = build({ enabled: false });
+    queued(prisma, true);
+    await service.drainOnce();
+
+    expect(client.fetchSnapshot).toHaveBeenCalledTimes(1);
+    expect(prisma.employee.create).not.toHaveBeenCalled();
+    expect(finishData(prisma).created).toBe(1);
+    expect(finishData(prisma).status).toBe(HrisSyncStatus.SUCCEEDED);
+  });
+
+  /* Defence in depth: however a real run got queued, it must not write. */
+  it('refuses a real run without even fetching', async () => {
+    const { service, prisma, client } = build({ enabled: false });
+    queued(prisma, false);
+    await service.drainOnce();
+
+    expect(client.fetchSnapshot).not.toHaveBeenCalled();
+    expect(prisma.employee.create).not.toHaveBeenCalled();
+    const data = finishData(prisma);
+    expect(data.status).toBe(HrisSyncStatus.FAILED);
+    expect(data.error).toMatch(/Writing is disabled/);
   });
 });
 
