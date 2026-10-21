@@ -275,6 +275,125 @@ export class HrisAdminService {
     };
   }
 
+  /**
+   * Creates a GEM-ENI department/position for each HRIS code that has no
+   * target, and points the mapping at it.
+   *
+   * Deliberately a separate, explicit action rather than something the sync
+   * does: a nightly job that invents organisational records would turn a typo
+   * upstream into a permanent junk department. Here a person pressed the
+   * button, the result is audited, and the run reports exactly what it made.
+   *
+   * The feed carries codes but no names — we only asked for codes, since a
+   * name that drifts upstream would look like a new department. So the new
+   * records are named after the code; rename them in Lookups if you want
+   * something friendlier. The code is what matching depends on.
+   */
+  async adoptUnmappedCodes(
+    user: AuthUser,
+  ): Promise<{ mappings: HrisMappingsView; createdDepartments: string[]; createdPositions: string[]; linkedExisting: string[] }> {
+    const createdDepartments: string[] = [];
+    const createdPositions: string[] = [];
+    const linkedExisting: string[] = [];
+
+    const departmentMaps = await this.prisma.hrisDepartmentMap.findMany({
+      where: { departmentId: null },
+    });
+    for (const mapping of departmentMaps) {
+      /*
+       * A code may already exist but be inactive or archived, in which case
+       * creating would collide on the unique code. Point at it and say so —
+       * reactivating someone else's archived record is not this action's call.
+       */
+      const existing = await this.prisma.department.findUnique({
+        where: { code: mapping.hrisCode },
+        select: { id: true, isActive: true, archivedAt: true },
+      });
+      if (existing) {
+        await this.prisma.hrisDepartmentMap.update({
+          where: { id: mapping.id },
+          data: { departmentId: existing.id, autoSuggested: false },
+        });
+        linkedExisting.push(
+          existing.isActive && !existing.archivedAt
+            ? `department ${mapping.hrisCode}`
+            : `department ${mapping.hrisCode} (inactive — activate it in Lookups)`,
+        );
+        continue;
+      }
+      const created = await this.prisma.department.create({
+        data: { code: mapping.hrisCode, name: mapping.hrisName ?? mapping.hrisCode },
+        select: { id: true, code: true, name: true },
+      });
+      await this.prisma.hrisDepartmentMap.update({
+        where: { id: mapping.id },
+        data: { departmentId: created.id, autoSuggested: false },
+      });
+      createdDepartments.push(created.code);
+      await this.audit.log({
+        action: 'department.created',
+        resourceType: 'department',
+        resourceId: created.id,
+        actor: user.id,
+        newValues: { code: created.code, name: created.name },
+        reason: 'Adopted from the HRIS employee feed',
+      });
+    }
+
+    const positionMaps = await this.prisma.hrisPositionMap.findMany({
+      where: { positionId: null },
+    });
+    for (const mapping of positionMaps) {
+      const existing = await this.prisma.position.findUnique({
+        where: { code: mapping.hrisCode },
+        select: { id: true, isActive: true, archivedAt: true },
+      });
+      if (existing) {
+        await this.prisma.hrisPositionMap.update({
+          where: { id: mapping.id },
+          data: { positionId: existing.id, autoSuggested: false },
+        });
+        linkedExisting.push(
+          existing.isActive && !existing.archivedAt
+            ? `position ${mapping.hrisCode}`
+            : `position ${mapping.hrisCode} (inactive — activate it in Lookups)`,
+        );
+        continue;
+      }
+      const created = await this.prisma.position.create({
+        data: { code: mapping.hrisCode, name: mapping.hrisName ?? mapping.hrisCode },
+        select: { id: true, code: true, name: true },
+      });
+      await this.prisma.hrisPositionMap.update({
+        where: { id: mapping.id },
+        data: { positionId: created.id, autoSuggested: false },
+      });
+      createdPositions.push(created.code);
+      await this.audit.log({
+        action: 'position.created',
+        resourceType: 'position',
+        resourceId: created.id,
+        actor: user.id,
+        newValues: { code: created.code, name: created.name },
+        reason: 'Adopted from the HRIS employee feed',
+      });
+    }
+
+    await this.audit.log({
+      action: 'hris.codes_adopted',
+      resourceType: 'hris_sync',
+      actor: user.id,
+      newValues: { createdDepartments, createdPositions, linkedExisting },
+    });
+
+    return {
+      mappings: await this.mappings(),
+      createdDepartments,
+      createdPositions,
+      linkedExisting,
+    };
+  }
+
   async setDepartmentMap(
     user: AuthUser,
     id: string,

@@ -143,16 +143,30 @@ Nasa **Administration → HRIS Feed** sa sidebar. Superadmin lang, o may
    sa feed, para may maituro ka sa Code mappings. Reference data iyon, hindi
    pagbabago sa employee — at kung hindi iimbakin, sasabihin lang ng dry run na
    "unmapped" nang wala kang paraan para i-map, kaya patay na dulo.
-3. **Tingnan ang resulta ng dry run.** Bago mag-enable, dapat:
+3. **Kung may unmapped na code**, may dalawang pagpipilian sa Code mappings:
+   - **Create from HRIS** — gumagawa ng department/position sa GEM-ENI para sa
+     bawat code na walang katumbas, at itinuturo agad ang mapping. Isang pindot,
+     naka-audit, at inuulat kung ano ang ginawa. **Pinangalanan ayon sa code**
+     (hal. `ADMIN`) dahil code lang ang dala ng feed, walang pangalan — palitan
+     mo sa **Lookups** kung gusto mong gawing "Administration". Ang code ang
+     basehan ng pagtutugma, hindi ang pangalan.
+   - **O ituro nang isa-isa** sa dropdown, kung may existing na record na iba
+     ang code pero siya naman talaga ang tama.
+
+   Sadyang **hindi** ito ginagawa ng sync mismo: kung kusang gagawa ng
+   department ang nightly job, ang isang typo sa HRIS ay magiging basurang
+   department nang permanente — at may mga record na tutukoy pa doon.
+
+4. **Tingnan ang resulta ng dry run.** Bago mag-enable, dapat:
    - tugma ang company code at `snapshot: true`;
    - nabilang lahat ng record (tingnan ang producer total vs. counts);
    - **walang** ambiguous link;
    - may valid na default branch;
    - **naka-map lahat** ng department at position code;
    - walang uniqueness o custody conflict.
-4. Kapag may pumalya: **iwan munang disabled.** Ayusin muna ang mappings o ang
+5. Kapag may pumalya: **iwan munang disabled.** Ayusin muna ang mappings o ang
    data sa HRIS. Huwag piliting mag-import.
-5. Kapag malinaw na: `GEMENI_HRIS_SYNC_ENABLED=true` sa `.env.prod`, tapos
+6. Kapag malinaw na: `GEMENI_HRIS_SYNC_ENABLED=true` sa `.env.prod`, tapos
    `/opt/gemeni/scripts/update-gemeni.sh`, tapos **Run now**.
 
 Pagkatapos ng unang tunay na sync, i-verify ang totals, ang HRIS badge sa

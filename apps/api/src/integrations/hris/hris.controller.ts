@@ -89,6 +89,22 @@ export class HrisController {
     return this.admin.mappings();
   }
 
+  @Post('mappings/adopt')
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.integration.manage)
+  @ApiOperation({
+    summary:
+      'Create a GEM-ENI department/position for every unmapped HRIS code and point the mapping at it. Explicit and audited — the sync never creates organisational records itself.',
+  })
+  adopt(@CurrentUser() user: AuthUser): Promise<{
+    mappings: HrisMappingsView;
+    createdDepartments: string[];
+    createdPositions: string[];
+    linkedExisting: string[];
+  }> {
+    return this.admin.adoptUnmappedCodes(user);
+  }
+
   @Patch('mappings/departments/:id')
   @RequirePermissions(PERMISSIONS.integration.manage)
   @ApiOperation({ summary: 'Point an HRIS department code at a GEM-ENI department.' })

@@ -2491,3 +2491,17 @@ export function getEmployeeSource(signal?: AbortSignal): Promise<{ hrisManaged: 
     signal,
   );
 }
+
+/**
+ * Creates a GEM-ENI department/position for every unmapped HRIS code. Explicit
+ * on purpose — the sync itself never creates organisational records, so an
+ * upstream typo cannot become a permanent department.
+ */
+export function adoptHrisCodes(): Promise<{
+  mappings: HrisMappings;
+  createdDepartments: string[];
+  createdPositions: string[];
+  linkedExisting: string[];
+}> {
+  return api.post('/integrations/hris/mappings/adopt', {});
+}

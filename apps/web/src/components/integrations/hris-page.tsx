@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  Download,
   PlugZap,
   Play,
   RefreshCw,
@@ -14,6 +15,7 @@ import {
 import { PERMISSIONS } from '@gemerp/shared';
 import { getErrorMessage } from '@/lib/api';
 import {
+  adoptHrisCodes,
   getHrisMappings,
   getHrisRun,
   getHrisStatus,
@@ -204,6 +206,34 @@ export function HrisIntegrationPage() {
     },
     onError: (error) => {
       toast({ title: 'Could not queue', description: getErrorMessage(error), variant: 'destructive' });
+    },
+  });
+
+  const adoptMutation = useMutation({
+    mutationFn: adoptHrisCodes,
+    onSuccess: (result) => {
+      queryClient.setQueryData(['hris', 'mappings'], result.mappings);
+      void queryClient.invalidateQueries({ queryKey: ['hris', 'status'] });
+      const made = [
+        result.createdDepartments.length
+          ? `${result.createdDepartments.length} department(s)`
+          : null,
+        result.createdPositions.length ? `${result.createdPositions.length} position(s)` : null,
+      ].filter(Boolean);
+      toast({
+        title: made.length ? `Created ${made.join(' and ')}` : 'Nothing left to create',
+        description: result.linkedExisting.length
+          ? `Also linked: ${result.linkedExisting.join(', ')}.`
+          : 'Named after the HRIS code — rename them in Lookups if you want.',
+        variant: 'success',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Could not create the records',
+        description: getErrorMessage(error),
+        variant: 'destructive',
+      });
     },
   });
 
@@ -417,6 +447,22 @@ export function HrisIntegrationPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {status.unmappedCodes > 0 ? (
+            <div className="flex flex-col gap-2 rounded-md border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                {status.unmappedCodes} code(s) have no GEM-ENI record. Create them to match the
+                HRIS, or point each one at an existing record below.
+              </p>
+              <Button
+                variant="outline"
+                className="shrink-0"
+                onClick={() => adoptMutation.mutate()}
+                loading={adoptMutation.isPending}
+              >
+                <Download aria-hidden /> Create from HRIS
+              </Button>
+            </div>
+          ) : null}
           {mappingsQuery.isPending ? (
             <Skeleton className="h-32 w-full" />
           ) : mappingsQuery.isError ? (
