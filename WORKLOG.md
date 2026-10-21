@@ -17,6 +17,30 @@ Entry format:
 
 ---
 
+## 2026-10-21 — 📋 HRIS employee integration: request document (hindi pa code)
+
+Tim: "balak ko lahat ng related sa Employees module ipupullout nalang yung data sa database nung HRIS... Employees lang ha, di damay yung User, Roles... gawan mo ko ng prompt ng mga gusto mong i-request dun sa HRIS na mga data."
+
+**Ginawa:** `docs/hris-employee-integration-request.md` — para sa HRIS team, English at self-contained (hindi nila kailangang alam ang GEM-ENI). Kasama: scope (in/out), tatlong delivery option, 16 na field na may dahilan bawat isa, reference-data mapping, behavioural contract, security, privacy, 9 na tanong, at ang hangganan ng trabaho ng bawat panig.
+
+**Sinuyod muna ang totoong dependency bago humingi ng data** — kung hindi, kulang o sobra ang hihingin:
+
+- `Employee` ay may **7 relation** na `onDelete: Restrict`: `assetsInCustody`, `assetAssignments`, `assetMovements` (from/to), `assetAcknowledgments`, `stockTransactions`, `workOrdersAssigned`. Hindi basta mawawala ang employee record.
+- `separate()` ay **hindi humaharang** pero nagbabalik ng `outstandingAssets`; ang `archive()` ay kailangang clear na ang custody. Kaya hindi pwedeng basta i-archive ang separated na may hawak pang asset — nasa doc ito bilang eksplisitong "hindi namin gagawin".
+- **Branch-scoped** ang employees (`assertBranchAccess`), at `branchId` ay **required** — kaya kailangan talaga ang branch per employee.
+- Hindi pwedeng palitan ng HRIS ang Branch/Department/Position: nasa **asset tag** ang branch code (`AST-{BRANCH}-…`), at ang `Department.headEmployeeId` + `ApprovalStep.approverPositionId` ay nakaturo sa kanila. **Mapping** ang kailangan, hindi replacement — ito ang pinakamalaking panganib na masira ang system.
+- `employeeNumber` at `workEmail` ay **`@unique`** — kaya may buong seksyon sa doc tungkol sa duplicate/shared email (`admin@…`), dahil ito ang tipikal na dahilan ng failed import.
+- `EmployeeStatus` ay apat lang: ACTIVE/INACTIVE/SUSPENDED/SEPARATED — hinihingi ang **buong listahan** ng HRIS statuses para isang beses lang i-map, hindi hulaan.
+- GEM-ENI-local at **hindi** dapat galing sa HRIS: `userId` (login link — eksplisitong sinabi ni Tim na huwag idamay), `notes` (restricted-visibility), `version`, `archivedAt`.
+- May **repeatable-job infrastructure na** ang worker (BullMQ), kaya kasya ang nightly sync nang walang bagong infra.
+
+**Pending / Next:**
+- **Hindi pa tinanggal ang "Add employee"** — sinadya. Kung tatanggalin ngayon, wala siyang paraan magdagdag ng employee habang wala pa ang feed. Dapat huli itong hakbang, pagkatapos gumana ang sync. Nakapitch kay Tim.
+- Hinihintay ang sagot ng HRIS team sa 9 na tanong — lalo na ang **sample payload** at ang listahan ng status values; doon nakasalalay ang hugis ng sync.
+- Hindi pa rin nakansela ang Railway Hobby subscription (kay Tim ito).
+
+---
+
 ## 2026-10-15 (hapon) — 🐛 Subcategory blangko pa rin sa item edit + unang test tooling ng `apps/web`
 
 Tim: "nacheck mo ba lahat ng fields sa items/? yung subcategory di talaga nagfefetch ng data kahit kakasave lang."
