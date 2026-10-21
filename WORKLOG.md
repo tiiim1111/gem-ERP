@@ -52,7 +52,23 @@ Iba ang hugis sa request document: hindi "pakisabi kung ano ang meron kayo" kund
 - **Kasama ang separated employees** — isa ito sa pangunahing dahilan ng feed; huwag i-filter para lang maging malinis ang payload.
 - **Walang 200 na may error body** — success ang 200 para sa sync job natin, kaya ang empty page ay maitatala bilang "walang pagbabago ngayon".
 
+**Phase 1 discovery ni Codex: natapos, matapat, at nagbago ng design sa panig natin.** Tumanggi siyang hulaan ang `branchCode`, `workEmail` at `dateSeparated` — tamang desisyon; lahat ng tatlo ay mukhang tama sa testing at pumapalya lang kapag may tunay nang asset custody. Sagot ko: `docs/hris-employee-api-phase2-decisions.md` (desisyon, hindi tanong pabalik).
+
+**Tatlong finding na nagbago ng disenyo natin:**
+
+1. **Wala talagang branch/site entity sa HRIS** (0 rows sa `%branch%`/`%site%`), pero **required** ang `Employee.branchId` natin at nakatali sa asset tag (`AST-{BRANCH}-…`) at sa visibility scoping. Desisyon: **tinanggal sa feed ang `branchCode`**. Hindi HR attribute ang branch — atin ito. Default branch sa unang import, editable by hand, at **hindi na ino-overwrite sa susunod na sync**.
+2. **Walang `separation_date` column**, at ang `archived_at` ay nagpipilit ng `status = 'INACTIVE'` kaya hindi ito katumbas ng separation. Pero **required** ang `separationDate` sa `SeparateEmployeeDto` natin (`@IsDateString()`, walang `@IsOptional()`). Desisyon: **i-infer natin** mula sa unang araw na nakita ang RESIGNED/TERMINATED, markado bilang inferred, para tumakbo pa rin ang asset clearance. Sinuhestiyon lang (hindi hiniling) na magdagdag sila ng tunay na column — HR data naman talaga iyon.
+3. **Hindi classified ang `email`/`contact_number` kung work o personal.** `workPhone` — **tinanggal**; hindi sulit ang pagdaan ng unclassified personal data sa boundary para sa 12 empleyado. `workEmail` — ginawang **config flag** (`GEMENI_FEED_EMAIL_IS_WORK`, default `false`) kaya ang sagot ng HR ay config change, hindi code change, at walang tumatagas sa default.
+
+**Isang requirement na nakita ko sa report nila na hindi pa nababanggit:** unique lang pala ang employee number sa `(company_id, employee_number)`, at tunay na multi-tenant ang `companies`. **Global** ang unique constraint natin sa `employeeNumber`. Kaya kapag nadagdagan ng pangalawang kompanya ang HRIS, (a) makakahila tayo ng taong hindi atin at (b) magkakabanggaan ang employee numbers — at sa GEM-ENI lalabas ang sintomas, malayo sa sanhi. Hiniling: **company filter mula sa config**, fail-on-startup kapag hindi exactly one row, `meta.companyCode` na ia-assert natin, at test na may pangalawang kompanya.
+
+**Iba pang desisyon:** full snapshot (tinanggal ang `updatedSince` — 12 rows, walang DB-level CDC, at nalalampasan ng direct SQL ang `updated_at`; 400 na lang kapag ipinasa, kasi ang ignored filter ang paraan para maakalang may incremental sync na pala); idinagdag ang `archivedAt` para makilala ang "inactive" sa "archived"; tinanggal ang `supervisorEmployeeNumber`, `isDepartmentHead`, `displayName` (wala sa schema nila — tayo na ang bubuo mula first+last); sinang-ayunan ang status mapping nila (ACTIVE/INACTIVE/RESIGNED/TERMINATED → 4 na state natin); at tinanggap ang konklusyon nila na **`hrisId` ang match key** dahil mutable ang `employee_number` sa `PATCH /employees/:id`.
+
+Napansin din: anim na FK table ang isang join lang ang layo sa `employees` (attendance, benefits, compensations, identifiers, work_schedules, payroll_items) — mismong ang out-of-scope data. Kaya mahalaga ang allowlist test; exact 11-key set na ngayon, hindi subset.
+
 **Pending / Next:**
+- Hinihintay ang Phase 2 build + handover ni Codex. Kailangan ko doon ang **department at position code lists** (`ADMIN/FIN/OPS/SALES`, `ACCOUNTANT/HR-OFFICER/ITO/ITS/OPS-SUP/SALES-EXEC`) para sa mapping table bago ang unang sync.
+- **Sagot ni Tim kailangan sa isang bagay:** work email ba talaga ang `employees.email` (`@gemcor.ph`)? Config flag lang ang kapalit, hindi code.
 - **Hindi pa tinanggal ang "Add employee"** — sinadya. Kung tatanggalin ngayon, wala siyang paraan magdagdag ng employee habang wala pa ang feed. Dapat huli itong hakbang, pagkatapos gumana ang sync. Nakapitch kay Tim.
 - Hinihintay ang sagot ng HRIS team sa 9 na tanong — lalo na ang **sample payload** at ang listahan ng status values; doon nakasalalay ang hugis ng sync.
 - Hindi pa rin nakansela ang Railway Hobby subscription (kay Tim ito).
