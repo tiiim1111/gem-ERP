@@ -34,6 +34,24 @@ Tim: "balak ko lahat ng related sa Employees module ipupullout nalang yung data 
 - GEM-ENI-local at **hindi** dapat galing sa HRIS: `userId` (login link — eksplisitong sinabi ni Tim na huwag idamay), `notes` (restricted-visibility), `version`, `archivedAt`.
 - May **repeatable-job infrastructure na** ang worker (BullMQ), kaya kasya ang nightly sync nang walang bagong infra.
 
+**Codex pala ang katapat sa HRIS, hindi tao** (Tim: "ibato na natin mismo kay Codex"). Kaya ginawan ko ng hiwalay na build prompt: `docs/hris-employee-api-codex-prompt.md`. Self-contained — wala si Codex sa repo natin.
+
+Iba ang hugis sa request document: hindi "pakisabi kung ano ang meron kayo" kundi **4-phase build instruction**, dahil kayang tingnan mismo ni Codex ang HRIS schema at sagutin ang 9 na tanong ko nang mag-isa:
+
+1. **Discovery bago code** — may mga **aktwal na SQL** na dapat patakbuhin at i-report: `GROUP BY status` (totoong values + counts, hindi hula), duplicate `work_email`/`employee_number`, missing required fields, branch/dept/position code lists. Dito nakukuha ang dalawang bagay na humahadlang sa build natin.
+2. **Build** — eksaktong contract, tugma sa `Paginated` envelope natin (`{data, meta}`) kaya kaunti lang ang mapping sa gilid natin.
+3. **Verify with evidence** — kasama ang test na **pumapalya kapag may key na wala sa allowlist**, para hindi tahimik na makalusot ang bagong column sa HRIS table.
+4. **Handover report** — ang mapping data na kailangan natin bago ang unang sync.
+
+**Mga desisyong teknikal sa contract (may dahilan, hindi arbitrary):**
+- **`ORDER BY updated_at, hris_id`** — hindi timestamp lang. Maraming row ang pareho ng timestamp (bulk update/import), at kapag walang stable tiebreaker ay **nagda-drop at nagdo-doble** ang records sa page boundaries. Ito ang pinaka-malamang na paraan na tahimik na mawalan ng data ang feed.
+- **Raw status value ang ipapadala, hindi mapped** — tayo ang magma-map gamit ang proposal nila. Mas mabuti ang hindi kilalang raw value kaysa maling hula na naka-bake na sa feed.
+- **Field allowlist, hindi denylist** (`SELECT` na pinangalanan, kailanman hindi `SELECT *`) — denylist ang gamit sa request doc para sa tao, pero sa agent na gumagawa ng code, allowlist ang tunay na garantiya.
+- **Explicit UTC offset** (`...Z`) sa timestamps, `YYYY-MM-DD` sa dates — UTC ang storage natin, Asia/Manila ang display; dumaan na tayo sa timezone bug dati.
+- **`null`, hindi `""`** sa walang laman — tunay na value ang `""` para sa GEM-ENI at susubukan nitong i-store.
+- **Kasama ang separated employees** — isa ito sa pangunahing dahilan ng feed; huwag i-filter para lang maging malinis ang payload.
+- **Walang 200 na may error body** — success ang 200 para sa sync job natin, kaya ang empty page ay maitatala bilang "walang pagbabago ngayon".
+
 **Pending / Next:**
 - **Hindi pa tinanggal ang "Add employee"** — sinadya. Kung tatanggalin ngayon, wala siyang paraan magdagdag ng employee habang wala pa ang feed. Dapat huli itong hakbang, pagkatapos gumana ang sync. Nakapitch kay Tim.
 - Hinihintay ang sagot ng HRIS team sa 9 na tanong — lalo na ang **sample payload** at ang listahan ng status values; doon nakasalalay ang hugis ng sync.
