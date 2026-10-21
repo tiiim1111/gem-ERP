@@ -342,7 +342,11 @@ describe('a real run', () => {
     expect(finishData(prisma).status).toBe(HrisSyncStatus.REVIEW_REQUIRED);
   });
 
-  it('skips a row whose department code is unmapped', async () => {
+  /*
+   * The employee still syncs: department is optional, and asset custody needs
+   * the number, the name and the status — not the reporting metadata.
+   */
+  it('creates the employee without a department when the code is unmapped', async () => {
     const { service, prisma } = build();
     queued(prisma);
     prisma.hrisDepartmentMap.findUnique.mockResolvedValue({
@@ -351,8 +355,11 @@ describe('a real run', () => {
     });
     await service.drainOnce();
 
-    expect(prisma.employee.create).not.toHaveBeenCalled();
+    expect(prisma.employee.create).toHaveBeenCalledTimes(1);
+    expect(prisma.employee.create.mock.calls[0][0].data.departmentId).toBeNull();
     expect(issueCodes(prisma)).toContain(HRIS_ISSUE.unmappedDepartment);
+    // Visible, but not a failure.
+    expect(finishData(prisma).status).toBe(HrisSyncStatus.REVIEW_REQUIRED);
   });
 
   /*

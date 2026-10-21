@@ -177,35 +177,33 @@ export function decideRow(input: DecideInput): RowDecision {
     };
   }
 
+  /*
+   * An unmapped department or position leaves that one field empty — it does
+   * not hold the person back.
+   *
+   * Both are optional on an employee, and neither is what asset custody runs
+   * on: that needs the number, the name and the status. Skipping somebody
+   * because a code is unmapped would block the custodian of a laptop over
+   * reporting metadata, and would make mapping ten codes a precondition for
+   * the feed working at all. Flagged for review so it still gets fixed.
+   */
   if (input.departmentUnmapped) {
-    return {
-      action: 'skip',
-      employeeId: existing?.id,
-      issues: [
-        {
-          code: HRIS_ISSUE.unmappedDepartment,
-          severity: 'ERROR',
-          message:
-            `HRIS department code "${feed.departmentCode}" is not mapped to a GEM-ENI department. ` +
-            'Map it on the integration page, then run the sync again.',
-        },
-      ],
-    };
+    issues.push({
+      code: HRIS_ISSUE.unmappedDepartment,
+      severity: 'REVIEW',
+      message:
+        `HRIS department code "${feed.departmentCode}" is not mapped, so this employee has no ` +
+        'department. Everything else synced. Map it on the integration page and run again.',
+    });
   }
   if (input.positionUnmapped) {
-    return {
-      action: 'skip',
-      employeeId: existing?.id,
-      issues: [
-        {
-          code: HRIS_ISSUE.unmappedPosition,
-          severity: 'ERROR',
-          message:
-            `HRIS position code "${feed.positionCode}" is not mapped to a GEM-ENI position. ` +
-            'Map it on the integration page, then run the sync again.',
-        },
-      ],
-    };
+    issues.push({
+      code: HRIS_ISSUE.unmappedPosition,
+      severity: 'REVIEW',
+      message:
+        `HRIS position code "${feed.positionCode}" is not mapped, so this employee has no ` +
+        'position. Everything else synced. Map it on the integration page and run again.',
+    });
   }
 
   if (input.employeeNumberTakenByOther) {
@@ -290,8 +288,8 @@ export function decideRow(input: DecideInput): RowDecision {
     middleName: feed.middleName,
     lastName: feed.lastName,
     workEmail,
-    departmentId: lookups.departmentId,
-    positionId: lookups.positionId,
+    departmentId: input.departmentUnmapped ? null : lookups.departmentId,
+    positionId: input.positionUnmapped ? null : lookups.positionId,
     status: mapping.status,
     startDate,
     separationDate,

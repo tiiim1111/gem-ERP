@@ -177,16 +177,38 @@ describe('decideRow', () => {
   });
 
   describe('unmapped organisational codes', () => {
-    it('skips an unmapped department rather than filing the person anywhere', () => {
+    /*
+     * Both fields are optional on an employee, and asset custody runs on the
+     * number, the name and the status. Holding back the custodian of a laptop
+     * over reporting metadata would be the wrong trade — and it would make
+     * mapping every code a precondition for the feed working at all.
+     */
+    it('still syncs the employee when the department is unmapped', () => {
       const decision = decideRow(input({ departmentUnmapped: true }));
-      expect(decision.action).toBe('skip');
+      expect(decision.action).toBe('create');
+      expect(decision.data?.departmentId).toBeNull();
       expect(codes(decision)).toEqual([HRIS_ISSUE.unmappedDepartment]);
     });
 
-    it('skips an unmapped position', () => {
+    it('still syncs the employee when the position is unmapped', () => {
       const decision = decideRow(input({ positionUnmapped: true }));
-      expect(decision.action).toBe('skip');
+      expect(decision.action).toBe('create');
+      expect(decision.data?.positionId).toBeNull();
       expect(codes(decision)).toEqual([HRIS_ISSUE.unmappedPosition]);
+    });
+
+    /* Flagged, not silent — the metadata is still meant to get fixed. */
+    it('flags it for review rather than as a failure', () => {
+      const decision = decideRow(input({ departmentUnmapped: true }));
+      expect(decision.issues[0].severity).toBe('REVIEW');
+    });
+
+    it('never files the person under a stale department', () => {
+      const decision = decideRow(
+        input({ departmentUnmapped: true, lookups: { departmentId: 'dept-old', positionId: 'pos-1' } }),
+      );
+      expect(decision.data?.departmentId).toBeNull();
+      expect(decision.data?.positionId).toBe('pos-1');
     });
 
     it('accepts a record with no department at all', () => {

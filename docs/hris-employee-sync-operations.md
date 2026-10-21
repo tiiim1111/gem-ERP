@@ -36,6 +36,27 @@ wala na sa snapshot, **ini-report** iyon — hindi dinededelete, ina-archive o
 dinideactivate. Ang record na iyon ang nagtatali sa nawawalang laptop sa isang
 pangalan.
 
+## 1.1 Ano talaga ang kailangan sa feed
+
+Para sa asset custody — kung sino ang may hawak ng gamit at masasagot ba nila
+iyon:
+
+| Field | Bakit kailangan |
+|---|---|
+| `hrisId` | Ang match key sa bawat sync. |
+| `employeeNumber` | Nakalimbag sa acknowledgement form na pinipirmahan nila. |
+| `firstName`, `lastName` | Pagkilala sa custodian. |
+| `employmentStatus` | Pwede pa bang bigyan ng asset; nagti-trigger ng clearance. |
+| `updatedAt` | Provenance. |
+
+Ang lahat ng iba ay **pampaganda**: `middleName` at `workEmail` (printed forms at
+acknowledgement notices), `dateHired` (reference lang), `archivedAt` (pampakilala
+ng archived sa inactive), at `departmentCode` / `positionCode` (department-level
+na asset reporting, at approval routing).
+
+Kaya **hindi humaharang** ang kulang sa mga pampaganda. Ang `branch` ay hindi
+galing sa HRIS — atin iyon (tingnan sa ibaba).
+
 ## 2. Mga setting
 
 Nasa `.env.prod` sa server. Nakasulat din lahat sa `.env.example`.
@@ -143,7 +164,10 @@ Nasa **Administration → HRIS Feed** sa sidebar. Superadmin lang, o may
    sa feed, para may maituro ka sa Code mappings. Reference data iyon, hindi
    pagbabago sa employee — at kung hindi iimbakin, sasabihin lang ng dry run na
    "unmapped" nang wala kang paraan para i-map, kaya patay na dulo.
-3. **Kung may unmapped na code**, may dalawang pagpipilian sa Code mappings:
+3. **Kung may unmapped na code** — hindi ito humaharang. Nasync pa rin ang
+   empleyado, blangko lang ang department o position niya, at naka-flag para
+   review. Ang kailangan ng asset custody ay ang number, pangalan at status;
+   reporting metadata ang dalawang iyon. Dalawang paraan para punan:
    - **Create from HRIS** — gumagawa ng department/position sa GEM-ENI para sa
      bawat code na walang katumbas, at itinuturo agad ang mapping. Isang pindot,
      naka-audit, at inuulat kung ano ang ginawa. **Pinangalanan ayon sa code**
@@ -192,7 +216,7 @@ huwag gumalaw.
 
 | Code | Ano ang gagawin |
 |---|---|
-| `UNMAPPED_DEPARTMENT` / `UNMAPPED_POSITION` | I-map sa HRIS Feed page, tapos i-run muli. Nilaktawan lang ang apektadong record. |
+| `UNMAPPED_DEPARTMENT` / `UNMAPPED_POSITION` | **Nasync pa rin ang empleyado** — blangko lang ang field na iyon. I-map sa HRIS Feed page at i-run muli para mapunan. |
 | `UNKNOWN_STATUS` | May bagong status sa HRIS. Ginawang INACTIVE (ang maingat na dulo) at nakaflag — kumpirmahin ang tamang mapping. |
 | `AMBIGUOUS_MATCH` | Dalawang unlinked na employee ang may parehong number. Ayusin nang manu-mano — hindi pipili ang sync. |
 | `DUPLICATE_EMPLOYEE_NUMBER` | Doble sa loob mismo ng snapshot. Ayusin sa HRIS. |
