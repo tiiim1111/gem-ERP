@@ -54,6 +54,26 @@ Nasa `.env.prod` sa server. Nakasulat din lahat sa `.env.example`.
 Gumagana ang lahat kahit blanko ang mga ito — nananatili lang na manual ang
 employees, gaya ng dati.
 
+### Company sa HRIS ≠ branch sa GEM-ENI
+
+May `company_id` ang HRIS (`companies`, isang row: `GEM` / GEM Investment Corp
+/ GemCor), at natural isipin na iyon na ang branch. Hindi.
+
+**Isang kompanya lang**, kaya pare-pareho ang value sa lahat ng empleyado — ang
+i-map ang `GEM` → isang branch ay eksaktong kapareho ng pag-set ng default
+branch, walang dagdag na impormasyon. At sa prinsipyo: ang isang kompanya ay
+maaaring may maraming branch, kaya hindi masasabi ng company code kung alin
+doon.
+
+Ang tunay na ginagawa ng company field ay **guard**, hindi source — may filter
+ang producer at ina-assert natin ang `meta.companyCode` bawat page. Iyon ang
+humaharang sa problemang **unique lang kada kompanya** ang employee number sa
+HRIS gayong **global** ang constraint sa GEM-ENI.
+
+Kapag nadagdagan ng pangalawang kompanya ang HRIS, **tinatanggihan ang buong
+payload** kaysa hulaan. Sinadya iyon: ang bagong kompanya ay desisyong
+pangnegosyo, hindi dapat tahimik na sinisipsip ng nightly job.
+
 ### Bakit kailangan ng default branch
 
 Walang branch concept ang HRIS, pero **required** ang `branchId` sa GEM-ENI at
