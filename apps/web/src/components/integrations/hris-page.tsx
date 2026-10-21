@@ -369,6 +369,31 @@ export function HrisIntegrationPage() {
                   <li key={blocker}>{blocker}</li>
                 ))}
               </ul>
+              {/* The setting is an env var and needs the exact code, so name
+                  the options here rather than sending someone to the database. */}
+              {status.defaultBranchProblem ? (
+                <div className="mt-2 text-sm">
+                  <p className="text-muted-foreground">
+                    Set <code className="font-mono">GEMENI_HRIS_DEFAULT_BRANCH_CODE</code> in{' '}
+                    <code className="font-mono">.env.prod</code> to one of:
+                  </p>
+                  {status.availableBranches.length === 0 ? (
+                    <p className="mt-1 text-destructive">
+                      There are no active branches yet — create one under Administration →
+                      Branches first.
+                    </p>
+                  ) : (
+                    <ul className="mt-1 space-y-0.5">
+                      {status.availableBranches.map((branch) => (
+                        <li key={branch.id}>
+                          <code className="font-mono font-medium">{branch.code}</code>{' '}
+                          <span className="text-muted-foreground">— {branch.name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

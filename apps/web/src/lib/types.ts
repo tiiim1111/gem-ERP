@@ -525,6 +525,8 @@ export interface HrisStatus {
   expectedCompanyCode: string;
   defaultBranch: { id: string; code: string; name: string } | null;
   defaultBranchProblem: string | null;
+  /** Active branches, so the page can name the code to configure. */
+  availableBranches: Array<{ id: string; code: string; name: string }>;
   cron: string;
   timezone: string;
   lastRun: HrisSyncRun | null;

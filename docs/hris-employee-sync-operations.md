@@ -47,7 +47,7 @@ Nasa `.env.prod` sa server. Nakasulat din lahat sa `.env.example`.
 | `GEMENI_HRIS_EMPLOYEE_PATH` | `/api/v1/integrations/gemeni/employees` |
 | `GEMENI_HRIS_EXPECTED_COMPANY_CODE` | `GEM` |
 | `GEMENI_HRIS_TOKEN` | Ang shared bearer token. **Huwag i-commit, huwag i-print.** |
-| `GEMENI_HRIS_DEFAULT_BRANCH_CODE` | Branch code ng bagong employees — kailangang **active**. |
+| `GEMENI_HRIS_DEFAULT_BRANCH_CODE` | Branch code ng bagong employees — kailangang **active**. Para sa GemCor: ang branch na **SBMA GEM Investment Corp.** Kung hindi mo alam ang code, inililista ito ng HRIS Feed page mismo. |
 | `GEMENI_HRIS_SYNC_CRON` | `0 2 * * *` |
 | `GEMENI_HRIS_SYNC_TIMEZONE` | `Asia/Manila` |
 
@@ -79,6 +79,11 @@ pangnegosyo, hindi dapat tahimik na sinisipsip ng nightly job.
 Walang branch concept ang HRIS, pero **required** ang `branchId` sa GEM-ENI at
 nakatali ito sa asset tag (`AST-{BRANCH}-…`) at sa kung sino ang nakakakita ng
 anong asset. Kaya eksplisito ito, hindi hinuhulaan.
+
+Ang kasalukuyang mapping: **HRIS company `GEM` (GemCor) → branch na SBMA GEM
+Investment Corp.** Isa lang ang kompanya sa HRIS, kaya isa rin ang branch na
+pinupuntahan — at hindi galing sa company field ang pagpipiliang iyon, nakatakda
+ito sa config (tingnan sa itaas kung bakit).
 
 Nailalapat lang ito **sa paggawa**. Kapag inilipat mo ang isang employee sa
 ibang branch, mananatili iyon — hindi na ito pinapalitan ng susunod na sync.

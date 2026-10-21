@@ -32,6 +32,12 @@ export interface HrisStatusView {
   defaultBranch: { code: string; name: string; id: string } | null;
   /** Set when a code is configured but does not resolve to an active branch. */
   defaultBranchProblem: string | null;
+  /**
+   * Active branches, so the admin page can show which code to configure. The
+   * setting is an env var and needs the exact code, and hunting for it in the
+   * database is a poor first experience at precisely the blocking step.
+   */
+  availableBranches: Array<{ id: string; code: string; name: string }>;
   cron: string;
   timezone: string;
   lastRun: HrisRunView | null;
@@ -133,6 +139,12 @@ export class HrisAdminService {
         this.prisma.hrisPositionMap.count({ where: { positionId: null } }),
       ]);
 
+    const availableBranches = await this.prisma.branch.findMany({
+      where: { isActive: true, archivedAt: null },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, name: true },
+    });
+
     let defaultBranch: HrisStatusView['defaultBranch'] = null;
     let defaultBranchProblem: string | null = null;
     if (hris.defaultBranchCode) {
@@ -160,6 +172,7 @@ export class HrisAdminService {
       expectedCompanyCode: hris.expectedCompanyCode,
       defaultBranch,
       defaultBranchProblem,
+      availableBranches,
       cron: hris.cron,
       timezone: hris.timezone,
       lastRun: lastRun ? this.toRunView(lastRun, true) : null,
