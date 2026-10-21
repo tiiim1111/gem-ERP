@@ -136,8 +136,13 @@ Nasa **Administration → HRIS Feed** sa sidebar. Superadmin lang, o may
 1. **Test connection** — nagre-report ng bilang at metadata lang, walang
    employee data.
 2. **Dry run** — dumadaan sa **eksaktong** parehong desisyon, pero **walang
-   isinusulat**. Ito ang pinaka-mura at pinaka-mabuting paraan para makita ang
-   mangyayari.
+   ginagalaw na employee**. Ito ang pinaka-mura at pinaka-mabuting paraan para
+   makita ang mangyayari.
+
+   Isang bagay na **iniimbak** nito: ang mga department/position code na nakita
+   sa feed, para may maituro ka sa Code mappings. Reference data iyon, hindi
+   pagbabago sa employee — at kung hindi iimbakin, sasabihin lang ng dry run na
+   "unmapped" nang wala kang paraan para i-map, kaya patay na dulo.
 3. **Tingnan ang resulta ng dry run.** Bago mag-enable, dapat:
    - tugma ang company code at `snapshot: true`;
    - nabilang lahat ng record (tingnan ang producer total vs. counts);

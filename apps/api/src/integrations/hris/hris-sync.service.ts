@@ -214,7 +214,7 @@ export class HrisSyncService {
     const duplicateNumbers = duplicateEmployeeNumbers(snapshot.employees);
     const duplicateEmails = duplicateWorkEmails(snapshot.employees);
 
-    const departmentMap = await this.syncLookupMaps(snapshot.employees, dryRun);
+    const departmentMap = await this.syncLookupMaps(snapshot.employees);
 
     for (const feed of snapshot.employees) {
       try {
@@ -496,11 +496,17 @@ export class HrisSyncService {
    *
    * An unseen code is persisted with an exact-code suggestion when one exists,
    * flagged `autoSuggested` so it is visibly unreviewed, and left unmapped
-   * otherwise. Organisational rows are never created from feed data.
+   * otherwise. Organisational rows are never created from feed data — only the
+   * mapping rows that point at existing ones.
+   *
+   * This happens on a dry run too. The guarantee a rehearsal has to make is
+   * that it changes no employee, and recording which codes the feed uses is
+   * precisely what the review it exists to enable needs: without these rows
+   * there is nothing on the admin page to point at a department, so a dry run
+   * reporting "unmapped" would be a dead end.
    */
   private async syncLookupMaps(
     employees: readonly HrisEmployee[],
-    dryRun: boolean,
   ): Promise<{ departments: Map<string, string | null>; positions: Map<string, string | null> }> {
     const departmentCodes = [
       ...new Set(employees.map((e) => e.departmentCode).filter((c): c is string => !!c)),
@@ -519,18 +525,13 @@ export class HrisSyncService {
           where: { code, isActive: true, archivedAt: null },
           select: { id: true },
         });
-        if (!dryRun) {
-          row = await this.prisma.hrisDepartmentMap.create({
-            data: {
-              hrisCode: code,
-              departmentId: match?.id ?? null,
-              autoSuggested: match !== null,
-            },
-          });
-        } else {
-          departments.set(code, match?.id ?? null);
-          continue;
-        }
+        row = await this.prisma.hrisDepartmentMap.create({
+          data: {
+            hrisCode: code,
+            departmentId: match?.id ?? null,
+            autoSuggested: match !== null,
+          },
+        });
       }
       departments.set(code, row.departmentId);
     }
@@ -542,18 +543,13 @@ export class HrisSyncService {
           where: { code, isActive: true, archivedAt: null },
           select: { id: true },
         });
-        if (!dryRun) {
-          row = await this.prisma.hrisPositionMap.create({
-            data: {
-              hrisCode: code,
-              positionId: match?.id ?? null,
-              autoSuggested: match !== null,
-            },
-          });
-        } else {
-          positions.set(code, match?.id ?? null);
-          continue;
-        }
+        row = await this.prisma.hrisPositionMap.create({
+          data: {
+            hrisCode: code,
+            positionId: match?.id ?? null,
+            autoSuggested: match !== null,
+          },
+        });
       }
       positions.set(code, row.positionId);
     }

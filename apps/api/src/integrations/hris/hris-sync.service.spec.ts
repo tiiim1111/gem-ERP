@@ -532,28 +532,76 @@ describe("what a sync must never touch", () => {
 });
 
 describe('a dry run', () => {
-  /*
-   * The single most important safety property: the rehearsal must take the
-   * same decision path and write nothing but its own record. A rehearsal that
-   * runs different code proves nothing about the real run.
-   */
-  it('writes no employee and no lookup mapping', async () => {
-    const { service, prisma } = build();
-    prisma.hrisSyncRun.findFirst.mockImplementation(({ where }: { where: { status?: unknown } }) =>
-      Promise.resolve(
-        JSON.stringify(where?.status ?? {}).includes('RUNNING')
-          ? null
-          : { id: 'run-1', dryRun: true },
-      ),
+  function queuedDry(prisma: PrismaMock) {
+    prisma.hrisSyncRun.findFirst.mockImplementation(
+      ({ where }: { where: { status?: unknown } }) =>
+        Promise.resolve(
+          JSON.stringify(where?.status ?? {}).includes('RUNNING')
+            ? null
+            : { id: 'run-1', dryRun: true },
+        ),
     );
+  }
+
+  /*
+   * The single most important safety property: the rehearsal takes the same
+   * decision path and changes no employee. A rehearsal that runs different
+   * code proves nothing about the real run.
+   */
+  it('changes no employee, but still reports what it would have done', async () => {
+    const { service, prisma } = build();
+    queuedDry(prisma);
     await service.drainOnce();
 
     expect(prisma.employee.create).not.toHaveBeenCalled();
     expect(prisma.employee.update).not.toHaveBeenCalled();
-    expect(prisma.hrisDepartmentMap.create).not.toHaveBeenCalled();
-    expect(prisma.hrisPositionMap.create).not.toHaveBeenCalled();
-    // It still reports what it would have done.
     expect(finishData(prisma).created).toBe(1);
+  });
+
+  /*
+   * It does record the lookup codes it saw. Those are reference data, not
+   * employee changes, and they are exactly what the review a dry run exists
+   * to enable needs: without a mapping row there is nothing on the admin page
+   * to point at a department, so a dry run reporting "unmapped" would be a
+   * dead end with no way out but to enable writing.
+   */
+  it('records the department and position codes so they can be mapped', async () => {
+    const { service, prisma } = build();
+    queuedDry(prisma);
+    prisma.hrisDepartmentMap.findUnique.mockResolvedValue(null);
+    prisma.hrisPositionMap.findUnique.mockResolvedValue(null);
+    prisma.hrisDepartmentMap.create.mockResolvedValue({ departmentId: 'dept-1' });
+    prisma.hrisPositionMap.create.mockResolvedValue({ positionId: 'pos-1' });
+    await service.drainOnce();
+
+    expect(prisma.hrisDepartmentMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ hrisCode: 'ADMIN', autoSuggested: true }),
+      }),
+    );
+    expect(prisma.hrisPositionMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ hrisCode: 'ITO', autoSuggested: true }),
+      }),
+    );
+    expect(prisma.employee.create).not.toHaveBeenCalled();
+  });
+
+  /* An unrecognised code is recorded unmapped, never pointed somewhere. */
+  it('records an unmatched code with no target', async () => {
+    const { service, prisma } = build();
+    queuedDry(prisma);
+    prisma.hrisDepartmentMap.findUnique.mockResolvedValue(null);
+    prisma.department.findFirst.mockResolvedValue(null);
+    prisma.hrisDepartmentMap.create.mockResolvedValue({ departmentId: null });
+    await service.drainOnce();
+
+    expect(prisma.hrisDepartmentMap.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ departmentId: null, autoSuggested: false }),
+      }),
+    );
+    expect(issueCodes(prisma)).toContain(HRIS_ISSUE.unmappedDepartment);
   });
 });
 
