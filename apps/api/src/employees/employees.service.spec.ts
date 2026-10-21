@@ -116,6 +116,10 @@ describe('EmployeesService', () => {
       audit as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sequences as any,
+      // HRIS sync off: these tests cover the manual employee paths, which the
+      // feed being live would (correctly) refuse.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { hris: { enabled: false } } as any,
     );
   });
 

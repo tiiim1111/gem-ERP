@@ -14,6 +14,8 @@ export const QUEUE_NAMES = {
   NOTIFICATIONS: "notifications",
   /** Consumed here; produced by apps/api starting in Phase 7 (Reports). */
   REPORT_EXPORTS: "report-exports",
+  /** Internal to the worker: nightly HRIS employee sync trigger. */
+  HRIS_SYNC: "hris-employee-sync",
   /** Internal to the worker: repeatable liveness heartbeat. */
   HEARTBEAT: "worker-heartbeat",
 } as const;
@@ -46,6 +48,28 @@ export const NOTIFICATION_DETECTOR_INTERVAL_MS = 15 * 60 * 1000;
  * double-process a job.
  */
 export const EXPORT_POLL_INTERVAL_MS = 30 * 1000;
+
+/**
+ * Nightly HRIS employee sync. A cron pattern rather than an interval so the
+ * run lands at a predictable local hour, and in Asia/Manila rather than the
+ * container's UTC — "02:00" has to mean 02:00 to the people who read the run
+ * history the next morning.
+ *
+ * Both are overridable because the schedule is an operational choice, not a
+ * property of the code.
+ */
+/*
+ * `??` is not enough here: docker-compose substitutes an unset `${VAR:-}` as
+ * `VAR=""`, and BullMQ rejects an empty cron pattern — the scheduler would
+ * fail to register and the nightly sync would simply never run.
+ */
+function envOr(name: string, fallback: string): string {
+  const value = process.env[name];
+  return value && value.trim() !== "" ? value.trim() : fallback;
+}
+
+export const HRIS_SYNC_CRON = envOr("GEMENI_HRIS_SYNC_CRON", "0 2 * * *");
+export const HRIS_SYNC_TIMEZONE = envOr("GEMENI_HRIS_SYNC_TIMEZONE", "Asia/Manila");
 
 /**
  * Retry/backoff defaults applied to every business queue. Individual jobs can

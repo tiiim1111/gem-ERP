@@ -69,4 +69,46 @@ export class AppConfigService {
   get logLevel(): string {
     return this.env.LOG_LEVEL ?? (this.isProduction ? 'info' : 'debug');
   }
+
+  /*
+   * HRIS employee feed. `hris.token` is the only secret here; it is read by
+   * the client when building a request header and must never be returned by an
+   * endpoint, written to a log line, or stored in a sync run or audit record.
+   */
+  get hris(): {
+    enabled: boolean;
+    baseUrl?: string;
+    employeePath: string;
+    expectedCompanyCode: string;
+    token?: string;
+    defaultBranchCode?: string;
+    cron: string;
+    timezone: string;
+    pageSize: number;
+    timeoutMs: number;
+    pollMs: number;
+  } {
+    return {
+      enabled: this.env.GEMENI_HRIS_SYNC_ENABLED,
+      baseUrl: this.env.GEMENI_HRIS_BASE_URL,
+      employeePath: this.env.GEMENI_HRIS_EMPLOYEE_PATH,
+      expectedCompanyCode: this.env.GEMENI_HRIS_EXPECTED_COMPANY_CODE,
+      token: this.env.GEMENI_HRIS_TOKEN,
+      defaultBranchCode: this.env.GEMENI_HRIS_DEFAULT_BRANCH_CODE,
+      cron: this.env.GEMENI_HRIS_SYNC_CRON,
+      timezone: this.env.GEMENI_HRIS_SYNC_TIMEZONE,
+      pageSize: this.env.GEMENI_HRIS_PAGE_SIZE,
+      timeoutMs: this.env.GEMENI_HRIS_TIMEOUT_MS,
+      pollMs: this.env.GEMENI_HRIS_POLL_MS,
+    };
+  }
+
+  /**
+   * Whether the feed is configured well enough to attempt a call at all.
+   * Separate from `enabled` so the admin page can explain *why* it is idle.
+   */
+  get hrisConfigured(): boolean {
+    const hris = this.hris;
+    return Boolean(hris.baseUrl && hris.token);
+  }
 }

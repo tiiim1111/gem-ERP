@@ -17,6 +17,7 @@ import {
 import { EmployeeStatus, PERMISSIONS } from '@gemerp/shared';
 import {
   activateEmployee,
+  getEmployeeSource,
   listBranches,
   listDepartments,
   listEmployees,
@@ -160,7 +161,18 @@ export function EmployeesPage({
     },
   });
 
-  const canCreate = can(PERMISSIONS.employee.create);
+  /*
+   * With the HRIS as the system of record, a hand-made employee would be a
+   * duplicate or get overwritten — the API refuses it too, so the affordance
+   * is hidden rather than left to fail.
+   */
+  const employeeSourceQuery = useQuery({
+    queryKey: ['employee-source'],
+    queryFn: ({ signal }) => getEmployeeSource(signal),
+    staleTime: 5 * 60 * 1000,
+  });
+  const hrisManaged = employeeSourceQuery.data?.hrisManaged ?? false;
+  const canCreate = can(PERMISSIONS.employee.create) && !hrisManaged;
   const canUpdate = can(PERMISSIONS.employee.update);
   const canArchive = can(PERMISSIONS.employee.archive);
   const hasRowActions = canUpdate || canArchive;
@@ -265,7 +277,9 @@ export function EmployeesPage({
             description={
               hasFilters
                 ? 'Try adjusting your search or filters.'
-                : 'Create the first employee record to get started.'
+                : hrisManaged
+                  ? 'Employees come from the HRIS. They appear here after the next sync.'
+                  : 'Create the first employee record to get started.'
             }
             action={
               canCreate && !hasFilters ? (

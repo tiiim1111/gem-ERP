@@ -13,6 +13,7 @@ import { Redis } from "ioredis";
 import { PrismaClient } from "@prisma/client";
 
 import { env } from "./env";
+import { enqueueHrisEmployeeSync } from "./jobs/hris-employee-sync";
 import { generateWorkOrdersFromDuePlans } from "./jobs/maintenance-work-orders";
 import { runNotificationDetectors } from "./jobs/notification-detectors";
 import {
@@ -26,6 +27,8 @@ import {
   EXPORT_POLL_INTERVAL_MS,
   HEARTBEAT_INTERVAL_MS,
   HEARTBEAT_JOB_OPTIONS,
+  HRIS_SYNC_CRON,
+  HRIS_SYNC_TIMEZONE,
   MAINTENANCE_GENERATION_INTERVAL_MS,
   NOTIFICATION_DETECTOR_INTERVAL_MS,
   QUEUE_NAMES,
@@ -287,6 +290,28 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
+// "hris-employee-sync" — the nightly trigger for the HRIS employee feed. The
+// processor only queues a run row; apps/api owns the reconciliation and drains
+// the queue, so a scheduled run and a manual "Run now" follow one path.
+// Idempotent: a run already queued or running is left alone.
+const hrisQueue = registerQueue(QUEUE_NAMES.HRIS_SYNC);
+registerWorker(QUEUE_NAMES.HRIS_SYNC, async (job) => {
+  if (job.name !== "enqueue-employee-sync") {
+    await acknowledgeStub(job, "HRIS employee sync");
+    return;
+  }
+  const prisma = getPrisma();
+  if (!prisma) {
+    logger.warn(
+      { queue: job.queueName, jobId: job.id },
+      "DATABASE_URL is not configured — skipping the HRIS employee sync trigger",
+    );
+    return;
+  }
+  const summary = await enqueueHrisEmployeeSync(prisma, logger);
+  logger.info({ jobId: job.id, ...summary }, "HRIS employee sync trigger done");
+});
+
 // ---------------------------------------------------------------------------
 // Startup
 // ---------------------------------------------------------------------------
@@ -322,6 +347,14 @@ async function main(): Promise<void> {
     "report-exports-every-30s",
     { every: EXPORT_POLL_INTERVAL_MS },
     { name: "process-queued-exports" },
+  );
+
+  // The nightly HRIS employee sync. upsertJobScheduler is idempotent across
+  // restarts, so this never ends up with two schedulers firing duplicate runs.
+  await hrisQueue.upsertJobScheduler(
+    "hris-employee-sync-nightly",
+    { pattern: HRIS_SYNC_CRON, tz: HRIS_SYNC_TIMEZONE },
+    { name: "enqueue-employee-sync" },
   );
 
   const redisTarget = new URL(env.REDIS_URL);

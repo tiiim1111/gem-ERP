@@ -130,6 +130,13 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
     [positionsQuery.data, employee?.position],
   );
 
+  /*
+   * A linked employee's identity, assignment and status are maintained by the
+   * HRIS. The API refuses those edits as well — this only saves the user from
+   * typing into a field that would be rejected.
+   */
+  const hrisManaged = !!employee?.hrisId;
+
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
     defaultValues: {
@@ -253,6 +260,13 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
       </DialogHeader>
       <form onSubmit={onSubmit} noValidate className="contents">
         <DialogBody className="space-y-4">
+          {hrisManaged ? (
+            <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+              This employee comes from the HRIS. Name, number, work email, department, position,
+              status and hire date are maintained there and are read-only here. Branch, supervisor,
+              the linked login account and notes stay editable in GEM-ENI.
+            </p>
+          ) : null}
           <FormError message={serverError} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -263,17 +277,17 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
               required
             >
               <Input
-                id="emp-first"
+                id="emp-first" disabled={hrisManaged}
                 aria-invalid={!!errors.firstName}
                 data-autofocus
                 {...form.register('firstName')}
               />
             </FormField>
             <FormField label="Middle name" htmlFor="emp-middle" error={errors.middleName?.message}>
-              <Input id="emp-middle" {...form.register('middleName')} />
+              <Input id="emp-middle" disabled={hrisManaged} {...form.register('middleName')} />
             </FormField>
             <FormField label="Last name" htmlFor="emp-last" error={errors.lastName?.message} required>
-              <Input id="emp-last" aria-invalid={!!errors.lastName} {...form.register('lastName')} />
+              <Input id="emp-last" disabled={hrisManaged} aria-invalid={!!errors.lastName} {...form.register('lastName')} />
             </FormField>
           </div>
 
@@ -292,14 +306,14 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
               error={errors.employeeNumber?.message}
               hint="Leave blank to auto-generate."
             >
-              <Input id="emp-number" className="font-mono" {...form.register('employeeNumber')} />
+              <Input id="emp-number" disabled={hrisManaged} className="font-mono" {...form.register('employeeNumber')} />
             </FormField>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField label="Work email" htmlFor="emp-email" error={errors.workEmail?.message}>
               <Input
-                id="emp-email"
+                id="emp-email" disabled={hrisManaged}
                 type="email"
                 autoComplete="off"
                 aria-invalid={!!errors.workEmail}
@@ -323,7 +337,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
               </Select>
             </FormField>
             <FormField label="Department" htmlFor="emp-dept" error={errors.departmentId?.message}>
-              <Select id="emp-dept" {...form.register('departmentId')}>
+              <Select id="emp-dept" disabled={hrisManaged} {...form.register('departmentId')}>
                 <option value="">No department</option>
                 {departmentOptions.map((department) => (
                   <option key={department.id} value={department.id}>
@@ -336,7 +350,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField label="Position" htmlFor="emp-position" error={errors.positionId?.message}>
-              <Select id="emp-position" {...form.register('positionId')}>
+              <Select id="emp-position" disabled={hrisManaged} {...form.register('positionId')}>
                 <option value="">No position</option>
                 {positionOptions.map((position) => (
                   <option key={position.id} value={position.id}>
@@ -359,7 +373,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField label="Status" htmlFor="emp-status" error={errors.status?.message} required>
-              <Select id="emp-status" {...form.register('status')}>
+              <Select id="emp-status" disabled={hrisManaged} {...form.register('status')}>
                 {Object.values(EmployeeStatus).map((status) => (
                   <option key={status} value={status}>
                     {humanize(status)}
@@ -368,7 +382,7 @@ export function EmployeeFormDialog({ open, onOpenChange, employee }: EmployeeFor
               </Select>
             </FormField>
             <FormField label="Start date" htmlFor="emp-start" error={errors.startDate?.message}>
-              <Input id="emp-start" type="date" {...form.register('startDate')} />
+              <Input id="emp-start" disabled={hrisManaged} type="date" {...form.register('startDate')} />
             </FormField>
           </div>
 

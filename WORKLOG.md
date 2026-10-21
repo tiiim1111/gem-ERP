@@ -17,6 +17,48 @@ Entry format:
 
 ---
 
+## 2026-10-21 (hapon) — 🔌 HRIS employee consumer: naitayo at na-verify (hindi pa naka-deploy)
+
+Natapos ni Codex ang producer side; ibinalik si Tim na may build prompt para sa consumer side natin, may awtorisasyon na mag-commit, mag-push at mag-deploy.
+
+**Naitama ang sarili kong pagkakamali:** "eleven record keys" ang nasa Phase 2 doc ko gayong **12** ang nasa JSON contract. Tama ang nahuli ni Codex — mahalaga ito dahil **exact-count** ang allowlist test. Naitama na ang doc.
+
+**Arkitektural na desisyon (may ebidensya, hindi panlasa):** nasa **API** ang engine, hindi sa worker.
+
+- Wala talagang test ang `apps/worker` — at ang reconciliation ang pinaka-mapanganib na parte. Hindi ko ilalagay ang pinaka-delikadong logic sa lugar na hindi matetestingan.
+- Walang `bullmq`/`ioredis`/`@nestjs/schedule` ang API at wala ring interval/cron, kaya hindi ito makakapag-enqueue. Ang established pattern (`report-exports`) ay **gumagawa ang API ng DB row, dinudrain ng worker**.
+- **Enumerated** ang packages sa Dockerfiles (`COPY packages/reports …`) — mismong ang bug na nagpabagsak sa Railway deploy noon. Kaya iniwasan ang bagong package.
+- Naging: engine sa API (fully tested), nightly BullMQ job sa worker na **gumagawa lang ng QUEUED row**, at poller sa API na nagda-drain. **Isang landas** ang nightly cron at ang "Run now" — kaya ang na-rehearse sa dry run ay siya ring tatakbo.
+
+**Dalawang bug na nahuli ko sa sarili kong code bago pa makalabas:**
+
+1. **Deployment-breaking.** Pinapalitan ng docker-compose ang `${VAR:-}` ng `VAR=""` — **empty string, hindi undefined**. Ang `.min(1).optional()`/`.url().optional()` ko ay pumapalya doon, at `process.exit(1)` ang `loadEnv()` sa failure. Ibig sabihin: **hindi mag-bo-boot ang API sa lahat ng existing deployment** pagka-deploy. Pinatunayan ko sa node bago ayusin. Ginawang `optionalEnv`/`envWithDefault` na tumuturing sa `""` bilang wala — at **kailangang nasa LOOB ng preprocess ang default**, dahil `''` ang input, hindi `undefined` (nahuli rin ito ng test ko sa unang pasada). May `env.spec.ts` na ngayon na ginagaya ang **eksaktong output ng `docker compose config`**.
+2. **Kaparehong klase sa worker.** `process.env.X ?? default` ay hindi humuhuli ng `""`, at **tinatanggihan ng BullMQ ang blankong cron pattern** — hindi makakarehistro ang scheduler at hindi tatakbo kailanman ang nightly sync. Ginawang `envOr()`.
+
+**Nahuli rin:** **by exclusion** ang `BRANCH_ADMIN_PERMISSIONS` (`ALL_PERMISSIONS.filter(...)`), kaya **awtomatikong nabibigay** sa branch admin ang bawat bagong permission. Ibinukod ang `integration.manage` kasama ng kapwa system-level config. (Safe ang `AUDITOR` — `.view` lang ang kinukuha nito.) Hindi na kailangang mag-seed sa prod: **nag-bypass ang superadmin** sa permission guard.
+
+**Mga desisyon sa engine:**
+- **`hrisId` ang match key**, hindi `employee_number` (nababago iyon sa HRIS). Initial link lang sa eksaktong number match ng isang unlinked row — **kailanman hindi** sa pangalan/email/dept, dahil ang near-match ay magtatali ng asset custody ng isa sa iba, at hindi na iyon maibabalik sa pag-rerun.
+- **Hindi hawak ng sync** ang branch, supervisor, department head, login link, notes, photo at custody — wala sila sa `HrisOwnedFields` **by construction**, hindi sa pag-alala. May test na nagta-assert dito.
+- **Hindi nagde-delete, nag-aarchive o nagde-deactivate** kapag nawala sa snapshot — **ini-report** lang. Ang record ang nagtatali sa nawawalang laptop sa pangalan.
+- **Advisory lock** (`pg_try_advisory_lock`) kaya walang overlap kahit may replica; nabibitiwan sa `finally` para hindi ma-wedge sa crash.
+- Ang `FAILED` ay **walang naiapply** — kamukha ng biglaang pag-alis ng maraming tao ang kalahating snapshot.
+- Server-side ang read-only enforcement sa 10 HRIS-owned field + status transitions + manual create. **Hindi sapat ang disabled input** — courtesy iyon, hindi control; at ang edit na mabubura ng susunod na sync ay mas masama pa sa malinaw na pagtanggi.
+
+**Verification:**
+- **648 tests passing** (mula 643 API + 5 web; **133 bago**). lint/typecheck/build ✅ sa buong monorepo. Valid ang `docker compose config` at nakukuha ng api at worker ang mga variable.
+- Dalawang beses akong nahuli ng sariling test: isang blanket na `employee.findFirst` mock ang sumasagot sa magkaibang tanong (kaya akala ng engine may conflict) → ginawang **query-aware**; at ang `AppException` ay "App Exception" ang `.message` kaya sa **envelope** dapat mag-assert.
+- Napatunayan sa tunay na producer: **buhay at naka-guard ang route** (404 sa walang-kwentang path vs **401** sa tunay; 401 din sa maling token). Hindi ko mabe-verify ang 400-for-`updatedSince` nang walang token — auth muna bago parameter validation.
+
+**HINDI naka-deploy — at sinasadya.** Na-block ng sandbox classifier ang SSH probe ko (credential exploration — tama naman), at ang pagkuha ng token mula sa `/opt/gemhris/.env.production` ay mismong credential access. **Mananatili kay Tim ang token at ang aktwal na deploy.** May runbook sa `docs/hris-employee-sync-operations.md`.
+
+**Pending / Next:**
+- Ilalagay ni Tim ang token sa `.env.prod`, i-deploy na **disabled**, mag-dry-run, i-review ang mappings at default branch, tapos i-enable.
+- Kailangan ng desisyon: **aling branch code** ang default para sa bagong employee.
+- Hindi pa rin nakansela ang Railway Hobby subscription (kay Tim ito).
+
+---
+
 ## 2026-10-21 — 📋 HRIS employee integration: request document (hindi pa code)
 
 Tim: "balak ko lahat ng related sa Employees module ipupullout nalang yung data sa database nung HRIS... Employees lang ha, di damay yung User, Roles... gawan mo ko ng prompt ng mga gusto mong i-request dun sa HRIS na mga data."

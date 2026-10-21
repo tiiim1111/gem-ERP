@@ -33,6 +33,9 @@ import type {
   CountSession,
   DashboardSummary,
   ExportJob,
+  HrisMappings,
+  HrisStatus,
+  HrisSyncRun,
   ReportCatalogEntry,
   ReportRow,
   AssetAssignment,
@@ -2424,4 +2427,67 @@ export function fetchAssetAcknowledgmentForm(
 /** GET /count-sessions/:id/sheet — printable inventory count sheet. */
 export function fetchCountSheet(id: string): Promise<{ blob: Blob; contentType: string }> {
   return fetchBinary(`/count-sessions/${id}/sheet`);
+}
+
+/* --------------------------- HRIS employee feed --------------------------- */
+
+export function getHrisStatus(signal?: AbortSignal): Promise<HrisStatus> {
+  return api.get<HrisStatus>('/integrations/hris/status', undefined, signal);
+}
+
+export function probeHris(): Promise<{
+  ok: boolean;
+  message: string;
+  total?: number;
+  companyCode?: string;
+}> {
+  return api.post('/integrations/hris/probe', {});
+}
+
+export function listHrisRuns(
+  params: { limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<{ data: HrisSyncRun[] }> {
+  return api.get<{ data: HrisSyncRun[] }>('/integrations/hris/runs', params, signal);
+}
+
+export function getHrisRun(id: string, signal?: AbortSignal): Promise<HrisSyncRun> {
+  return api.get<HrisSyncRun>(`/integrations/hris/runs/${id}`, undefined, signal);
+}
+
+/** Queues a sync. `dryRun` rehearses with zero writes. */
+export function queueHrisRun(dryRun: boolean): Promise<{ id: string }> {
+  return api.post<{ id: string }>('/integrations/hris/runs', { dryRun });
+}
+
+export function getHrisMappings(signal?: AbortSignal): Promise<HrisMappings> {
+  return api.get<HrisMappings>('/integrations/hris/mappings', undefined, signal);
+}
+
+export function setHrisDepartmentMap(
+  id: string,
+  departmentId: string | null,
+): Promise<HrisMappings> {
+  return api.patch<HrisMappings>(`/integrations/hris/mappings/departments/${id}`, {
+    departmentId,
+  });
+}
+
+export function setHrisPositionMap(
+  id: string,
+  positionId: string | null,
+): Promise<HrisMappings> {
+  return api.patch<HrisMappings>(`/integrations/hris/mappings/positions/${id}`, { positionId });
+}
+
+/**
+ * Whether the HRIS owns the employee roster. Needs only employee.view, so the
+ * employee screens can hide manual creation without integration permissions.
+ */
+export function getEmployeeSource(signal?: AbortSignal): Promise<{ hrisManaged: boolean }> {
+  return api.get<{ hrisManaged: boolean }>(
+    '/integrations/hris/employee-source',
+    undefined,
+    signal,
+  );
 }

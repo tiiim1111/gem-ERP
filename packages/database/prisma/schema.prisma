@@ -20,7 +20,7 @@
 // - All timestamps are stored in UTC. Display timezone: Asia/Manila.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // native = local dev (WSL); debian-openssl-3.0.x = production image (node:22-slim).
   binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
@@ -320,6 +320,7 @@ model User {
   attachmentsUploaded        Attachment[]               @relation("AttachmentUploadedBy")
   auditLogs                  AuditLog[]                 @relation("AuditLogActor")
   exportJobs                 ExportJob[]                @relation("ExportJobRequestedBy")
+  hrisSyncRuns               HrisSyncRun[]              @relation("HrisSyncRunRequestedBy")
 
   @@index([isActive])
   @@map("users")
@@ -560,24 +561,24 @@ model StorageLocation {
   parent    StorageLocation?  @relation("StorageLocationParent", fields: [parentId], references: [id], onDelete: Restrict)
   children  StorageLocation[] @relation("StorageLocationParent")
 
-  receivingDefaultFor Warehouse[]            @relation("WarehouseDefaultReceivingLocation")
-  issueDefaultFor     Warehouse[]            @relation("WarehouseDefaultIssueLocation")
-  itemDefaultSettings ItemWarehouseSetting[] @relation("ItemWarehouseSettingDefaultLocation")
-  stockLinesFrom      StockTransactionLine[] @relation("StockTransactionLineSourceLocation")
-  stockLinesTo        StockTransactionLine[] @relation("StockTransactionLineDestinationLocation")
-  stockLedgerEntries  StockLedgerEntry[]     @relation("StockLedgerEntryLocation")
-  stockBalances       StockBalance[]         @relation("StockBalanceLocation")
-  stockReservations   StockReservation[]     @relation("StockReservationLocation")
-  assets              Asset[]                @relation("AssetStorageLocation")
-  assetMovementsFrom  AssetMovement[]        @relation("AssetMovementFromLocation")
-  assetMovementsTo    AssetMovement[]        @relation("AssetMovementToLocation")
-  assetAssignments    AssetAssignment[]      @relation("AssetAssignmentLocation")
-  goodsReceiptLines   GoodsReceiptLine[]     @relation("GoodsReceiptLineLocation")
-  supplierReturnLines SupplierReturnLine[]   @relation("SupplierReturnLineLocation")
-  transfersOut        Transfer[]             @relation("TransferSourceLocation")
-  transfersIn         Transfer[]             @relation("TransferDestinationLocation")
+  receivingDefaultFor Warehouse[]             @relation("WarehouseDefaultReceivingLocation")
+  issueDefaultFor     Warehouse[]             @relation("WarehouseDefaultIssueLocation")
+  itemDefaultSettings ItemWarehouseSetting[]  @relation("ItemWarehouseSettingDefaultLocation")
+  stockLinesFrom      StockTransactionLine[]  @relation("StockTransactionLineSourceLocation")
+  stockLinesTo        StockTransactionLine[]  @relation("StockTransactionLineDestinationLocation")
+  stockLedgerEntries  StockLedgerEntry[]      @relation("StockLedgerEntryLocation")
+  stockBalances       StockBalance[]          @relation("StockBalanceLocation")
+  stockReservations   StockReservation[]      @relation("StockReservationLocation")
+  assets              Asset[]                 @relation("AssetStorageLocation")
+  assetMovementsFrom  AssetMovement[]         @relation("AssetMovementFromLocation")
+  assetMovementsTo    AssetMovement[]         @relation("AssetMovementToLocation")
+  assetAssignments    AssetAssignment[]       @relation("AssetAssignmentLocation")
+  goodsReceiptLines   GoodsReceiptLine[]      @relation("GoodsReceiptLineLocation")
+  supplierReturnLines SupplierReturnLine[]    @relation("SupplierReturnLineLocation")
+  transfersOut        Transfer[]              @relation("TransferSourceLocation")
+  transfersIn         Transfer[]              @relation("TransferDestinationLocation")
   countSessions       InventoryCountSession[] @relation("InventoryCountSessionLocation")
-  countLines          InventoryCountLine[]   @relation("InventoryCountLineLocation")
+  countLines          InventoryCountLine[]    @relation("InventoryCountLineLocation")
 
   @@unique([warehouseId, code])
   @@index([warehouseId])
@@ -600,10 +601,11 @@ model Department {
   branch       Branch?   @relation("BranchDepartments", fields: [branchId], references: [id], onDelete: Restrict)
   headEmployee Employee? @relation("DepartmentHead", fields: [headEmployeeId], references: [id], onDelete: SetNull)
 
-  employees         Employee[]         @relation("DepartmentEmployees")
-  stockTransactions StockTransaction[] @relation("StockTransactionDepartment")
-  assets            Asset[]            @relation("AssetDepartment")
-  assetAssignments  AssetAssignment[]  @relation("AssetAssignmentDepartment")
+  employees         Employee[]          @relation("DepartmentEmployees")
+  hrisMaps          HrisDepartmentMap[] @relation("HrisDepartmentMapTarget")
+  stockTransactions StockTransaction[]  @relation("StockTransactionDepartment")
+  assets            Asset[]             @relation("AssetDepartment")
+  assetAssignments  AssetAssignment[]   @relation("AssetAssignmentDepartment")
 
   @@index([branchId])
   @@map("departments")
@@ -618,46 +620,61 @@ model Position {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  employees     Employee[]     @relation("PositionEmployees")
-  approvalSteps ApprovalStep[] @relation("ApprovalStepApproverPosition")
+  employees     Employee[]        @relation("PositionEmployees")
+  hrisMaps      HrisPositionMap[] @relation("HrisPositionMapTarget")
+  approvalSteps ApprovalStep[]    @relation("ApprovalStepApproverPosition")
 
   @@map("positions")
 }
 
 /// Custody-only employee records (no payroll/attendance/HRIS - spec section 9).
 model Employee {
-  id             String         @id @default(uuid()) @db.Uuid
-  employeeNumber String         @unique @map("employee_number")
-  firstName      String         @map("first_name")
-  middleName     String?        @map("middle_name")
-  lastName       String         @map("last_name")
-  displayName    String?        @map("display_name")
-  workEmail      String?        @unique @map("work_email")
-  workPhone      String?        @map("work_phone")
-  branchId       String         @map("branch_id") @db.Uuid
-  departmentId   String?        @map("department_id") @db.Uuid
-  positionId     String?        @map("position_id") @db.Uuid
-  supervisorId   String?        @map("supervisor_id") @db.Uuid
-  status         EmployeeStatus @default(ACTIVE)
-  startDate      DateTime?      @map("start_date") @db.Date
-  separationDate DateTime?      @map("separation_date") @db.Date
-  photoUrl       String?        @map("photo_url")
-  notes          String?
-  userId         String?        @unique @map("user_id") @db.Uuid
+  id                     String         @id @default(uuid()) @db.Uuid
+  employeeNumber         String         @unique @map("employee_number")
+  firstName              String         @map("first_name")
+  middleName             String?        @map("middle_name")
+  lastName               String         @map("last_name")
+  displayName            String?        @map("display_name")
+  workEmail              String?        @unique @map("work_email")
+  workPhone              String?        @map("work_phone")
+  branchId               String         @map("branch_id") @db.Uuid
+  departmentId           String?        @map("department_id") @db.Uuid
+  positionId             String?        @map("position_id") @db.Uuid
+  supervisorId           String?        @map("supervisor_id") @db.Uuid
+  status                 EmployeeStatus @default(ACTIVE)
+  startDate              DateTime?      @map("start_date") @db.Date
+  separationDate         DateTime?      @map("separation_date") @db.Date
+  photoUrl               String?        @map("photo_url")
+  notes                  String?
+  userId                 String?        @unique @map("user_id") @db.Uuid
+  /// HRIS primary key. Non-null means this employee is owned by the HRIS feed:
+  /// the synced fields become read-only in GEM-ENI. This is the durable match
+  /// key — employeeNumber is mutable in the HRIS and must never be matched on
+  /// after the initial link.
+  hrisId                 String?        @unique @map("hris_id")
+  /// End of the last sync run that touched this row.
+  hrisSyncedAt           DateTime?      @map("hris_synced_at")
+  /// The producer's own `updatedAt` for the record last applied.
+  hrisUpdatedAt          DateTime?      @map("hris_updated_at")
+  /// True when `separationDate` is the date GEM-ENI first *observed* a
+  /// RESIGNED/TERMINATED status rather than a date the HRIS supplied — the
+  /// HRIS has no separation-date column. Never derived from its archive
+  /// timestamp, which is an administrative action and not a separation.
+  separationDateInferred Boolean        @default(false) @map("separation_date_inferred")
   /// Optimistic-concurrency token (api-outline 1.6): starts at 1, increments
   /// on every successful mutation. PATCH must send the current value.
-  version        Int            @default(1)
-  archivedAt     DateTime?      @map("archived_at")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  version                Int            @default(1)
+  archivedAt             DateTime?      @map("archived_at")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
 
-  branch     Branch      @relation("BranchEmployees", fields: [branchId], references: [id], onDelete: Restrict)
-  department Department? @relation("DepartmentEmployees", fields: [departmentId], references: [id], onDelete: Restrict)
-  position   Position?   @relation("PositionEmployees", fields: [positionId], references: [id], onDelete: Restrict)
-  supervisor Employee?   @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
-  reports    Employee[]  @relation("EmployeeSupervisor")
+  branch     Branch       @relation("BranchEmployees", fields: [branchId], references: [id], onDelete: Restrict)
+  department Department?  @relation("DepartmentEmployees", fields: [departmentId], references: [id], onDelete: Restrict)
+  position   Position?    @relation("PositionEmployees", fields: [positionId], references: [id], onDelete: Restrict)
+  supervisor Employee?    @relation("EmployeeSupervisor", fields: [supervisorId], references: [id], onDelete: Restrict)
+  reports    Employee[]   @relation("EmployeeSupervisor")
   headOf     Department[] @relation("DepartmentHead")
-  user       User?       @relation("EmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+  user       User?        @relation("EmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
 
   stockTransactions    StockTransaction[]     @relation("StockTransactionEmployee")
   assetsInCustody      Asset[]                @relation("AssetCustodian")
@@ -671,6 +688,7 @@ model Employee {
   @@index([departmentId])
   @@index([status])
   @@index([lastName, firstName])
+  @@index([hrisId])
   @@map("employees")
 }
 
@@ -752,19 +770,19 @@ model UnitOfMeasure {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  itemsAsBase          Item[]                 @relation("ItemBaseUom")
-  itemsAsPurchase      Item[]                 @relation("ItemPurchaseUom")
-  itemsAsIssue         Item[]                 @relation("ItemIssueUom")
-  conversionsFrom      UomConversion[]        @relation("UomConversionFrom")
-  conversionsTo        UomConversion[]        @relation("UomConversionTo")
-  itemBarcodes         ItemBarcode[]          @relation("ItemBarcodeUom")
+  itemsAsBase           Item[]                 @relation("ItemBaseUom")
+  itemsAsPurchase       Item[]                 @relation("ItemPurchaseUom")
+  itemsAsIssue          Item[]                 @relation("ItemIssueUom")
+  conversionsFrom       UomConversion[]        @relation("UomConversionFrom")
+  conversionsTo         UomConversion[]        @relation("UomConversionTo")
+  itemBarcodes          ItemBarcode[]          @relation("ItemBarcodeUom")
   stockTransactionLines StockTransactionLine[] @relation("StockTransactionLineUom")
-  purchaseOrderLines   PurchaseOrderLine[]    @relation("PurchaseOrderLineUom")
-  goodsReceiptLines    GoodsReceiptLine[]     @relation("GoodsReceiptLineUom")
-  supplierReturnLines  SupplierReturnLine[]   @relation("SupplierReturnLineUom")
-  transferLines        TransferLine[]         @relation("TransferLineUom")
-  countLines           InventoryCountLine[]   @relation("InventoryCountLineUom")
-  maintenanceParts     MaintenancePart[]      @relation("MaintenancePartUom")
+  purchaseOrderLines    PurchaseOrderLine[]    @relation("PurchaseOrderLineUom")
+  goodsReceiptLines     GoodsReceiptLine[]     @relation("GoodsReceiptLineUom")
+  supplierReturnLines   SupplierReturnLine[]   @relation("SupplierReturnLineUom")
+  transferLines         TransferLine[]         @relation("TransferLineUom")
+  countLines            InventoryCountLine[]   @relation("InventoryCountLineUom")
+  maintenanceParts      MaintenancePart[]      @relation("MaintenancePartUom")
 
   @@map("units_of_measure")
 }
@@ -1175,40 +1193,40 @@ model StockReservation {
 /// scanToken is the opaque token embedded in the QR code; scanning still
 /// requires authentication and authorization.
 model Asset {
-  id                 String               @id @default(uuid()) @db.Uuid
-  assetTag           String               @unique @map("asset_tag")
-  scanToken          String               @unique @map("scan_token")
-  serialNumber       String?              @map("serial_number")
-  itemId             String               @map("item_id") @db.Uuid
-  status             AssetLifecycleStatus @default(DRAFT)
-  conditionId        String?              @map("condition_id") @db.Uuid
-  criticalityId      String?              @map("criticality_id") @db.Uuid
-  branchId           String               @map("branch_id") @db.Uuid
-  warehouseId        String?              @map("warehouse_id") @db.Uuid
-  storageLocationId  String?              @map("storage_location_id") @db.Uuid
-  custodianId        String?              @map("custodian_employee_id") @db.Uuid
-  departmentId       String?              @map("department_id") @db.Uuid
-  acquisitionDate    DateTime?            @map("acquisition_date") @db.Date
-  acquisitionCost    Decimal?             @map("acquisition_cost") @db.Decimal(14, 2)
-  supplierId         String?              @map("supplier_id") @db.Uuid
-  purchaseOrderId    String?              @map("purchase_order_id") @db.Uuid
-  goodsReceiptLineId String?              @map("goods_receipt_line_id") @db.Uuid
-  warrantyStartDate  DateTime?            @map("warranty_start_date") @db.Date
-  warrantyEndDate    DateTime?            @map("warranty_end_date") @db.Date
-  maintenanceRequired Boolean             @default(false) @map("maintenance_required")
-  lastInspectionAt   DateTime?            @map("last_inspection_at")
-  nextMaintenanceAt  DateTime?            @map("next_maintenance_at")
-  retiredAt          DateTime?            @map("retired_at")
-  disposedAt         DateTime?            @map("disposed_at")
-  disposalMethodId   String?              @map("disposal_method_id") @db.Uuid
-  disposalNotes      String?              @map("disposal_notes")
-  notes              String?
+  id                  String               @id @default(uuid()) @db.Uuid
+  assetTag            String               @unique @map("asset_tag")
+  scanToken           String               @unique @map("scan_token")
+  serialNumber        String?              @map("serial_number")
+  itemId              String               @map("item_id") @db.Uuid
+  status              AssetLifecycleStatus @default(DRAFT)
+  conditionId         String?              @map("condition_id") @db.Uuid
+  criticalityId       String?              @map("criticality_id") @db.Uuid
+  branchId            String               @map("branch_id") @db.Uuid
+  warehouseId         String?              @map("warehouse_id") @db.Uuid
+  storageLocationId   String?              @map("storage_location_id") @db.Uuid
+  custodianId         String?              @map("custodian_employee_id") @db.Uuid
+  departmentId        String?              @map("department_id") @db.Uuid
+  acquisitionDate     DateTime?            @map("acquisition_date") @db.Date
+  acquisitionCost     Decimal?             @map("acquisition_cost") @db.Decimal(14, 2)
+  supplierId          String?              @map("supplier_id") @db.Uuid
+  purchaseOrderId     String?              @map("purchase_order_id") @db.Uuid
+  goodsReceiptLineId  String?              @map("goods_receipt_line_id") @db.Uuid
+  warrantyStartDate   DateTime?            @map("warranty_start_date") @db.Date
+  warrantyEndDate     DateTime?            @map("warranty_end_date") @db.Date
+  maintenanceRequired Boolean              @default(false) @map("maintenance_required")
+  lastInspectionAt    DateTime?            @map("last_inspection_at")
+  nextMaintenanceAt   DateTime?            @map("next_maintenance_at")
+  retiredAt           DateTime?            @map("retired_at")
+  disposedAt          DateTime?            @map("disposed_at")
+  disposalMethodId    String?              @map("disposal_method_id") @db.Uuid
+  disposalNotes       String?              @map("disposal_notes")
+  notes               String?
   /// Optimistic-concurrency token (api-outline 1.6): starts at 1, increments
   /// on every successful mutation. PATCH must send the current value.
-  version            Int                  @default(1)
-  archivedAt         DateTime?            @map("archived_at")
-  createdAt          DateTime             @default(now()) @map("created_at")
-  updatedAt          DateTime             @updatedAt @map("updated_at")
+  version             Int                  @default(1)
+  archivedAt          DateTime?            @map("archived_at")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
 
   item             Item              @relation("AssetItem", fields: [itemId], references: [id], onDelete: Restrict)
   condition        LookupValue?      @relation("LookupAssetCondition", fields: [conditionId], references: [id], onDelete: Restrict)
@@ -1291,24 +1309,24 @@ model AssetAssignment {
 
 /// Location/custody movement history (append-only).
 model AssetMovement {
-  id              String    @id @default(uuid()) @db.Uuid
-  assetId         String    @map("asset_id") @db.Uuid
-  movedAt         DateTime  @map("moved_at")
-  fromBranchId    String?   @map("from_branch_id") @db.Uuid
-  toBranchId      String?   @map("to_branch_id") @db.Uuid
-  fromWarehouseId String?   @map("from_warehouse_id") @db.Uuid
-  toWarehouseId   String?   @map("to_warehouse_id") @db.Uuid
-  fromLocationId  String?   @map("from_location_id") @db.Uuid
-  toLocationId    String?   @map("to_location_id") @db.Uuid
-  fromEmployeeId  String?   @map("from_employee_id") @db.Uuid
-  toEmployeeId    String?   @map("to_employee_id") @db.Uuid
-  transferId      String?   @map("transfer_id") @db.Uuid
-  assignmentId    String?   @map("assignment_id") @db.Uuid
-  reasonId        String?   @map("reason_id") @db.Uuid
-  movedById       String?   @map("moved_by_id") @db.Uuid
+  id              String   @id @default(uuid()) @db.Uuid
+  assetId         String   @map("asset_id") @db.Uuid
+  movedAt         DateTime @map("moved_at")
+  fromBranchId    String?  @map("from_branch_id") @db.Uuid
+  toBranchId      String?  @map("to_branch_id") @db.Uuid
+  fromWarehouseId String?  @map("from_warehouse_id") @db.Uuid
+  toWarehouseId   String?  @map("to_warehouse_id") @db.Uuid
+  fromLocationId  String?  @map("from_location_id") @db.Uuid
+  toLocationId    String?  @map("to_location_id") @db.Uuid
+  fromEmployeeId  String?  @map("from_employee_id") @db.Uuid
+  toEmployeeId    String?  @map("to_employee_id") @db.Uuid
+  transferId      String?  @map("transfer_id") @db.Uuid
+  assignmentId    String?  @map("assignment_id") @db.Uuid
+  reasonId        String?  @map("reason_id") @db.Uuid
+  movedById       String?  @map("moved_by_id") @db.Uuid
   notes           String?
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   asset         Asset            @relation("AssetMovementAsset", fields: [assetId], references: [id], onDelete: Restrict)
   fromBranch    Branch?          @relation("AssetMovementFromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
@@ -1831,35 +1849,35 @@ model TransferReceiptLine {
 /// Physical / cycle count session. Counts never overwrite stock: approved
 /// variances generate adjustment stock transactions (countSessionId back-link).
 model InventoryCountSession {
-  id                String               @id @default(uuid()) @db.Uuid
-  countNumber       String               @unique @map("count_number")
-  type              InventoryCountType
-  status            InventoryCountStatus @default(DRAFT)
-  branchId          String               @map("branch_id") @db.Uuid
-  warehouseId       String?              @map("warehouse_id") @db.Uuid
-  storageLocationId String?              @map("storage_location_id") @db.Uuid
-  categoryId        String?              @map("category_id") @db.Uuid
+  id                       String               @id @default(uuid()) @db.Uuid
+  countNumber              String               @unique @map("count_number")
+  type                     InventoryCountType
+  status                   InventoryCountStatus @default(DRAFT)
+  branchId                 String               @map("branch_id") @db.Uuid
+  warehouseId              String?              @map("warehouse_id") @db.Uuid
+  storageLocationId        String?              @map("storage_location_id") @db.Uuid
+  categoryId               String?              @map("category_id") @db.Uuid
   /// Optional explicit item scope (cycle counts over selected items).
-  scopeItemIds      String[]             @map("scope_item_ids") @db.Uuid
-  isBlind           Boolean              @default(false) @map("is_blind")
-  snapshotAt        DateTime?            @map("snapshot_at")
-  startedAt         DateTime?            @map("started_at")
-  completedAt       DateTime?            @map("completed_at")
-  notes             String?
+  scopeItemIds             String[]             @map("scope_item_ids") @db.Uuid
+  isBlind                  Boolean              @default(false) @map("is_blind")
+  snapshotAt               DateTime?            @map("snapshot_at")
+  startedAt                DateTime?            @map("started_at")
+  completedAt              DateTime?            @map("completed_at")
+  notes                    String?
   /// Optimistic-concurrency token (api-outline 1.6).
-  version           Int                  @default(1)
+  version                  Int                  @default(1)
   /// Idempotency-Key of the create-adjustments call (api-outline 1.5).
   /// Unique: replaying the key returns the original result.
-  adjustmentIdempotencyKey String?       @unique @map("adjustment_idempotency_key")
-  adjustmentsCreatedAt     DateTime?     @map("adjustments_created_at")
-  cancelReason      String?              @map("cancel_reason")
-  canceledById      String?              @map("canceled_by_id") @db.Uuid
-  canceledAt        DateTime?            @map("canceled_at")
-  createdById       String               @map("created_by_id") @db.Uuid
-  approvedById      String?              @map("approved_by_id") @db.Uuid
-  approvedAt        DateTime?            @map("approved_at")
-  createdAt         DateTime             @default(now()) @map("created_at")
-  updatedAt         DateTime             @updatedAt @map("updated_at")
+  adjustmentIdempotencyKey String?              @unique @map("adjustment_idempotency_key")
+  adjustmentsCreatedAt     DateTime?            @map("adjustments_created_at")
+  cancelReason             String?              @map("cancel_reason")
+  canceledById             String?              @map("canceled_by_id") @db.Uuid
+  canceledAt               DateTime?            @map("canceled_at")
+  createdById              String               @map("created_by_id") @db.Uuid
+  approvedById             String?              @map("approved_by_id") @db.Uuid
+  approvedAt               DateTime?            @map("approved_at")
+  createdAt                DateTime             @default(now()) @map("created_at")
+  updatedAt                DateTime             @updatedAt @map("updated_at")
 
   branch          Branch           @relation("InventoryCountSessionBranch", fields: [branchId], references: [id], onDelete: Restrict)
   warehouse       Warehouse?       @relation("InventoryCountSessionWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
@@ -1956,11 +1974,11 @@ model MaintenancePlan {
   createdAt              DateTime  @default(now()) @map("created_at")
   updatedAt              DateTime  @updatedAt @map("updated_at")
 
-  asset           Asset?       @relation("MaintenancePlanAsset", fields: [assetId], references: [id], onDelete: Restrict)
-  item            Item?        @relation("MaintenancePlanItem", fields: [itemId], references: [id], onDelete: Restrict)
-  maintenanceType LookupValue  @relation("LookupMaintenancePlanType", fields: [maintenanceTypeId], references: [id], onDelete: Restrict)
-  vendor          Supplier?    @relation("MaintenancePlanVendor", fields: [vendorId], references: [id], onDelete: Restrict)
-  createdBy       User?        @relation("MaintenancePlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  asset           Asset?      @relation("MaintenancePlanAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  item            Item?       @relation("MaintenancePlanItem", fields: [itemId], references: [id], onDelete: Restrict)
+  maintenanceType LookupValue @relation("LookupMaintenancePlanType", fields: [maintenanceTypeId], references: [id], onDelete: Restrict)
+  vendor          Supplier?   @relation("MaintenancePlanVendor", fields: [vendorId], references: [id], onDelete: Restrict)
+  createdBy       User?       @relation("MaintenancePlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   tasks      MaintenancePlanTask[]  @relation("MaintenancePlanTasks")
   workOrders MaintenanceWorkOrder[] @relation("MaintenanceWorkOrderPlan")
@@ -2011,58 +2029,58 @@ model MaintenancePlanTask {
 
 /// Work-order number pattern: WO-{BRANCH}-{YEAR}-{SEQUENCE} (sequence_counters).
 model MaintenanceWorkOrder {
-  id                    String                     @id @default(uuid()) @db.Uuid
-  workOrderNumber       String                     @unique @map("work_order_number")
-  assetId               String                     @map("asset_id") @db.Uuid
-  planId                String?                    @map("plan_id") @db.Uuid
-  branchId              String                     @map("branch_id") @db.Uuid
-  typeId                String                     @map("maintenance_type_id") @db.Uuid
-  priorityId            String?                    @map("priority_id") @db.Uuid
-  status                MaintenanceWorkOrderStatus @default(DRAFT)
-  problemDescription    String?                    @map("problem_description")
-  reportedById          String?                    @map("reported_by_id") @db.Uuid
-  reportedAt            DateTime?                  @map("reported_at")
-  assignedToEmployeeId  String?                    @map("assigned_to_employee_id") @db.Uuid
-  assignedVendorId      String?                    @map("assigned_vendor_id") @db.Uuid
-  assignedTeam          String?                    @map("assigned_team")
-  scheduledStartAt      DateTime?                  @map("scheduled_start_at")
-  scheduledEndAt        DateTime?                  @map("scheduled_end_at")
-  actualStartAt         DateTime?                  @map("actual_start_at")
-  actualEndAt           DateTime?                  @map("actual_end_at")
-  diagnosis             String?
-  actionTaken           String?                    @map("action_taken")
-  resolution            String?
-  laborCost             Decimal?                   @map("labor_cost") @db.Decimal(14, 2)
-  partsCost             Decimal?                   @map("parts_cost") @db.Decimal(14, 2)
-  externalCost          Decimal?                   @map("external_cost") @db.Decimal(14, 2)
-  totalCost             Decimal?                   @map("total_cost") @db.Decimal(14, 2)
-  downtimeHours         Decimal?                   @map("downtime_hours") @db.Decimal(14, 2)
+  id                     String                     @id @default(uuid()) @db.Uuid
+  workOrderNumber        String                     @unique @map("work_order_number")
+  assetId                String                     @map("asset_id") @db.Uuid
+  planId                 String?                    @map("plan_id") @db.Uuid
+  branchId               String                     @map("branch_id") @db.Uuid
+  typeId                 String                     @map("maintenance_type_id") @db.Uuid
+  priorityId             String?                    @map("priority_id") @db.Uuid
+  status                 MaintenanceWorkOrderStatus @default(DRAFT)
+  problemDescription     String?                    @map("problem_description")
+  reportedById           String?                    @map("reported_by_id") @db.Uuid
+  reportedAt             DateTime?                  @map("reported_at")
+  assignedToEmployeeId   String?                    @map("assigned_to_employee_id") @db.Uuid
+  assignedVendorId       String?                    @map("assigned_vendor_id") @db.Uuid
+  assignedTeam           String?                    @map("assigned_team")
+  scheduledStartAt       DateTime?                  @map("scheduled_start_at")
+  scheduledEndAt         DateTime?                  @map("scheduled_end_at")
+  actualStartAt          DateTime?                  @map("actual_start_at")
+  actualEndAt            DateTime?                  @map("actual_end_at")
+  diagnosis              String?
+  actionTaken            String?                    @map("action_taken")
+  resolution             String?
+  laborCost              Decimal?                   @map("labor_cost") @db.Decimal(14, 2)
+  partsCost              Decimal?                   @map("parts_cost") @db.Decimal(14, 2)
+  externalCost           Decimal?                   @map("external_cost") @db.Decimal(14, 2)
+  totalCost              Decimal?                   @map("total_cost") @db.Decimal(14, 2)
+  downtimeHours          Decimal?                   @map("downtime_hours") @db.Decimal(14, 2)
   /// Downtime in minutes (api-outline 6.2 complete payload). downtime_hours
   /// keeps a 2dp mirror for reporting compatibility.
-  downtimeMinutes       Int?                       @map("downtime_minutes")
-  completionConditionId String?                    @map("completion_condition_id") @db.Uuid
-  nextMaintenanceAt     DateTime?                  @map("next_maintenance_at")
+  downtimeMinutes        Int?                       @map("downtime_minutes")
+  completionConditionId  String?                    @map("completion_condition_id") @db.Uuid
+  nextMaintenanceAt      DateTime?                  @map("next_maintenance_at")
   /// Asset lifecycle status when the WO entered In Progress — cancellation
   /// reverts the asset to exactly this status (status-transitions §1.1
   /// work-order-canceled).
-  assetStatusBeforeWo   AssetLifecycleStatus?      @map("asset_status_before_wo")
+  assetStatusBeforeWo    AssetLifecycleStatus?      @map("asset_status_before_wo")
   /// Outcome chosen at completion (Available | Assigned | Damaged | Retired).
-  outcomeStatus         AssetLifecycleStatus?      @map("outcome_status")
+  outcomeStatus          AssetLifecycleStatus?      @map("outcome_status")
   /// Reason for the current On Hold / Awaiting Parts / Awaiting Vendor state.
-  holdReason            String?                    @map("hold_reason")
-  cancelReason          String?                    @map("cancel_reason")
+  holdReason             String?                    @map("hold_reason")
+  cancelReason           String?                    @map("cancel_reason")
   /// Meter value snapshot at completion — baseline for meter-interval plans.
-  completionMeterReading Decimal?                  @map("completion_meter_reading") @db.Decimal(14, 4)
-  completedById         String?                    @map("completed_by_id") @db.Uuid
-  verifiedById          String?                    @map("verified_by_id") @db.Uuid
-  verifiedAt            DateTime?                  @map("verified_at")
-  canceledById          String?                    @map("canceled_by_id") @db.Uuid
-  canceledAt            DateTime?                  @map("canceled_at")
+  completionMeterReading Decimal?                   @map("completion_meter_reading") @db.Decimal(14, 4)
+  completedById          String?                    @map("completed_by_id") @db.Uuid
+  verifiedById           String?                    @map("verified_by_id") @db.Uuid
+  verifiedAt             DateTime?                  @map("verified_at")
+  canceledById           String?                    @map("canceled_by_id") @db.Uuid
+  canceledAt             DateTime?                  @map("canceled_at")
   /// Optimistic-concurrency token (api-outline 1.6).
-  version               Int                        @default(1)
-  createdById           String                     @map("created_by_id") @db.Uuid
-  createdAt             DateTime                   @default(now()) @map("created_at")
-  updatedAt             DateTime                   @updatedAt @map("updated_at")
+  version                Int                        @default(1)
+  createdById            String                     @map("created_by_id") @db.Uuid
+  createdAt              DateTime                   @default(now()) @map("created_at")
+  updatedAt              DateTime                   @updatedAt @map("updated_at")
 
   asset               Asset            @relation("MaintenanceWorkOrderAsset", fields: [assetId], references: [id], onDelete: Restrict)
   plan                MaintenancePlan? @relation("MaintenanceWorkOrderPlan", fields: [planId], references: [id], onDelete: Restrict)
@@ -2149,24 +2167,24 @@ model MaintenancePart {
 /// stock_transaction, asset_disposal, ...), optionally branch-scoped and/or
 /// amount-thresholded.
 model ApprovalWorkflow {
-  id           String   @id @default(uuid()) @db.Uuid
-  code         String   @unique
-  name         String
-  description  String?
-  resourceType String   @map("resource_type")
+  id               String   @id @default(uuid()) @db.Uuid
+  code             String   @unique
+  name             String
+  description      String?
+  resourceType     String   @map("resource_type")
   /// Optional sub-type scope within the resource type (e.g. stock transaction
   /// types ADJUSTMENT_INCREASE/ADJUSTMENT_DECREASE, transfer type
   /// INTER_BRANCH). Empty array = every sub-type.
   documentSubtypes String[] @map("document_subtypes")
-  branchId     String?  @map("branch_id") @db.Uuid
-  minAmount    Decimal? @map("min_amount") @db.Decimal(14, 2)
-  maxAmount    Decimal? @map("max_amount") @db.Decimal(14, 2)
+  branchId         String?  @map("branch_id") @db.Uuid
+  minAmount        Decimal? @map("min_amount") @db.Decimal(14, 2)
+  maxAmount        Decimal? @map("max_amount") @db.Decimal(14, 2)
   /// Quantity thresholds evaluated against the document's total base quantity.
-  minQuantity  Decimal? @map("min_quantity") @db.Decimal(14, 4)
-  maxQuantity  Decimal? @map("max_quantity") @db.Decimal(14, 4)
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  minQuantity      Decimal? @map("min_quantity") @db.Decimal(14, 4)
+  maxQuantity      Decimal? @map("max_quantity") @db.Decimal(14, 4)
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   branch Branch? @relation("ApprovalWorkflowBranch", fields: [branchId], references: [id], onDelete: Restrict)
 
@@ -2209,23 +2227,23 @@ model ApprovalStep {
 
 /// A running approval for one document (polymorphic resourceType/resourceId).
 model ApprovalRequest {
-  id            String         @id @default(uuid()) @db.Uuid
-  workflowId    String         @map("workflow_id") @db.Uuid
-  resourceType  String         @map("resource_type")
-  resourceId    String         @map("resource_id") @db.Uuid
+  id             String         @id @default(uuid()) @db.Uuid
+  workflowId     String         @map("workflow_id") @db.Uuid
+  resourceType   String         @map("resource_type")
+  resourceId     String         @map("resource_id") @db.Uuid
   /// Human-readable business number of the document (queue display).
-  resourceNumber String?       @map("resource_number")
-  status        ApprovalStatus @default(PENDING)
-  currentStepId String?        @map("current_step_id") @db.Uuid
-  amount        Decimal?       @db.Decimal(14, 2)
-  quantity      Decimal?       @db.Decimal(14, 4)
-  branchId      String?        @map("branch_id") @db.Uuid
-  requestedById String         @map("requested_by_id") @db.Uuid
-  requestedAt   DateTime       @default(now()) @map("requested_at")
-  completedAt   DateTime?      @map("completed_at")
-  notes         String?
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
+  resourceNumber String?        @map("resource_number")
+  status         ApprovalStatus @default(PENDING)
+  currentStepId  String?        @map("current_step_id") @db.Uuid
+  amount         Decimal?       @db.Decimal(14, 2)
+  quantity       Decimal?       @db.Decimal(14, 4)
+  branchId       String?        @map("branch_id") @db.Uuid
+  requestedById  String         @map("requested_by_id") @db.Uuid
+  requestedAt    DateTime       @default(now()) @map("requested_at")
+  completedAt    DateTime?      @map("completed_at")
+  notes          String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
 
   workflow    ApprovalWorkflow @relation("ApprovalRequestWorkflow", fields: [workflowId], references: [id], onDelete: Restrict)
   currentStep ApprovalStep?    @relation("ApprovalRequestCurrentStep", fields: [currentStepId], references: [id], onDelete: Restrict)
@@ -2246,17 +2264,17 @@ model ApprovalRequest {
 /// POSITION holders, the requester's DEPT_HEAD, or a named USER). The queue's
 /// assignedToMe filter and the act-authorization check read assigneeUserIds.
 model ApprovalRequestStep {
-  id             String         @id @default(uuid()) @db.Uuid
-  requestId      String         @map("request_id") @db.Uuid
-  stepId         String         @map("step_id") @db.Uuid
-  sequence       Int
-  status         ApprovalStatus @default(PENDING)
-  assigneeUserIds String[]      @map("assignee_user_ids") @db.Uuid
-  actedById      String?        @map("acted_by_id") @db.Uuid
-  actedAt        DateTime?      @map("acted_at")
-  comment        String?
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  id              String         @id @default(uuid()) @db.Uuid
+  requestId       String         @map("request_id") @db.Uuid
+  stepId          String         @map("step_id") @db.Uuid
+  sequence        Int
+  status          ApprovalStatus @default(PENDING)
+  assigneeUserIds String[]       @map("assignee_user_ids") @db.Uuid
+  actedById       String?        @map("acted_by_id") @db.Uuid
+  actedAt         DateTime?      @map("acted_at")
+  comment         String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
   request ApprovalRequest @relation("ApprovalRequestSteps", fields: [requestId], references: [id], onDelete: Cascade)
   step    ApprovalStep    @relation("ApprovalRequestStepStep", fields: [stepId], references: [id], onDelete: Restrict)
@@ -2528,4 +2546,143 @@ model SequenceCounter {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("sequence_counters")
+}
+
+// ---------------------------------------------------------------------------
+// HRIS employee integration
+//
+// GEM-ENI reads employees from the HRIS, which is the system of record for
+// them. The feed is a read-only full snapshot; see
+// docs/hris-employee-api-phase2-decisions.md for the agreed contract.
+//
+// Branch, supervisor, department-head assignment, the linked login account,
+// notes and all asset custody stay owned by GEM-ENI and are never overwritten
+// by a sync.
+// ---------------------------------------------------------------------------
+
+enum HrisSyncTrigger {
+  SCHEDULED
+  MANUAL
+}
+
+enum HrisSyncStatus {
+  QUEUED
+  RUNNING
+  /// Everything applied with nothing needing a human.
+  SUCCEEDED
+  /// Applied, but rows were skipped or flagged — somebody must look.
+  REVIEW_REQUIRED
+  /// Nothing applied: the payload was rejected or the run died.
+  FAILED
+}
+
+enum HrisSyncIssueSeverity {
+  /// The row was not applied.
+  ERROR
+  /// The row was applied but a human should confirm it.
+  REVIEW
+}
+
+/// One reconciliation attempt. Created QUEUED — by the API for a manual or
+/// dry run, by the worker's nightly job for a scheduled one — then claimed and
+/// executed by the worker. Dry runs take the identical decision path and write
+/// nothing but this record and its issues.
+model HrisSyncRun {
+  id            String          @id @default(uuid()) @db.Uuid
+  trigger       HrisSyncTrigger
+  /// Zero-write rehearsal.
+  dryRun        Boolean         @default(false) @map("dry_run")
+  status        HrisSyncStatus  @default(QUEUED)
+  /// Null for a scheduled run.
+  requestedById String?         @map("requested_by_id") @db.Uuid
+  startedAt     DateTime?       @map("started_at")
+  finishedAt    DateTime?       @map("finished_at")
+
+  /// Producer metadata, recorded as received so a bad run can be explained
+  /// after the fact.
+  companyCode   String?  @map("company_code")
+  snapshot      Boolean?
+  producerTotal Int?     @map("producer_total")
+  pagesFetched  Int?     @map("pages_fetched")
+
+  created   Int @default(0)
+  linked    Int @default(0)
+  updated   Int @default(0)
+  unchanged Int @default(0)
+  skipped   Int @default(0)
+  failed    Int @default(0)
+
+  /// Human-readable failure reason. Never holds a token or personal data.
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  requestedBy User?           @relation("HrisSyncRunRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  issues      HrisSyncIssue[] @relation("HrisSyncIssueRun")
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("hris_sync_runs")
+}
+
+/// A row-level problem or review item from one run. Bounded per run by the
+/// engine so a broken feed cannot fill the table.
+model HrisSyncIssue {
+  id             String                @id @default(uuid()) @db.Uuid
+  runId          String                @map("run_id") @db.Uuid
+  severity       HrisSyncIssueSeverity
+  /// Stable machine code — UNMAPPED_DEPARTMENT, UNKNOWN_STATUS,
+  /// AMBIGUOUS_MATCH, MISSING_FROM_SNAPSHOT, ARCHIVED_INACTIVE,
+  /// INFERRED_SEPARATION_WITH_ASSETS, EMAIL_CONFLICT, NO_DEFAULT_BRANCH, ...
+  code           String
+  /// Identifiers only — never a name, an email or any other personal field.
+  hrisId         String?               @map("hris_id")
+  employeeNumber String?               @map("employee_number")
+  employeeId     String?               @map("employee_id") @db.Uuid
+  message        String
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  run HrisSyncRun @relation("HrisSyncIssueRun", fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([code])
+  @@map("hris_sync_issues")
+}
+
+/// HRIS department code -> GEM-ENI department. A row with a null target is a
+/// code the feed sent that nobody has mapped yet: the affected employees are
+/// skipped with an issue rather than filed somewhere arbitrary.
+model HrisDepartmentMap {
+  id            String   @id @default(uuid()) @db.Uuid
+  hrisCode      String   @unique @map("hris_code")
+  /// Reported by the producer, for recognising the code in the admin UI.
+  hrisName      String?  @map("hris_name")
+  departmentId  String?  @map("department_id") @db.Uuid
+  /// True while the target was proposed by exact code match and no human has
+  /// confirmed it. Still applied — but visible as unreviewed.
+  autoSuggested Boolean  @default(false) @map("auto_suggested")
+  firstSeenAt   DateTime @default(now()) @map("first_seen_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  department Department? @relation("HrisDepartmentMapTarget", fields: [departmentId], references: [id], onDelete: Restrict)
+
+  @@map("hris_department_maps")
+}
+
+/// HRIS position code -> GEM-ENI position. Same contract as
+/// {@link HrisDepartmentMap}.
+model HrisPositionMap {
+  id            String   @id @default(uuid()) @db.Uuid
+  hrisCode      String   @unique @map("hris_code")
+  hrisName      String?  @map("hris_name")
+  positionId    String?  @map("position_id") @db.Uuid
+  autoSuggested Boolean  @default(false) @map("auto_suggested")
+  firstSeenAt   DateTime @default(now()) @map("first_seen_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  position Position? @relation("HrisPositionMapTarget", fields: [positionId], references: [id], onDelete: Restrict)
+
+  @@map("hris_position_maps")
 }

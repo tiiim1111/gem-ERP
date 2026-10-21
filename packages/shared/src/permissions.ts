@@ -226,6 +226,14 @@ export const PERMISSIONS = {
     view: 'lookup.view',
     manage: 'lookup.manage',
   },
+  integration: {
+    /*
+     * Deliberately narrow. Viewing an employee's HRIS source badge needs only
+     * employee.view; this gates the connection settings, the code mappings,
+     * the run history with its row-level errors, and triggering a run.
+     */
+    manage: 'integration.manage',
+  },
 } as const;
 
 type PermissionMap = typeof PERMISSIONS;

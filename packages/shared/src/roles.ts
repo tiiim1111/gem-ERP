@@ -37,6 +37,10 @@ const BRANCH_ADMIN_EXCLUDED: string[] = [
   P.settings.manage,
   P.lookup.manage,
   P.notification.manage,
+  // The HRIS connection, its code mappings and the run history (which carries
+  // row-level sync errors) are system-level, not per-branch. Branch admins see
+  // the HRIS source badge on an employee through employee.view instead.
+  P.integration.manage,
   // Audit log export is reserved for Super Admin / Auditor grants.
   P.audit.export,
 ];

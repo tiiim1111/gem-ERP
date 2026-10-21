@@ -6,6 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import { AppException } from '../common/errors/app.exception';
 import { pageArgs, paginated, parseSort } from '../common/pagination';
 import type { AuditContext, AuthUser } from '../common/types/auth-request';
+import { AppConfigService } from '../config/app-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BranchScopeService } from '../rbac/branch-scope.service';
 import { SequenceService } from '../sequences/sequence.service';
@@ -39,6 +40,9 @@ const EMPLOYEE_SELECT = {
   archivedAt: true,
   createdAt: true,
   updatedAt: true,
+  hrisId: true,
+  hrisSyncedAt: true,
+  separationDateInferred: true,
   branch: { select: { id: true, code: true, name: true } },
   department: { select: { id: true, code: true, name: true } },
   position: { select: { id: true, code: true, name: true } },
@@ -75,6 +79,11 @@ export interface EmployeeView {
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Non-null means the HRIS owns the synced fields; see hrisOwnedFields. */
+  hrisId: string | null;
+  hrisSyncedAt: Date | null;
+  /** True when separationDate was observed by the sync, not supplied by HR. */
+  separationDateInferred: boolean;
   branch: { id: string; code: string; name: string };
   department: { id: string; code: string; name: string } | null;
   position: { id: string; code: string; name: string } | null;
@@ -122,6 +131,7 @@ export class EmployeesService {
     private readonly branchScope: BranchScopeService,
     private readonly audit: AuditService,
     private readonly sequences: SequenceService,
+    private readonly config: AppConfigService,
   ) {}
 
   async list(
@@ -193,6 +203,16 @@ export class EmployeesService {
     dto: CreateEmployeeDto,
     ctx: AuditContext,
   ): Promise<EmployeeView> {
+    /*
+     * With the HRIS feed live it is the system of record for the roster, so a
+     * hand-made employee here would either be a duplicate or get overwritten.
+     * Blocked server-side as well as hidden in the UI.
+     */
+    if (this.config.hris.enabled) {
+      throw AppException.invalidStateTransition(
+        'Employees come from the HRIS. Add the person there; the next sync will bring them in.',
+      );
+    }
     await this.requireBranch(dto.branchId);
     this.branchScope.assertBranchAccess(user, dto.branchId);
     await this.assertReferences(dto.departmentId, dto.positionId, dto.supervisorId);
@@ -269,6 +289,7 @@ export class EmployeesService {
   ): Promise<EmployeeView> {
     const existing = await this.requireInScope(user, id);
     this.assertNotArchived(existing);
+    this.assertHrisFieldsNotEdited(existing, dto as unknown as Record<string, unknown>);
 
     if (dto.branchId && dto.branchId !== existing.branch.id) {
       await this.requireBranch(dto.branchId);
@@ -345,6 +366,7 @@ export class EmployeesService {
   ): Promise<EmployeeView> {
     const existing = await this.requireInScope(user, id);
     this.assertNotArchived(existing);
+    this.assertStatusChangeAllowed(existing);
 
     const updated = await this.prisma.employee.update({
       where: { id },
@@ -375,6 +397,7 @@ export class EmployeesService {
   ): Promise<EmployeeView> {
     const existing = await this.requireInScope(user, id);
     this.assertNotArchived(existing);
+    this.assertStatusChangeAllowed(existing);
     if (existing.status === EmployeeStatus.SEPARATED) {
       throw AppException.invalidStateTransition(
         'A separated employee cannot be deactivated. Use activate to rehire.',
@@ -412,6 +435,7 @@ export class EmployeesService {
   ): Promise<SeparationResult> {
     const existing = await this.requireInScope(user, id);
     this.assertNotArchived(existing);
+    this.assertStatusChangeAllowed(existing);
     if (existing.status === EmployeeStatus.SEPARATED) {
       throw AppException.invalidStateTransition(
         'This employee is already separated.',
@@ -643,6 +667,58 @@ export class EmployeesService {
       separationDate: row.separationDate,
       userId: row.user?.id ?? null,
     };
+  }
+
+  /**
+   * Fields the HRIS feed owns on a linked employee.
+   *
+   * Branch, supervisor, the linked login account, notes and photo are absent:
+   * those stay editable in GEM-ENI because the HRIS has no source for them.
+   */
+  private static readonly HRIS_OWNED_FIELDS = [
+    'employeeNumber',
+    'firstName',
+    'middleName',
+    'lastName',
+    'workEmail',
+    'departmentId',
+    'positionId',
+    'status',
+    'startDate',
+    'separationDate',
+  ] as const;
+
+  /**
+   * Refuses edits to fields the HRIS owns.
+   *
+   * Enforced here rather than only in the form: a disabled input is a
+   * courtesy, not a control, and an edit that survives until the next sync
+   * silently reverts it is worse than a clear refusal.
+   */
+  private assertHrisFieldsNotEdited(
+    existing: { hrisId: string | null },
+    dto: Record<string, unknown>,
+  ): void {
+    if (!existing.hrisId) return;
+    const attempted = EmployeesService.HRIS_OWNED_FIELDS.filter(
+      (field) => dto[field] !== undefined,
+    );
+    if (attempted.length === 0) return;
+    throw AppException.validation(
+      attempted.map((field) => ({
+        field,
+        message: 'Maintained by the HRIS — change it there and the next sync will bring it over.',
+      })),
+      'This employee comes from the HRIS, so those fields cannot be edited here.',
+    );
+  }
+
+  /** Blocks a status change on an HRIS-linked employee, for the same reason. */
+  private assertStatusChangeAllowed(existing: { hrisId: string | null }): void {
+    if (!existing.hrisId) return;
+    throw AppException.invalidStateTransition(
+      'This employee\'s status comes from the HRIS. Change it there — the next sync will apply it here.',
+    );
   }
 
   private toView(row: EmployeeRow, includeNotes: boolean): EmployeeView {

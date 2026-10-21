@@ -216,6 +216,11 @@ export interface Employee {
   position?: { id: string; code?: string; name: string } | null;
   supervisorId?: string | null;
   supervisor?: EmployeeSummary | null;
+  /** Non-null means the HRIS owns the synced fields — show them read-only. */
+  hrisId?: string | null;
+  hrisSyncedAt?: string | null;
+  /** True when separationDate was observed by the sync, not supplied by HR. */
+  separationDateInferred?: boolean;
   status: EmployeeStatus;
   startDate?: string | null;
   separationDate?: string | null;
@@ -468,6 +473,81 @@ export interface Item {
   version?: number;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/* ------------------------- HRIS employee feed -------------------------- */
+
+export type HrisSyncStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'REVIEW_REQUIRED'
+  | 'FAILED';
+
+export interface HrisSyncIssue {
+  id: string;
+  severity: 'ERROR' | 'REVIEW';
+  code: string;
+  employeeNumber: string | null;
+  employeeId: string | null;
+  message: string;
+}
+
+export interface HrisSyncRun {
+  id: string;
+  trigger: 'SCHEDULED' | 'MANUAL';
+  dryRun: boolean;
+  status: HrisSyncStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  companyCode: string | null;
+  producerTotal: number | null;
+  pagesFetched: number | null;
+  counts: {
+    created: number;
+    linked: number;
+    updated: number;
+    unchanged: number;
+    skipped: number;
+    failed: number;
+  };
+  error: string | null;
+  createdAt: string;
+  /** Only on the single-run endpoint. */
+  issues?: HrisSyncIssue[];
+}
+
+export interface HrisStatus {
+  enabled: boolean;
+  configured: boolean;
+  baseUrl: string | null;
+  employeePath: string;
+  expectedCompanyCode: string;
+  defaultBranch: { id: string; code: string; name: string } | null;
+  defaultBranchProblem: string | null;
+  cron: string;
+  timezone: string;
+  lastRun: HrisSyncRun | null;
+  lastSuccessfulAt: string | null;
+  linkedEmployees: number;
+  unlinkedEmployees: number;
+  pendingRun: { id: string; status: HrisSyncStatus; dryRun: boolean } | null;
+  unmappedCodes: number;
+}
+
+export interface HrisCodeMapping {
+  id: string;
+  hrisCode: string;
+  target: { id: string; code: string; name: string } | null;
+  /** Proposed by exact code match and not yet confirmed by a person. */
+  autoSuggested: boolean;
+}
+
+export interface HrisMappings {
+  departments: HrisCodeMapping[];
+  positions: HrisCodeMapping[];
+  availableDepartments: Array<{ id: string; code: string; name: string }>;
+  availablePositions: Array<{ id: string; code: string; name: string }>;
 }
 
 /** GET /items/resolve-barcode?code= result (kind varies: item, lot, bin…). */

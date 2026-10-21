@@ -107,6 +107,15 @@ services:
       S3_BUCKET: ${S3_BUCKET:-gemerp-attachments}
       S3_FORCE_PATH_STYLE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # HRIS employee feed. Off by default; the token lives only in .env.prod.
+      GEMENI_HRIS_SYNC_ENABLED: ${GEMENI_HRIS_SYNC_ENABLED:-false}
+      GEMENI_HRIS_BASE_URL: ${GEMENI_HRIS_BASE_URL:-}
+      GEMENI_HRIS_EMPLOYEE_PATH: ${GEMENI_HRIS_EMPLOYEE_PATH:-/api/v1/integrations/gemeni/employees}
+      GEMENI_HRIS_EXPECTED_COMPANY_CODE: ${GEMENI_HRIS_EXPECTED_COMPANY_CODE:-GEM}
+      GEMENI_HRIS_TOKEN: ${GEMENI_HRIS_TOKEN:-}
+      GEMENI_HRIS_DEFAULT_BRANCH_CODE: ${GEMENI_HRIS_DEFAULT_BRANCH_CODE:-}
+      GEMENI_HRIS_SYNC_CRON: ${GEMENI_HRIS_SYNC_CRON:-0 2 * * *}
+      GEMENI_HRIS_SYNC_TIMEZONE: ${GEMENI_HRIS_SYNC_TIMEZONE:-Asia/Manila}
     # The image entrypoint runs `prisma migrate deploy` before booting, so every
     # `up -d --build` applies pending migrations automatically.
     healthcheck:
@@ -142,6 +151,15 @@ services:
       S3_BUCKET: ${S3_BUCKET:-gemerp-attachments}
       S3_FORCE_PATH_STYLE: "true"
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # HRIS employee feed. Off by default; the token lives only in .env.prod.
+      GEMENI_HRIS_SYNC_ENABLED: ${GEMENI_HRIS_SYNC_ENABLED:-false}
+      GEMENI_HRIS_BASE_URL: ${GEMENI_HRIS_BASE_URL:-}
+      GEMENI_HRIS_EMPLOYEE_PATH: ${GEMENI_HRIS_EMPLOYEE_PATH:-/api/v1/integrations/gemeni/employees}
+      GEMENI_HRIS_EXPECTED_COMPANY_CODE: ${GEMENI_HRIS_EXPECTED_COMPANY_CODE:-GEM}
+      GEMENI_HRIS_TOKEN: ${GEMENI_HRIS_TOKEN:-}
+      GEMENI_HRIS_DEFAULT_BRANCH_CODE: ${GEMENI_HRIS_DEFAULT_BRANCH_CODE:-}
+      GEMENI_HRIS_SYNC_CRON: ${GEMENI_HRIS_SYNC_CRON:-0 2 * * *}
+      GEMENI_HRIS_SYNC_TIMEZONE: ${GEMENI_HRIS_SYNC_TIMEZONE:-Asia/Manila}
 
   web:
     build:

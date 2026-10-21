@@ -183,7 +183,7 @@ significant; the key set is.
 }
 ```
 
-**Exactly eleven record keys.** Nothing else, including nothing from
+**Exactly twelve record keys**, as the JSON above lists them. Nothing else, including nothing from
 `attendance_records`, `employee_benefits`, `employee_compensations`,
 `employee_identifiers`, `employee_work_schedules` or `payroll_items` — your
 foreign-key query shows all six are one join away from this table, which is
@@ -231,7 +231,7 @@ these adjustments:
   `updatedSince` returns **400**.
 - Add the second-company exclusion test from section 2.1.
 - Add a test that archived employees **are** included.
-- The allowlist test should assert the exact eleven-key set, not a subset.
+- The allowlist test should assert the exact twelve-key set, not a subset.
 - In the handover, drop the branch / department-head / separation-date items —
   they are resolved above. Keep the department and position code lists; GEM-ENI
   needs them to build its mapping table before the first sync.

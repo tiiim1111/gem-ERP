@@ -14,6 +14,27 @@ const booleanString = z
   .enum(['true', 'false'])
   .transform((value) => value === 'true');
 
+/*
+ * docker-compose substitutes an unset `${VAR:-}` as `VAR=""` rather than
+ * omitting it, so a plain `.optional()` on a non-empty schema would reject the
+ * default production config — and loadEnv exits the process on a validation
+ * failure, so the API simply would not boot. These two helpers treat an empty
+ * string as absent.
+ *
+ * The fallback has to live INSIDE the preprocess: an outer `.default()` only
+ * fires for an undefined *input*, and the input here is the empty string.
+ */
+const emptyToUndefined = (value: unknown): unknown =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+function optionalEnv<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess(emptyToUndefined, schema.optional());
+}
+
+function envWithDefault<T extends z.ZodTypeAny>(schema: T, fallback: z.input<T>) {
+  return z.preprocess(emptyToUndefined, schema.default(fallback as never));
+}
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -60,6 +81,44 @@ const envSchema = z.object({
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
     .optional(),
+
+  /*
+   * HRIS employee feed (docs/hris-employee-api-phase2-decisions.md).
+   *
+   * Defaults off: the integration must be deployed, dry-run and reviewed
+   * before it is allowed to write employees. Nothing here is required, so an
+   * existing deployment keeps booting untouched.
+   */
+  GEMENI_HRIS_SYNC_ENABLED: booleanString.default('false'),
+  GEMENI_HRIS_BASE_URL: optionalEnv(z.string().url()),
+  GEMENI_HRIS_EMPLOYEE_PATH: envWithDefault(
+    z.string().min(1),
+    '/api/v1/integrations/gemeni/employees',
+  ),
+  /** Asserted against meta.companyCode on every page before reconciling. */
+  GEMENI_HRIS_EXPECTED_COMPANY_CODE: envWithDefault(z.string().min(1), 'GEM'),
+  /** Bearer token. Never logged, never returned by an endpoint. */
+  GEMENI_HRIS_TOKEN: optionalEnv(z.string().min(1)),
+  /**
+   * Branch code every newly imported employee is filed under. The HRIS has no
+   * branch concept and GEM-ENI requires one, so this is explicit rather than
+   * guessed — and it is never reapplied to an employee that already exists.
+   */
+  GEMENI_HRIS_DEFAULT_BRANCH_CODE: optionalEnv(z.string().min(1)),
+  /** Nightly schedule for the worker's repeatable job. */
+  GEMENI_HRIS_SYNC_CRON: envWithDefault(z.string().min(1), '0 2 * * *'),
+  GEMENI_HRIS_SYNC_TIMEZONE: envWithDefault(z.string().min(1), 'Asia/Manila'),
+  GEMENI_HRIS_PAGE_SIZE: envWithDefault(z.coerce.number().int().min(1).max(500), 200),
+  /** Per-request network timeout, milliseconds. */
+  GEMENI_HRIS_TIMEOUT_MS: envWithDefault(
+    z.coerce.number().int().min(1000).max(120000),
+    15000,
+  ),
+  /** How often the API claims queued sync runs, milliseconds. */
+  GEMENI_HRIS_POLL_MS: envWithDefault(
+    z.coerce.number().int().min(5000).max(600000),
+    30000,
+  ),
 });
 
 export type Env = z.infer<typeof envSchema>;

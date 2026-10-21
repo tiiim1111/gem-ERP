@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module';
 import { CsrfOriginGuard } from './auth/csrf-origin.guard';
 import { SessionAuthGuard } from './auth/session-auth.guard';
 import { EmployeesModule } from './employees/employees.module';
+import { HrisModule } from './integrations/hris/hris.module';
 import { HealthModule } from './health/health.module';
 import { ImportsModule } from './imports/imports.module';
 import { ItemsModule } from './items/items.module';
@@ -84,6 +85,7 @@ const env = loadEnv();
     OrgModule,
     // Phase 2: employees, lookup configuration, item master, staged imports.
     EmployeesModule,
+    HrisModule,
     LookupsModule,
     ItemsModule,
     ImportsModule,
