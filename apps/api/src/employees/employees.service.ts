@@ -204,15 +204,14 @@ export class EmployeesService {
     ctx: AuditContext,
   ): Promise<EmployeeView> {
     /*
-     * With the HRIS feed live it is the system of record for the roster, so a
-     * hand-made employee here would either be a duplicate or get overwritten.
-     * Blocked server-side as well as hidden in the UI.
+     * Creation stays open even with the HRIS feed live.
+     *
+     * The HRIS owns the people it sends, not the whole table: executives,
+     * consultants and contractors who hold company assets are often outside
+     * the payroll feed, and blocking creation outright left no way to record
+     * a custodian for them at all. A record made here has no hrisId, so the
+     * sync neither updates nor removes it.
      */
-    if (this.config.hris.enabled) {
-      throw AppException.invalidStateTransition(
-        'Employees come from the HRIS. Add the person there; the next sync will bring them in.',
-      );
-    }
     await this.requireBranch(dto.branchId);
     this.branchScope.assertBranchAccess(user, dto.branchId);
     await this.assertReferences(dto.departmentId, dto.positionId, dto.supervisorId);

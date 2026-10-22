@@ -197,8 +197,11 @@ Pagkatapos ng unang tunay na sync, i-verify ang totals, ang HRIS badge sa
 employee records, ang read-only na fields, ang statuses, ang audit/run history,
 at **na buo pa ang asset custody**.
 
-Kapag naka-enable na, **nawawala ang "New employee"** at tinatanggihan din ng
-API ang manual na paggawa — ang HRIS na ang system of record.
+**Nananatili ang "New employee" kahit naka-enable ang sync.** Ang HRIS ay may-ari
+ng mga taong ipinapadala nito, hindi ng buong listahan: ang executive,
+consultant at contractor na may hawak na gamit ay madalas wala sa payroll feed.
+Ang record na ginawa dito ay walang `hris_id`, kaya hindi ito ginagalaw o
+binubura ng sync. May **HRIS** na badge ang mga galing sa feed para makilala.
 
 ## 5. Pagbasa ng run
 

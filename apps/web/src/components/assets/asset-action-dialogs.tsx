@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getErrorMessage, isApiClientError } from '@/lib/api';
 import {
+  listDepartments,
   activateAsset,
   assignAsset,
   disposeAsset,
@@ -261,15 +262,33 @@ function AssignDialog({
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }) {
+  /*
+   * Not everything is held by a person. A conference-room projector or a
+   * shared printer belongs to the office, and forcing a name onto it either
+   * invents a custodian or leaves the asset unassigned — the API has always
+   * accepted a department here, it just was not offered.
+   *
+   * Reassign stays employee-only: handing custody over is person to person.
+   */
+  const [target, setTarget] = React.useState<'employee' | 'department'>('employee');
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
+  const [departmentId, setDepartmentId] = React.useState('');
   const [conditionId, setConditionId] = React.useState('');
   const [expectedReturnDate, setExpectedReturnDate] = React.useState('');
   const [notes, setNotes] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
 
+  const departmentsQuery = useQuery({
+    queryKey: ['departments', 'assign-options'],
+    queryFn: ({ signal }) => listDepartments({ page: 1, pageSize: 100, isActive: true }, signal),
+    enabled: open && !reassign,
+  });
+
   React.useEffect(() => {
     if (!open) {
+      setTarget('employee');
       setEmployeeId(null);
+      setDepartmentId('');
       setConditionId('');
       setExpectedReturnDate('');
       setNotes('');
@@ -294,7 +313,10 @@ function AssignDialog({
       return assignAsset(
         asset.id,
         {
-          employeeId: employeeId!,
+          // The API requires exactly one target, so only the chosen one is sent.
+          ...(target === 'employee'
+            ? { employeeId: employeeId! }
+            : { departmentId }),
           conditionId,
           expectedReturnDate: expectedReturnDate || undefined,
           notes: notes || undefined,
@@ -308,8 +330,13 @@ function AssignDialog({
 
   const handleSubmit = () => {
     setError(null);
-    if (!employeeId) {
-      setError('Pick the custodian employee.');
+    if (target === 'employee' || reassign) {
+      if (!employeeId) {
+        setError('Pick the custodian employee.');
+        return;
+      }
+    } else if (!departmentId) {
+      setError('Pick the department this asset belongs to.');
       return;
     }
     if (!reassign && !conditionId) {
@@ -326,7 +353,7 @@ function AssignDialog({
         <DialogDescription>
           {reassign
             ? 'Hands custody to a new employee. Condition at hand-over is recorded.'
-            : 'Assigns custody to an employee and requests their acknowledgment.'}
+            : 'Puts the asset in someone\u2019s care \u2014 a named employee who acknowledges it, or a department for shared equipment.'}
         </DialogDescription>
       </DialogHeader>
       <form
@@ -338,9 +365,56 @@ function AssignDialog({
       >
         <DialogBody className="space-y-4">
           <FormError message={error} />
-          <FormField label="Employee" htmlFor="assign-employee" required>
-            <EmployeePicker id="assign-employee" value={employeeId} onChange={setEmployeeId} />
-          </FormField>
+          {reassign ? (
+            <FormField label="Employee" htmlFor="assign-employee" required>
+              <EmployeePicker id="assign-employee" value={employeeId} onChange={setEmployeeId} />
+            </FormField>
+          ) : (
+            <>
+              <FormField label="Assign to" htmlFor="assign-target" required>
+                <Select
+                  id="assign-target"
+                  value={target}
+                  onChange={(event) => {
+                    setTarget(event.target.value as 'employee' | 'department');
+                    setError(null);
+                  }}
+                >
+                  <option value="employee">An employee — one person is responsible</option>
+                  <option value="department">A department — shared, nobody signs for it</option>
+                </Select>
+              </FormField>
+              {target === 'employee' ? (
+                <FormField label="Employee" htmlFor="assign-employee" required>
+                  <EmployeePicker
+                    id="assign-employee"
+                    value={employeeId}
+                    onChange={setEmployeeId}
+                  />
+                </FormField>
+              ) : (
+                <FormField
+                  label="Department"
+                  htmlFor="assign-department"
+                  required
+                  hint="No acknowledgement is requested — there is nobody to sign."
+                >
+                  <Select
+                    id="assign-department"
+                    value={departmentId}
+                    onChange={(event) => setDepartmentId(event.target.value)}
+                  >
+                    <option value="">Select a department…</option>
+                    {(departmentsQuery.data?.data ?? []).map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.name} ({department.code})
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              )}
+            </>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField
               label={reassign ? 'Condition at hand-over' : 'Condition at issuance'}

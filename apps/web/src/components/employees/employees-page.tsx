@@ -28,6 +28,7 @@ import { humanize } from '@/lib/utils';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useSession } from '@/components/auth/session-provider';
 import { PageHeader } from '@/components/layout/page-header';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -162,9 +163,10 @@ export function EmployeesPage({
   });
 
   /*
-   * With the HRIS as the system of record, a hand-made employee would be a
-   * duplicate or get overwritten — the API refuses it too, so the affordance
-   * is hidden rather than left to fail.
+   * Creation stays available even with the feed live: the HRIS owns the people
+   * it sends, not the whole list. Executives, consultants and contractors who
+   * hold company assets are often outside the payroll feed, and an asset
+   * nobody can be made responsible for is what this system exists to prevent.
    */
   const employeeSourceQuery = useQuery({
     queryKey: ['employee-source'],
@@ -172,7 +174,7 @@ export function EmployeesPage({
     staleTime: 5 * 60 * 1000,
   });
   const hrisManaged = employeeSourceQuery.data?.hrisManaged ?? false;
-  const canCreate = can(PERMISSIONS.employee.create) && !hrisManaged;
+  const canCreate = can(PERMISSIONS.employee.create);
   const canUpdate = can(PERMISSIONS.employee.update);
   const canArchive = can(PERMISSIONS.employee.archive);
   const hasRowActions = canUpdate || canArchive;
@@ -278,7 +280,7 @@ export function EmployeesPage({
               hasFilters
                 ? 'Try adjusting your search or filters.'
                 : hrisManaged
-                  ? 'Employees come from the HRIS. They appear here after the next sync.'
+                  ? 'Most employees arrive from the HRIS on the next sync. Add anyone the HRIS does not carry — an executive or a consultant — here.'
                   : 'Create the first employee record to get started.'
             }
             action={
@@ -315,6 +317,13 @@ export function EmployeesPage({
                       >
                         {employeeName(employee)}
                       </button>
+                      {/* Only while the feed is live — otherwise every row
+                          would carry a badge that distinguishes nothing. */}
+                      {hrisManaged && employee.hrisId ? (
+                        <Badge variant="secondary" className="ml-2 align-middle">
+                          HRIS
+                        </Badge>
+                      ) : null}
                       <p className="font-mono text-xs text-muted-foreground sm:hidden">
                         {employee.employeeNumber}
                       </p>

@@ -188,26 +188,25 @@ describe('status transitions on a linked employee', () => {
 
 describe('manual creation once the feed is live', () => {
   /*
-   * With the HRIS as the system of record, a hand-made employee is either a
-   * duplicate or about to be overwritten. Blocked server-side, not only hidden
-   * in the UI.
+   * The HRIS owns the people it sends, not the whole table. Executives,
+   * consultants and contractors who hold company assets are often outside the
+   * payroll feed, so blocking creation would leave no way to record a
+   * custodian for them — and an asset nobody can be made responsible for is
+   * the thing this system exists to prevent.
    */
-  it('is refused while the sync is enabled', async () => {
-    const { service, prisma } = build({ syncEnabled: true });
-    const error = await envelopeOf(
-      service.create(superAdmin, { firstName: 'Ana', lastName: 'Reyes' } as never, ctx),
-    );
-    expect(error.message).toMatch(/Employees come from the HRIS/);
-    expect(prisma.employee.create).not.toHaveBeenCalled();
-  });
-
-  it('is allowed while the sync is off', async () => {
-    const { service, prisma } = build({ syncEnabled: false });
-    await service
-      .create(superAdmin, { firstName: 'Ana', lastName: 'Reyes', branchId: 'branch-1' } as never, ctx)
-      .catch(() => undefined);
-    // It got past the guard — whether it then succeeds is the existing suite's
-    // business, not this file's.
-    expect(prisma.branch.findUnique).toHaveBeenCalled();
-  });
+  it.each([[true], [false]])(
+    'is allowed with the sync enabled = %s',
+    async (syncEnabled) => {
+      const { service, prisma } = build({ syncEnabled });
+      await service
+        .create(
+          superAdmin,
+          { firstName: 'Ana', lastName: 'Reyes', branchId: 'branch-1' } as never,
+          ctx,
+        )
+        .catch(() => undefined);
+      // Past the guard — whether it then succeeds is the main suite's business.
+      expect(prisma.branch.findUnique).toHaveBeenCalled();
+    },
+  );
 });
