@@ -89,11 +89,14 @@ function CountGrid({ run }: { run: HrisSyncRun }) {
 /** One HRIS code and the GEM-ENI row it points at. */
 function MappingRow({
   mapping,
+  kind,
   options,
   onChange,
   saving,
 }: {
   mapping: HrisCodeMapping;
+  /** "department" or "position", for the explanatory line. */
+  kind: string;
   options: Array<{ id: string; code: string; name: string }>;
   onChange: (id: string, target: string | null) => void;
   saving: boolean;
@@ -103,8 +106,9 @@ function MappingRow({
       <div className="min-w-0">
         <p className="font-mono text-sm font-medium">{mapping.hrisCode}</p>
         {!mapping.target ? (
-          <p className="text-xs text-destructive">
-            Unmapped — employees with this code are skipped until it is pointed somewhere.
+          <p className="text-xs text-muted-foreground">
+            Not mapped — employees with this code sync normally, just without a{' '}
+            {kind}. Point it somewhere to fill that in.
           </p>
         ) : mapping.autoSuggested ? (
           <p className="text-xs text-muted-foreground">
@@ -291,9 +295,7 @@ export function HrisIntegrationPage() {
   const blockers: string[] = [];
   if (!status.configured) blockers.push('The connection is not configured.');
   if (status.defaultBranchProblem) blockers.push(status.defaultBranchProblem);
-  if (status.unmappedCodes > 0) {
-    blockers.push(`${status.unmappedCodes} HRIS code(s) are not mapped to GEM-ENI.`);
-  }
+
 
   return (
     <div className="space-y-6">
@@ -441,17 +443,18 @@ export function HrisIntegrationPage() {
         <CardHeader>
           <CardTitle>Code mappings</CardTitle>
           <CardDescription>
-            HRIS department and position codes, pointed at GEM-ENI records. Nothing organisational
-            is created from the feed, so an unmapped code skips its employees rather than filing
-            them somewhere arbitrary.
+            HRIS department and position codes, pointed at GEM-ENI records. Optional: an unmapped
+            code just leaves that one field empty on the employee. Nothing organisational is ever
+            created by the sync itself, so a typo upstream cannot become a permanent department.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {status.unmappedCodes > 0 ? (
             <div className="flex flex-col gap-2 rounded-md border border-dashed p-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-muted-foreground">
-                {status.unmappedCodes} code(s) have no GEM-ENI record. Create them to match the
-                HRIS, or point each one at an existing record below.
+                {status.unmappedCodes} code(s) have no GEM-ENI record. Employees still sync
+                without them — this only fills in their department and position. Create them to
+                match the HRIS, or point each one at an existing record below.
               </p>
               <Button
                 variant="outline"
@@ -481,6 +484,7 @@ export function HrisIntegrationPage() {
                       <MappingRow
                         key={mapping.id}
                         mapping={mapping}
+                        kind="department"
                         options={mappingsQuery.data.availableDepartments}
                         saving={departmentMutation.isPending}
                         onChange={(id, target) => departmentMutation.mutate({ id, target })}
@@ -501,6 +505,7 @@ export function HrisIntegrationPage() {
                       <MappingRow
                         key={mapping.id}
                         mapping={mapping}
+                        kind="position"
                         options={mappingsQuery.data.availablePositions}
                         saving={positionMutation.isPending}
                         onChange={(id, target) => positionMutation.mutate({ id, target })}
