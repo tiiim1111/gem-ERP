@@ -16,6 +16,8 @@ import {
 } from '@/lib/endpoints';
 import {
   assetCustodian,
+  assignmentExpectsAcknowledgement,
+  assignmentTargetLabel,
   assetPermittedActions,
   assetTag,
   conditionLabel,
@@ -431,7 +433,7 @@ export function AssetDetail({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
+                      <TableHead>Assigned to</TableHead>
                       <TableHead className="hidden sm:table-cell">Assigned</TableHead>
                       <TableHead className="hidden md:table-cell">Expected return</TableHead>
                       <TableHead className="hidden md:table-cell">Returned</TableHead>
@@ -443,9 +445,7 @@ export function AssetDetail({
                     {assignments.map((assignment) => (
                       <TableRow key={assignment.id}>
                         <TableCell className="text-sm font-medium">
-                          {assignment.employee
-                            ? employeeName(assignment.employee)
-                            : (assignment.department?.name ?? assignment.projectRef ?? '—')}
+                          {assignmentTargetLabel(assignment)}
                         </TableCell>
                         <TableCell className="hidden text-sm tabular-nums text-muted-foreground sm:table-cell">
                           {formatDate(assignment.assignedAt)}
@@ -461,6 +461,11 @@ export function AssetDetail({
                             <Badge variant="success">{formatDate(assignment.acknowledgedAt)}</Badge>
                           ) : assignment.returnedAt ? (
                             <span className="text-sm text-muted-foreground">—</span>
+                          ) : !assignmentExpectsAcknowledgement(assignment) ? (
+                            /* A department, a typed name, a location or a
+                               project has nobody to sign — "Pending" there
+                               would be waiting on something impossible. */
+                            <span className="text-sm text-muted-foreground">Not required</span>
                           ) : (
                             <Badge variant="warning">Pending</Badge>
                           )}

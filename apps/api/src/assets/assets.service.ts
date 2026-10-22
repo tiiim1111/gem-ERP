@@ -100,6 +100,7 @@ const ASSIGNMENT_SELECT = {
   id: true,
   status: true,
   projectRef: true,
+  assigneeName: true,
   assignedAt: true,
   expectedReturnAt: true,
   issueNotes: true,

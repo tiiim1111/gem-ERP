@@ -1082,6 +1082,34 @@ export function assetHolderLabel(asset: Asset): string | null {
   return asset.custodianName ?? null;
 }
 
+/**
+ * What an assignment is against — an employee, a typed name, a department, a
+ * storage location or a project.
+ *
+ * Centralised because the custody table used to read only three of the five
+ * and showed a dash for the rest, which made an assigned asset look
+ * unassigned.
+ */
+export function assignmentTargetLabel(assignment: AssetAssignment): string {
+  if (assignment.employee) return employeeName(assignment.employee);
+  if (assignment.assigneeName) return assignment.assigneeName;
+  if (assignment.department?.name) return assignment.department.name;
+  if (assignment.location?.name) return assignment.location.name;
+  if (assignment.projectRef) return assignment.projectRef;
+  return '—';
+}
+
+/**
+ * Whether anyone can acknowledge this assignment.
+ *
+ * Only an employee can: a department, a typed name, a location or a project
+ * has nobody to sign. Without this the custody table shows "Pending" forever
+ * on assignments that can never be acknowledged.
+ */
+export function assignmentExpectsAcknowledgement(assignment: AssetAssignment): boolean {
+  return Boolean(assignment.employee ?? assignment.employeeId);
+}
+
 export function assetPermittedActions(asset: Asset): string[] | null {
   return asset.permittedActions ?? asset.allowedActions ?? null;
 }
@@ -1092,6 +1120,8 @@ export interface AssetAssignment {
   asset?: Asset | null;
   employeeId?: string | null;
   employee?: EmployeeSummary | null;
+  /** Set instead of an employee when the holder has no employee record. */
+  assigneeName?: string | null;
   departmentId?: string | null;
   department?: { id: string; name?: string } | null;
   projectRef?: string | null;
