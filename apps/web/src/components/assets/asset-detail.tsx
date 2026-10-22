@@ -332,7 +332,20 @@ export function AssetDetail({
               />
               <InfoRow
                 label="Custodian"
-                value={custodian ? employeeName(custodian) : '—'}
+                value={
+                  custodian ? (
+                    employeeName(custodian)
+                  ) : asset.custodianName ? (
+                    // Flagged, because a typed name cannot be chased on
+                    // clearance the way an employee record can.
+                    <span>
+                      {asset.custodianName}{' '}
+                      <Badge variant="secondary">Not an employee</Badge>
+                    </span>
+                  ) : (
+                    '—'
+                  )
+                }
               />
               <InfoRow
                 label="Expected return"

@@ -1027,6 +1027,8 @@ export interface Asset {
   custodianEmployeeId?: string | null;
   custodianEmployee?: EmployeeSummary | null;
   custodian?: EmployeeSummary | null;
+  /** Set instead of a custodian when the holder has no employee record. */
+  custodianName?: string | null;
   departmentId?: string | null;
   department?: { id: string; code?: string; name?: string } | null;
   projectRef?: string | null;
@@ -1067,6 +1069,17 @@ export function assetTag(asset: Asset): string {
 
 export function assetCustodian(asset: Asset): EmployeeSummary | null {
   return asset.custodianEmployee ?? asset.custodian ?? null;
+}
+
+/**
+ * Who holds the asset, as a line of text — an employee if there is a record,
+ * otherwise the typed name. Used wherever "who has this" is displayed, so the
+ * two cases cannot diverge screen by screen.
+ */
+export function assetHolderLabel(asset: Asset): string | null {
+  const employee = assetCustodian(asset);
+  if (employee) return employeeName(employee);
+  return asset.custodianName ?? null;
 }
 
 export function assetPermittedActions(asset: Asset): string[] | null {

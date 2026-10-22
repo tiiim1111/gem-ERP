@@ -164,6 +164,93 @@ describe('AssetLifecycleService assign → return round trip', () => {
     });
   });
 
+  /*
+   * Not every holder has an employee record — a board member, a visiting
+   * contractor. Forcing one either invents an employee or leaves the asset
+   * unassigned, and an asset nobody is answerable for is what this system
+   * exists to prevent.
+   */
+  describe('a custodian with no employee record', () => {
+    it('records the typed name and skips acknowledgement', async () => {
+      mocks.prisma.asset.findUnique.mockResolvedValue(assetRow());
+
+      await service.assign(
+        superAdmin,
+        'asset-1',
+        { assigneeName: '  Atty. R. Santos  ', conditionId: 'cond-good' },
+        ctx,
+      );
+
+      expect(mocks.prisma.assetAssignment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            // Nobody to acknowledge, so it is active immediately.
+            status: 'ACTIVE',
+            employeeId: null,
+            assigneeName: 'Atty. R. Santos',
+          }),
+        }),
+      );
+      expect(mocks.prisma.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            custodianId: null,
+            custodianName: 'Atty. R. Santos',
+          }),
+        }),
+      );
+    });
+
+    it('refuses a name alongside an employee', async () => {
+      mocks.prisma.asset.findUnique.mockResolvedValue(assetRow());
+
+      await expect(
+        service.assign(
+          superAdmin,
+          'asset-1',
+          { employeeId: 'emp-1', assigneeName: 'Atty. R. Santos', conditionId: 'cond-good' },
+          ctx,
+        ),
+      ).rejects.toThrow();
+      expect(mocks.prisma.assetAssignment.create).not.toHaveBeenCalled();
+    });
+
+    /* Whitespace is not a target; it would assign the asset to nobody. */
+    it('treats a blank name as no target at all', async () => {
+      mocks.prisma.asset.findUnique.mockResolvedValue(assetRow());
+
+      await expect(
+        service.assign(superAdmin, 'asset-1', { assigneeName: '   ', conditionId: 'cond-good' }, ctx),
+      ).rejects.toThrow();
+      expect(mocks.prisma.assetAssignment.create).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The name is denormalised onto the asset, so every path that clears the
+     * custodian must clear it too — otherwise the asset keeps showing a holder
+     * it no longer has.
+     */
+    it('clears the name when the asset comes back', async () => {
+      mocks.prisma.asset.findUnique.mockResolvedValue(
+        assetRow({ status: 'ASSIGNED', custodianId: null, custodianName: 'Atty. R. Santos' }),
+      );
+      mocks.prisma.assetAssignment.findFirst.mockResolvedValue({
+        id: 'assign-1',
+        assetId: 'asset-1',
+        employeeId: null,
+        status: 'ACTIVE',
+      });
+
+      await service.return_(superAdmin, 'asset-1', { conditionId: 'cond-good' }, ctx);
+
+      const update = mocks.prisma.asset.update.mock.calls.at(-1);
+      expect((update?.[0] as { data: Record<string, unknown> }).data).toMatchObject({
+        custodianId: null,
+        custodianName: null,
+      });
+    });
+  });
+
   it('assign creates a pending-acknowledgment custody record and sets the custodian', async () => {
     mocks.prisma.asset.findUnique.mockResolvedValue(assetRow());
 

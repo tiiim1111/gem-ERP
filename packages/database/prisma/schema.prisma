@@ -1205,6 +1205,9 @@ model Asset {
   warehouseId         String?              @map("warehouse_id") @db.Uuid
   storageLocationId   String?              @map("storage_location_id") @db.Uuid
   custodianId         String?              @map("custodian_employee_id") @db.Uuid
+  /// Set instead of custodianId when the holder has no employee record. Kept
+  /// on the asset, like custodianId, so "who has this" needs no join.
+  custodianName       String?              @map("custodian_name")
   departmentId        String?              @map("department_id") @db.Uuid
   acquisitionDate     DateTime?            @map("acquisition_date") @db.Date
   acquisitionCost     Decimal?             @map("acquisition_cost") @db.Decimal(14, 2)
@@ -1275,6 +1278,11 @@ model AssetAssignment {
   departmentId        String?               @map("department_id") @db.Uuid
   locationId          String?               @map("location_id") @db.Uuid
   projectRef          String?               @map("project_ref")
+  /// Custodian who has no employee record — a visitor, a contractor's crew, a
+  /// board member. Free text because there is nothing to point at; it is a
+  /// real column rather than a note so the asset can still be found by who
+  /// holds it. Prefer an employee record whenever the person recurs.
+  assigneeName        String?               @map("assignee_name")
   assignedAt          DateTime              @map("assigned_at")
   assignedById        String                @map("assigned_by_id") @db.Uuid
   expectedReturnAt    DateTime?             @map("expected_return_at")

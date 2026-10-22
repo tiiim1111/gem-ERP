@@ -129,18 +129,20 @@ export class AssetLifecycleService {
   ): Promise<AssetDetailView> {
     const row = await this.assets.requireInScope(user, id);
     const target = assertTransition(row.status, 'assign');
+    const assigneeName = dto.assigneeName?.trim() || undefined;
     const targetCount = [
       dto.employeeId,
       dto.departmentId,
       dto.locationId,
       dto.projectRef,
+      assigneeName,
     ].filter((value) => value !== undefined).length;
     if (targetCount !== 1) {
       throw AppException.validation([
         {
           field: 'employeeId',
           message:
-            'Provide exactly one assignment target: employeeId, departmentId, locationId, or projectRef.',
+            'Provide exactly one assignment target: employeeId, assigneeName, departmentId, locationId, or projectRef.',
         },
       ]);
     }
@@ -171,6 +173,7 @@ export class AssetLifecycleService {
           departmentId: dto.departmentId ?? null,
           locationId: dto.locationId ?? null,
           projectRef: dto.projectRef ?? null,
+          assigneeName: assigneeName ?? null,
           assignedAt: now,
           assignedById: this.requireActor(ctx),
           expectedReturnAt: dto.expectedReturnDate
@@ -186,6 +189,7 @@ export class AssetLifecycleService {
           version: { increment: 1 },
           status: target,
           custodianId: dto.employeeId ?? null,
+          custodianName: assigneeName ?? null,
           departmentId: dto.departmentId ?? row.department?.id ?? null,
           conditionId: dto.conditionId,
         },
@@ -383,6 +387,7 @@ export class AssetLifecycleService {
           version: { increment: 1 },
           status: target,
           custodianId: null,
+          custodianName: null,
           conditionId: dto.conditionId,
           ...(dto.warehouseId ? { warehouseId: dto.warehouseId } : {}),
           ...(dto.locationId !== undefined
@@ -604,7 +609,7 @@ export class AssetLifecycleService {
           maintenanceRequired: outcome === AssetLifecycleStatus.DAMAGED,
           ...(dto.conditionId ? { conditionId: dto.conditionId } : {}),
           ...(outcome === AssetLifecycleStatus.RETIRED
-            ? { retiredAt: now, custodianId: null }
+            ? { retiredAt: now, custodianId: null, custodianName: null }
             : {}),
         },
       });
@@ -661,6 +666,7 @@ export class AssetLifecycleService {
           version: { increment: 1 },
           status: target,
           custodianId: null,
+          custodianName: null,
           maintenanceRequired: true,
           ...(dto.conditionId ? { conditionId: dto.conditionId } : {}),
         },
@@ -715,7 +721,12 @@ export class AssetLifecycleService {
       });
       await tx.asset.update({
         where: { id },
-        data: { status: target, custodianId: null, version: { increment: 1 } },
+        data: {
+          status: target,
+          custodianId: null,
+          custodianName: null,
+          version: { increment: 1 },
+        },
       });
       await tx.assetMovement.create({
         data: {
@@ -781,6 +792,7 @@ export class AssetLifecycleService {
           status: target,
           retiredAt: now,
           custodianId: null,
+          custodianName: null,
           version: { increment: 1 },
         },
       });
@@ -929,6 +941,7 @@ export class AssetLifecycleService {
           version: { increment: 1 },
           status: target,
           custodianId: employee.id,
+          custodianName: null,
           ...(dto.conditionId ? { conditionId: dto.conditionId } : {}),
         },
       });

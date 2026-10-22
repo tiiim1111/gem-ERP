@@ -1055,6 +1055,8 @@ export function activateAsset(id: string): Promise<Asset> {
 
 export interface AssetAssignBody {
   employeeId?: string;
+  /** Custodian with no employee record. Exactly one target may be sent. */
+  assigneeName?: string;
   departmentId?: string;
   projectRef?: string;
   locationId?: string;

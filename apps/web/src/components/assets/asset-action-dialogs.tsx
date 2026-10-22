@@ -270,8 +270,9 @@ function AssignDialog({
    *
    * Reassign stays employee-only: handing custody over is person to person.
    */
-  const [target, setTarget] = React.useState<'employee' | 'department'>('employee');
+  const [target, setTarget] = React.useState<'employee' | 'person' | 'department'>('employee');
   const [employeeId, setEmployeeId] = React.useState<string | null>(null);
+  const [assigneeName, setAssigneeName] = React.useState('');
   const [departmentId, setDepartmentId] = React.useState('');
   const [conditionId, setConditionId] = React.useState('');
   const [expectedReturnDate, setExpectedReturnDate] = React.useState('');
@@ -288,6 +289,7 @@ function AssignDialog({
     if (!open) {
       setTarget('employee');
       setEmployeeId(null);
+      setAssigneeName('');
       setDepartmentId('');
       setConditionId('');
       setExpectedReturnDate('');
@@ -316,7 +318,9 @@ function AssignDialog({
           // The API requires exactly one target, so only the chosen one is sent.
           ...(target === 'employee'
             ? { employeeId: employeeId! }
-            : { departmentId }),
+            : target === 'person'
+              ? { assigneeName: assigneeName.trim() }
+              : { departmentId }),
           conditionId,
           expectedReturnDate: expectedReturnDate || undefined,
           notes: notes || undefined,
@@ -333,6 +337,11 @@ function AssignDialog({
     if (target === 'employee' || reassign) {
       if (!employeeId) {
         setError('Pick the custodian employee.');
+        return;
+      }
+    } else if (target === 'person') {
+      if (!assigneeName.trim()) {
+        setError('Type the name of the person holding this asset.');
         return;
       }
     } else if (!departmentId) {
@@ -353,7 +362,7 @@ function AssignDialog({
         <DialogDescription>
           {reassign
             ? 'Hands custody to a new employee. Condition at hand-over is recorded.'
-            : 'Puts the asset in someone\u2019s care \u2014 a named employee who acknowledges it, or a department for shared equipment.'}
+            : 'Puts the asset in someone\u2019s care \u2014 an employee who acknowledges it, a person with no employee record, or a department for shared equipment.'}
         </DialogDescription>
       </DialogHeader>
       <form
@@ -381,6 +390,9 @@ function AssignDialog({
                   }}
                 >
                   <option value="employee">An employee — one person is responsible</option>
+                  <option value="person">
+                    Someone with no employee record — type their name
+                  </option>
                   <option value="department">A department — shared, nobody signs for it</option>
                 </Select>
               </FormField>
@@ -390,6 +402,21 @@ function AssignDialog({
                     id="assign-employee"
                     value={employeeId}
                     onChange={setEmployeeId}
+                  />
+                </FormField>
+              ) : target === 'person' ? (
+                <FormField
+                  label="Name"
+                  htmlFor="assign-person"
+                  required
+                  hint="A typed name cannot be searched reliably or chased on clearance. If this person comes back, add them under Employees instead."
+                >
+                  <Input
+                    id="assign-person"
+                    value={assigneeName}
+                    maxLength={160}
+                    placeholder="e.g. Atty. R. Santos (board member)"
+                    onChange={(event) => setAssigneeName(event.target.value)}
                   />
                 </FormField>
               ) : (

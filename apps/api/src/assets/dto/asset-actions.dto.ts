@@ -33,6 +33,16 @@ export class AssignAssetDto {
   @IsUUID()
   locationId?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Custodian with no employee record — a visitor, a contractor, a board member. Prefer employeeId whenever the person recurs: a typed name cannot be searched reliably or chased on clearance.',
+    example: 'Atty. R. Santos (board member)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  assigneeName?: string;
+
   @ApiPropertyOptional({ description: 'Free-form project reference.' })
   @IsOptional()
   @IsString()
