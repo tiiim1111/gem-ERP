@@ -15,14 +15,14 @@ import {
   unwrapList,
 } from '@/lib/endpoints';
 import {
-  assetCustodian,
+  assetHolderIsEmployee,
+  assetHolderLabel,
   assignmentExpectsAcknowledgement,
   assignmentTargetLabel,
   assetPermittedActions,
   assetTag,
   conditionLabel,
   daysUntil,
-  employeeName,
   formatMoney,
   historyDetailName,
   historyDetailString,
@@ -221,7 +221,8 @@ export function AssetDetail({
       !(entry === 'inspection-fail' && all.includes('inspection-pass')),
   );
 
-  const custodian = assetCustodian(asset);
+  const holder = assetHolderLabel(asset);
+  const holderIsEmployee = assetHolderIsEmployee(asset);
   const openAssignment = asset.openAssignment ?? null;
   const myEmployeeId = meEmployeeId(user);
   const canAcknowledge =
@@ -335,14 +336,14 @@ export function AssetDetail({
               <InfoRow
                 label="Custodian"
                 value={
-                  custodian ? (
-                    employeeName(custodian)
-                  ) : asset.custodianName ? (
-                    // Flagged, because a typed name cannot be chased on
-                    // clearance the way an employee record can.
+                  holder ? (
                     <span>
-                      {asset.custodianName}{' '}
-                      <Badge variant="secondary">Not an employee</Badge>
+                      {holder}{' '}
+                      {/* Flagged, because a typed name cannot be chased on
+                          clearance the way an employee record can. */}
+                      {!holderIsEmployee ? (
+                        <Badge variant="secondary">Not an employee</Badge>
+                      ) : null}
                     </span>
                   ) : (
                     '—'

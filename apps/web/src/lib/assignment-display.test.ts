@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assetHolderIsEmployee,
+  assetHolderLabel,
   assignmentExpectsAcknowledgement,
   assignmentTargetLabel,
+  type Asset,
   type AssetAssignment,
 } from './types';
 
@@ -100,5 +103,62 @@ describe('assignmentExpectsAcknowledgement', () => {
     expect(assignmentExpectsAcknowledgement(assignment(overrides as Partial<AssetAssignment>))).toBe(
       false,
     );
+  });
+});
+
+/*
+ * The same shape one level up: who currently holds the asset. The list grid
+ * read only the employee relation while the detail had been fixed, so a held
+ * asset showed a dash on one screen and a name on the other.
+ */
+function asset(overrides: Partial<Asset> = {}): Asset {
+  return { id: 'asset-1', ...overrides } as Asset;
+}
+
+describe('assetHolderLabel', () => {
+  it('names the custodian employee', () => {
+    expect(
+      assetHolderLabel(
+        asset({ custodian: { id: 'emp-1', firstName: 'Ana', lastName: 'Reyes' } as never }),
+      ),
+    ).toBe('Ana Reyes');
+  });
+
+  it('names a holder with no employee record', () => {
+    expect(assetHolderLabel(asset({ custodianName: 'Leo Hernandez' }))).toBe('Leo Hernandez');
+  });
+
+  it('is null when nobody holds it', () => {
+    expect(assetHolderLabel(asset())).toBeNull();
+  });
+
+  /* A stale empty string must not read as a holder. */
+  it('treats an empty name as nobody', () => {
+    expect(assetHolderLabel(asset({ custodianName: '' }))).toBeNull();
+  });
+
+  it('prefers the employee record over a leftover name', () => {
+    expect(
+      assetHolderLabel(
+        asset({
+          custodian: { id: 'emp-1', firstName: 'Ana', lastName: 'Reyes' } as never,
+          custodianName: 'Leo Hernandez',
+        }),
+      ),
+    ).toBe('Ana Reyes');
+  });
+});
+
+describe('assetHolderIsEmployee', () => {
+  it('is true for an employee custodian', () => {
+    expect(
+      assetHolderIsEmployee(
+        asset({ custodian: { id: 'emp-1', firstName: 'Ana', lastName: 'Reyes' } as never }),
+      ),
+    ).toBe(true);
+  });
+
+  it('is false for a typed name, which drives the "not an employee" marker', () => {
+    expect(assetHolderIsEmployee(asset({ custodianName: 'Leo Hernandez' }))).toBe(false);
   });
 });

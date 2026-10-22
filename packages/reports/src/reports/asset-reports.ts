@@ -106,6 +106,7 @@ export const assetRegister: ReportDefinition = {
           custodian: {
             select: { firstName: true, lastName: true, displayName: true },
           },
+          custodianName: true,
           department: { select: { name: true } },
           supplier: { select: { legalName: true } },
         },
@@ -124,7 +125,12 @@ export const assetRegister: ReportDefinition = {
         location: asset.storageLocation?.code ?? null,
         status: asset.status,
         condition: asset.condition?.name ?? null,
-        custodian: employeeName(asset.custodian),
+        /*
+         * Falls back to the typed name: a holder with no employee record
+         * would otherwise be blank in the asset register, which is the one
+         * export where "who has this" has to be right.
+         */
+        custodian: employeeName(asset.custodian) ?? asset.custodianName ?? null,
         department: asset.department?.name ?? null,
         acquisitionDate: dateOnly(asset.acquisitionDate),
         warrantyEndDate: dateOnly(asset.warrantyEndDate),

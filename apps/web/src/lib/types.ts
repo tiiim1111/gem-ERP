@@ -1073,13 +1073,27 @@ export function assetCustodian(asset: Asset): EmployeeSummary | null {
 
 /**
  * Who holds the asset, as a line of text — an employee if there is a record,
- * otherwise the typed name. Used wherever "who has this" is displayed, so the
- * two cases cannot diverge screen by screen.
+ * otherwise the typed name.
+ *
+ * Shared because "who has this" is shown on the list, the detail and the
+ * reports, and reading it inline per screen is how the detail ended up right
+ * while the list still showed a dash for a held asset.
  */
 export function assetHolderLabel(asset: Asset): string | null {
   const employee = assetCustodian(asset);
   if (employee) return employeeName(employee);
-  return asset.custodianName ?? null;
+  return asset.custodianName || null;
+}
+
+/**
+ * Whether the holder is a real employee record.
+ *
+ * Drives the "Not an employee" marker: a typed name cannot be searched
+ * reliably or chased on clearance, and that difference should be visible
+ * wherever the name is.
+ */
+export function assetHolderIsEmployee(asset: Asset): boolean {
+  return assetCustodian(asset) !== null;
 }
 
 /**

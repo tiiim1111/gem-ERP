@@ -7,7 +7,14 @@ import { MonitorSmartphone, Plus, Printer, X } from 'lucide-react';
 import { AssetStatus, PERMISSIONS } from '@gemerp/shared';
 import { getErrorMessage, saveBlob } from '@/lib/api';
 import { fetchAssetLabelSheet, listAssets } from '@/lib/endpoints';
-import { assetCustodian, assetTag, conditionLabel, employeeName, itemRefLabel, refLabel } from '@/lib/types';
+import {
+  assetHolderIsEmployee,
+  assetHolderLabel,
+  assetTag,
+  conditionLabel,
+  itemRefLabel,
+  refLabel,
+} from '@/lib/types';
 import { ASSET_LABEL_PERMISSIONS } from '@/lib/status-maps';
 import { formatDate, humanize } from '@/lib/utils';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
@@ -291,7 +298,8 @@ export function AssetsPage() {
               </TableHeader>
               <TableBody>
                 {data.data.map((asset) => {
-                  const custodian = assetCustodian(asset);
+                  const holder = assetHolderLabel(asset);
+                  const holderIsEmployee = assetHolderIsEmployee(asset);
                   return (
                     <TableRow key={asset.id}>
                       {canPrintLabels ? (
@@ -321,7 +329,10 @@ export function AssetsPage() {
                         )}
                       </TableCell>
                       <TableCell className="hidden text-sm text-muted-foreground lg:table-cell">
-                        {custodian ? employeeName(custodian) : '—'}
+                        {holder ?? '—'}
+                        {holder && !holderIsEmployee ? (
+                          <span className="ml-1 text-xs italic">(not an employee)</span>
+                        ) : null}
                       </TableCell>
                       <TableCell className="hidden text-sm text-muted-foreground xl:table-cell">
                         {asset.branch ? refLabel(asset.branch) : '—'}
